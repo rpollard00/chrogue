@@ -175,6 +175,7 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
   opacity: 0;
   animation: float 1000ms ease-out;
 }
+.pieces .piece.promoted { animation: promote 650ms ease-out 180ms; }
 .pieces .piece.gone { z-index: 0; opacity: 0; animation: vanish 260ms ease-in; }
 .piece.w { color: #fbf8f0; -webkit-text-stroke: 1.5px #1c1a17; paint-order: stroke fill; }
 .piece.b { color: #17161a; -webkit-text-stroke: 1px #8d8a84; paint-order: stroke fill; }
@@ -288,6 +289,7 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 @keyframes float { from { opacity: 1; } 60% { opacity: 1; } to { opacity: 0; transform: translateY(-90%); } }
 @keyframes alarm { 50% { box-shadow: inset 0 0 0 100px rgba(255, 70, 50, 0.95); } }
 @keyframes blink { 0%, 60%, 100% { opacity: 0.25; } 30% { opacity: 1; } }
+@keyframes promote { 35% { scale: 1.6; filter: drop-shadow(0 0 1.5cqw var(--gold)); } }
 @keyframes vanish { from { opacity: 1; } to { opacity: 0; scale: 0.4; } }
 @keyframes pop { from { opacity: 0; transform: translate(-50%, -50%) scale(0.85); } }
 @keyframes dim { from { filter: none; } }

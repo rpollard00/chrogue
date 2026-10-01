@@ -122,6 +122,7 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
       } else if (piece.type !== p.type) {
         piece.el.textContent = glyph(p.type);
         piece.type = p.type;
+        replay(piece.el, 'promoted');
       }
       piece.el.style.translate = placeAt(s);
     });
