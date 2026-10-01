@@ -8,12 +8,10 @@ import type { Weighted } from './random';
 import { RELICS, RELIC_IDS } from './relics';
 import type { Offer, RecruitType, Run } from './types';
 
-export type OfferIcon = RecruitType | 'relic' | 'gold';
-
 export interface OfferInfo {
-  icon: OfferIcon;
   name: string;
-  text: string;
+  /** The effect of the offer. null when the name tells all. */
+  text: string | null;
 }
 
 interface OfferKind<O extends Offer> {
@@ -30,23 +28,19 @@ const RELIC_PRICE = 16;
 
 const OFFER_KINDS: { [K in Offer['kind']]: OfferKind<Extract<Offer, { kind: K }>> } = {
   piece: {
-    describe: ({ type }) => ({
-      icon: type,
-      name: PIECE_NAME[type],
-      text: `Add this ${PIECE_NAME[type].toLowerCase()} to your army.`,
-    }),
-    blocked: (_, run) => (canAddUnit(run) ? null : 'Your army is full.'),
+    describe: ({ type }) => ({ name: PIECE_NAME[type], text: null }),
+    blocked: (_, run) => (canAddUnit(run) ? null : 'Army full'),
     take: ({ type }, run) => void addUnit(run, type),
     price: ({ type }) => PIECE_PRICE[type],
   },
   relic: {
-    describe: ({ id }) => ({ icon: 'relic', name: RELICS[id].name, text: RELICS[id].text }),
-    blocked: ({ id }, run) => (run.relics.includes(id) ? 'You have this relic.' : null),
+    describe: ({ id }) => ({ name: RELICS[id].name, text: RELICS[id].text }),
+    blocked: ({ id }, run) => (run.relics.includes(id) ? 'Owned' : null),
     take: ({ id }, run) => void run.relics.push(id),
     price: () => RELIC_PRICE,
   },
   gold: {
-    describe: ({ amount }) => ({ icon: 'gold', name: `${amount} gold`, text: `Get ${amount} gold.` }),
+    describe: ({ amount }) => ({ name: `${amount} gold`, text: null }),
     blocked: () => null,
     take: ({ amount }, run) => void (run.gold += amount),
     price: () => 0,

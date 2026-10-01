@@ -41,7 +41,7 @@ const square = (name: string): Step => (stage) => stage.querySelector<HTMLElemen
 const press = (label: string): Step => (stage) =>
   [...stage.querySelectorAll('button')].find((el) => el.getAttribute('aria-label') === label || el.textContent?.startsWith(label));
 const card = (name: string): Step => (stage) =>
-  [...stage.querySelectorAll('.card')].find((el) => el.querySelector('h3')?.textContent === name)?.querySelector('button');
+  [...stage.querySelectorAll('.card')].find((el) => el.querySelector('h3')?.textContent === name)?.querySelector<HTMLElement>('.act');
 
 interface Demo {
   group: string;

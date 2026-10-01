@@ -2,6 +2,8 @@ import { UPGRADES, UPGRADE_IDS, buyUpgrade, nextCost } from '../../game';
 import type { App, ScreenOf } from '../app';
 import { button, h } from '../dom';
 import { counter } from '../effects';
+import { UPGRADE_ART } from '../icons';
+import { amount, card } from '../widgets';
 
 export function viewUpgrades(app: App, { bought }: ScreenOf<'upgrades'>): HTMLElement {
   const { meta } = app;
@@ -12,27 +14,24 @@ export function viewUpgrades(app: App, { bought }: ScreenOf<'upgrades'>): HTMLEl
       app.saveMeta();
       app.show({ name: 'upgrades', bought: id });
     };
-    const classes = ['card'];
-    if (id === bought) classes.push('bought');
-    if (cost === null) classes.push('maxed');
     const pips = def.costs.map((_, i) => {
       const pip = i >= level ? 'pip' : id === bought && i === level - 1 ? 'pip on new' : 'pip on';
       return h('span', { class: pip });
     });
-    return h('div', { class: classes.join(' ') },
-      h('h3', {}, def.name), h('p', {}, def.text),
+    return card(
+      { kind: 'upgrade', art: UPGRADE_ART[id], name: def.name, text: def.text, bought: id === bought, maxed: cost === null },
+      cost === null
+        ? { verb: 'Max level', run: null, disabled: true }
+        : { verb: 'Buy', cost: { value: cost, currency: 'crowns' }, run: buy, disabled: meta.crowns < cost },
       h('div', { class: 'level' },
         h('span', { class: 'pips', 'aria-hidden': 'true' }, pips),
-        h('span', { class: 'dim' }, `Level ${level} of ${def.costs.length}`)),
-      cost === null
-        ? button('Maximum level', null, { disabled: true })
-        : button(`Buy for ${cost} crowns`, buy, { disabled: meta.crowns < cost }));
+        h('span', { class: 'sr-only' }, `Level ${level} of ${def.costs.length}`)));
   });
   const spent = bought ? UPGRADES[bought].costs[(meta.upgrades[bought] ?? 0) - 1] ?? 0 : 0;
   return h('main', { class: 'panel' },
     h('h2', {}, 'Upgrades'),
-    h('p', {}, 'You have ', h('strong', { class: 'crown-count' }, counter({ from: meta.crowns + spent, to: meta.crowns })),
-      ' crowns. Upgrades apply to each new run.'),
+    h('p', { class: 'crown-count purse' }, amount('crowns', counter({ from: meta.crowns + spent, to: meta.crowns }))),
+    h('p', { class: 'dim' }, 'Upgrades apply to each new run.'),
     h('div', { class: 'cards' }, cards),
     button('Back', () => app.show({ name: 'title' })));
 }

@@ -7,7 +7,7 @@ import {
 import type { App, ScreenOf } from '../app';
 import { button, h, pieceEl, squareName } from '../dom';
 import { counter } from '../effects';
-import { amount, flashRelics, offerCard, relicList } from '../widgets';
+import { actionButton, amount, flashRelics, offerCard, relicList } from '../widgets';
 
 type CampScreen = ScreenOf<'camp'>;
 
@@ -61,7 +61,7 @@ export function viewCamp(app: App, screen: CampScreen): HTMLElement {
   const draft = run.draft && h('section', {},
     h('h2', {}, 'Select one reward'),
     h('div', { class: deal },
-      run.draft.map((offer) => offerCard(offer, run, { label: 'Take', run: act(() => takeDraft(run, offer)) }))),
+      run.draft.map((offer) => offerCard(offer, run, { verb: 'Take', run: act(() => takeDraft(run, offer)) }))),
     button('Skip the reward', act(() => skipDraft(run))));
   const shop = h('section', {},
     h('h2', {}, 'Shop'),
@@ -69,13 +69,17 @@ export function viewCamp(app: App, screen: CampScreen): HTMLElement {
       ? h('div', { class: acted?.rolled ? 'cards flip' : deal }, run.shop.map((offer) => {
         const cost = priceOf(offer, meta);
         return offerCard(offer, run, {
-          label: `Buy for ${cost} gold`,
+          verb: 'Buy',
+          cost: { value: cost, currency: 'gold' },
           disabled: run.gold < cost,
           run: act(() => buyOffer(run, meta, offer)),
         });
       }))
       : h('p', { class: 'dim' }, 'The shop is empty.'),
-    button(`Get new items for ${REROLL_COST} gold`, act(() => rerollShop(run), true), { disabled: run.gold < REROLL_COST }));
+    actionButton({
+      verb: 'Get new items', cost: { value: REROLL_COST, currency: 'gold' },
+      run: act(() => rerollShop(run), true), disabled: run.gold < REROLL_COST,
+    }));
   const enemy = [...run.enemy.pieces].sort((a, b) => VALUE[b.type] - VALUE[a.type] || (a.type === 'k' ? -1 : 1));
   return h('main', { class: 'panel camp' },
     h('header', {},

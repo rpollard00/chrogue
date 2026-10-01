@@ -16,7 +16,7 @@ const paths = {
   conscription: 'M6 21V4M6 5h12l-3 4 3 4H6',
   interest: 'M3 17l6-6 4 4 8-8M15 7h6v6',
   coins: 'M5 8c0-1.7 3.1-3 7-3s7 1.3 7 3-3.1 3-7 3-7-1.3-7-3zM5 8v4c0 1.7 3.1 3 7 3s7-1.3 7-3V8M5 12v4c0 1.7 3.1 3 7 3s7-1.3 7-3v-4',
-  coin: 'M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18M12 8v8',
+  coin: 'M12 2.5a9.5 9.5 0 1 0 0 19a9.5 9.5 0 0 0 0-19zM12 5.5a6.5 6.5 0 1 0 0 13a6.5 6.5 0 0 0 0-13zM12 7a5 5 0 1 0 0 10a5 5 0 0 0 0-10z',
   crown: 'M4 18h16l1-10-5 4-4-7-4 7-5-4z',
   chest: 'M4 19v-9a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v9zM4 12h16M12 11v4',
   tag: 'M3 12V4h8l10 10-8 8zM7.5 8.5h.01',
@@ -24,8 +24,11 @@ const paths = {
 
 export type IconId = keyof typeof paths;
 
+// The icons of the currencies are solid shapes, thus they do not look like the outline icons of the relics.
+const SOLID: readonly IconId[] = ['coin', 'crown'];
+
 export function icon(id: IconId): HTMLElement {
-  const el = h('span', { class: 'icon', 'aria-hidden': 'true' });
+  const el = h('span', { class: SOLID.includes(id) ? 'icon solid' : 'icon', 'aria-hidden': 'true' });
   el.innerHTML = `<svg viewBox="0 0 24 24"><path d="${paths[id]}"/></svg>`;
   return el;
 }
