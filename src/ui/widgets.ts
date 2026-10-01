@@ -125,9 +125,10 @@ export function offerCard(offer: Offer, run: Run, action: CardAction): HTMLEleme
   return card({ kind: offer.kind, art: offerArt(offer), ...info, stamp }, { ...action, disabled: stamp !== null || action.disabled });
 }
 
+/** A list of relic tokens, or of enemy traits. The list is hidden when it has no item. With `detail`, each item shows its text. */
 export function relicList(ids: readonly RelicId[], side: Side, detail = false): HTMLElement {
-  if (!ids.length) return h('p', { class: 'dim' }, 'None');
-  return h('ul', { class: side === 'enemy' ? 'tokens foe' : 'tokens' }, ids.map((id) => {
+  const label = side === 'enemy' ? 'Enemy traits' : 'Your relics';
+  return h('ul', { class: side === 'enemy' ? 'tokens foe' : 'tokens', 'aria-label': detail ? null : label, hidden: !ids.length }, ids.map((id) => {
     const relic = RELICS[id], text = side === 'enemy' ? relic.foeText ?? relic.text : relic.text;
     return h('li', { class: detail ? 'token detail' : 'token', 'data-relic': id },
       medal({ kind: 'icon', id }),

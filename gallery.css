@@ -40,16 +40,16 @@
 .gallery-head div { flex: 1; }
 
 .gallery-stage {
-  --board: min(calc(100vw - 19rem), calc(100vh - 9rem), 640px);
+  --view-w: calc(100vw - 15rem);
+  --view-h: calc(100dvh - 5.2rem);
   display: flex;
   justify-content: center;
-  padding: 1.5rem 1rem;
 }
-.gallery-stage .title { margin-top: 0; }
+.gallery-stage .title { margin-top: 1.5rem; }
 .gallery-stage.skip-intro .intro { display: none; }
 
 @media (max-width: 700px) {
   .gallery { grid-template-columns: 1fr; }
   .gallery-nav { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
-  .gallery-stage { --board: min(92vw, 640px); }
+  .gallery-stage { --view-w: 100vw; --view-h: 100dvh; }
 }

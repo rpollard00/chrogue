@@ -1,4 +1,4 @@
-import { inCheck, kingSquare, legalMoves, other } from '../../engine';
+import { inCheck, kingSquare, legalMoves } from '../../engine';
 import type { Color, Move, PieceId, PieceType, Square } from '../../engine';
 import { FLOORS, PIECE_NAME, enemyMove, floorOf, playMove, settleBattle } from '../../game';
 import type { BattleResult, MoveReport } from '../../game';
@@ -6,7 +6,8 @@ import type { App, ScreenOf } from '../app';
 import { button, glyph, h, pieceEl, squareName } from '../dom';
 import { burst, counter, removeWhenDone, replay, tally } from '../effects';
 import type { TallyRow } from '../effects';
-import { amount, flashRelics, relicList } from '../widgets';
+import { enemyName, flashRelics, pieceWell, plaque, purse, relicList } from '../widgets';
+import type { PieceWell } from '../widgets';
 
 type BattleScreen = ScreenOf<'battle'>;
 
@@ -79,23 +80,27 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
   const shown = new Map<PieceId, { el: HTMLElement; type: PieceType }>();
   board.append(pieceLayer);
 
-  const status = h('p', { class: 'status', role: 'status' });
+  // The lamp is lit when the player can move.
+  const status = h('p', { class: 'lamp', role: 'status' });
   let shownStatus = '';
-  const promotion = h('div', { class: 'promotion' });
+  // The picker is on the board, on the square of the promotion.
+  const promotion = h('div', { class: 'promotion', role: 'group', 'aria-label': 'Promotion', hidden: true });
+  let shownPromotion: Move[] | null = null;
+  board.append(promotion);
   // The pieces that each side captured.
-  const trays: Record<Color, HTMLElement> = {
-    w: h('div', { class: 'taken' }, h('span', { class: 'dim' }, 'None')),
-    b: h('div', { class: 'taken' }, h('span', { class: 'dim' }, 'None')),
+  const trays: Record<Color, PieceWell> = {
+    w: pieceWell('b', 'Pieces that you captured', 'Captured'),
+    b: pieceWell('w', 'Pieces that you lost', 'Lost'),
   };
-  const captureGold = h('strong', { class: 'gold-count' }, '0');
+  const captureGold = h('strong', {}, '0');
+  const captureNote = h('small', { hidden: true }, '+', captureGold, ' from captures');
   let shownGold = 0;
   const giveUp = button('Give up', () => {
     if (confirm('The run will end. Give up?')) app.endRun(run, false);
-  });
-  const floor = `Floor ${run.floor} of ${FLOORS.length}${spec.boss ? ' · Boss' : ''}`;
-  // The banner repeats the text of the side panel, thus a screen reader ignores it.
+  }, { class: 'quiet' });
+  // The banner repeats the text of the enemy plaque, thus a screen reader ignores it.
   const intro = h('div', { class: spec.boss ? 'intro boss' : 'intro', 'aria-hidden': 'true' },
-    h('p', {}, floor), h('strong', {}, spec.name));
+    h('p', {}, `Floor ${run.floor} of ${FLOORS.length}${spec.boss ? ' · Boss' : ''}`), h('strong', {}, spec.name));
   const wrap = h('div', { class: 'board-wrap' }, board, intro);
   const relics = relicList(run.relics, 'player');
 
@@ -139,11 +144,18 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
     }
   }
 
-  function syncTray(by: Color): void {
-    const tray = trays[by], types = battle.taken[by];
-    if (!types.length) return;
-    tray.querySelector('.dim')?.remove();
-    for (let i = tray.childElementCount; i < types.length; i++) tray.append(pieceEl(types[i], other(by)));
+  function syncPromotion(): void {
+    if (view.promotion === shownPromotion) return;
+    shownPromotion = view.promotion;
+    promotion.hidden = shownPromotion === null;
+    if (!shownPromotion) return;
+    const { to } = shownPromotion[0];
+    promotion.style.left = `${(to & 7) * 12.5}%`;
+    promotion.style.top = `${(7 - (to >> 3)) * 12.5}%`;
+    promotion.replaceChildren(...shownPromotion.flatMap((m) => (m.promo ? [h('button',
+      { type: 'button', 'aria-label': PIECE_NAME[m.promo], onclick: () => commit(m) },
+      pieceEl(m.promo, 'w'))] : [])));
+    promotion.querySelector('button')?.focus();
   }
 
   function syncSide(): void {
@@ -157,16 +169,15 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
       status.replaceChildren(text, ...(dots ? [dots] : []));
       shownStatus = text;
     }
+    status.classList.toggle('lit', !view.busy && !battle.result && state.turn === 'w');
     status.hidden = giveUp.hidden = battle.result !== null;
-    promotion.hidden = view.promotion === null;
-    promotion.replaceChildren(...(view.promotion ?? []).flatMap((m) => (m.promo ? [h('button',
-      { type: 'button', 'aria-label': PIECE_NAME[m.promo], onclick: () => commit(m) },
-      pieceEl(m.promo, 'w'))] : [])));
-    syncTray('w');
-    syncTray('b');
+    syncPromotion();
+    trays.w.show(battle.taken.w);
+    trays.b.show(battle.taken.b);
     const gold = Math.round(battle.gold);
     if (gold !== shownGold) captureGold.replaceChildren(counter({ from: shownGold, to: gold }));
     shownGold = gold;
+    captureNote.hidden = gold <= 0;
   }
 
   // Shows the gold of a capture above the square of the captured piece.
@@ -202,6 +213,8 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
   }
 
   function commit(move: Move): void {
+    // The picker goes away, thus the keyboard focus goes to the square of the new piece.
+    const fromPicker = promotion.contains(document.activeElement);
     const report = playMove(battle, run, move);
     Object.assign(view, { last: move, selected: -1, targets: [], promotion: null });
     if (battle.result) {
@@ -216,6 +229,7 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
       }, ENEMY_DELAY_MS);
     }
     sync();
+    if (fromPicker) squares[move.to].focus();
     showCapture(report);
     const checked = squares.find((el) => el.classList.contains('check'));
     if (checked) replay(checked, 'alarm');
@@ -223,17 +237,23 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
   }
 
   sync();
-  return h('main', { class: 'battle' },
-    wrap,
-    h('aside', { class: 'side' },
-      h('p', { class: 'dim' }, floor),
-      h('h2', {}, spec.name),
-      status,
-      promotion,
-      h('h3', {}, 'Enemy traits'), relicList(run.enemy.traits, 'enemy'),
-      h('h3', {}, 'Your relics'), relics,
-      h('h3', {}, 'Pieces that you captured'), trays.w,
-      h('h3', {}, 'Pieces that you lost'), trays.b,
-      h('p', {}, amount('gold', String(run.gold)), ' (+', captureGold, ' from captures)'),
-      giveUp));
+  const foe = plaque('enemy', 'Enemy', enemyName(run), relicList(run.enemy.traits, 'enemy'), trays.b.el);
+  const me = plaque('player', 'You',
+    h('div', { class: 'id' }, h('strong', { class: 'name' }, 'You'), status),
+    trays.w.el, purse(String(run.gold), captureNote), relics, giveUp);
+  const main = h('main', { class: 'battle' }, foe, wrap, me);
+  // The board takes the height that the plaques leave. A plaque can wrap to more lines, thus the screen measures the plaques.
+  let fitted = 0;
+  const fit = (): void => {
+    const height = Math.ceil(foe.getBoundingClientRect().height + me.getBoundingClientRect().height);
+    if (height !== fitted) main.style.setProperty('--plaques', `${height}px`);
+    fitted = height;
+  };
+  // The first measurement is before the first paint, when the shell has the screen on the page.
+  queueMicrotask(fit);
+  // A change of size in the callback of the observer causes a loop error, thus the next frame does the measurement.
+  const resized = new ResizeObserver(() => requestAnimationFrame(fit));
+  resized.observe(foe);
+  resized.observe(me);
+  return main;
 }

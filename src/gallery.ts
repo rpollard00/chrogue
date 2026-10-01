@@ -67,7 +67,7 @@ const DEMOS: Demo[] = [
   },
   {
     group: 'Battle', name: 'Move and capture',
-    note: 'The rook moves and captures. The gold shows on the square and in the side panel. Bounty flashes. Then the enemy moves.',
+    note: 'The rook moves and captures. The gold shows on the square and in the player plaque. Bounty flashes. Then the enemy moves.',
     start: (app) => app.startBattle(run('Ke1 Ra1 Ng1 c2 d2 e2', 'Ke8 a7 d7 Ng8', { relics: ['bounty'] })),
     steps: [square('a1'), square('a7')],
   },

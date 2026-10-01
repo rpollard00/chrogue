@@ -91,11 +91,11 @@ export function viewCamp(app: App, screen: CampScreen): HTMLElement {
       h('h2', {}, `Your army (${run.army.length} of ${ARMY_MAX})`),
       h('p', { class: 'dim' }, 'To move a piece, select the piece and then select a square.'),
       viewArmy(app, screen),
-      h('h3', {}, 'Your relics'), relics),
+      run.relics.length > 0 && h('h3', {}, 'Your relics'), relics),
     h('section', {},
       h('h2', {}, `Next: floor ${run.floor} of ${FLOORS.length}, ${spec.name}${spec.boss ? ' (boss)' : ''}`),
       h('div', { class: 'taken' }, enemy.map((p) => pieceEl(p.type, 'b'))),
-      run.enemy.traits.length ? relicList(run.enemy.traits, 'enemy') : null,
+      relicList(run.enemy.traits, 'enemy'),
       button('Start the battle', () => app.startBattle(run), { class: 'primary', disabled: run.draft !== null }),
       run.draft && h('p', { class: 'dim' }, 'Select or skip the reward before the battle.')));
 }
