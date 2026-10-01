@@ -1,10 +1,10 @@
 import { inCheck, kingSquare, legalMoves, other } from '../../engine';
 import type { Color, Move, PieceId, PieceType, Square } from '../../engine';
 import { FLOORS, PIECE_NAME, enemyMove, floorOf, playMove, settleBattle } from '../../game';
-import type { BattleResult } from '../../game';
+import type { BattleResult, MoveReport } from '../../game';
 import type { App, ScreenOf } from '../app';
 import { button, glyph, h, pieceEl, squareName } from '../dom';
-import { burst, removeWhenDone, tally } from '../effects';
+import { burst, counter, removeWhenDone, tally } from '../effects';
 import type { TallyRow } from '../effects';
 import { relicList } from '../widgets';
 
@@ -55,6 +55,9 @@ function viewResult(app: App, screen: BattleScreen, result: BattleResult): HTMLE
     button('Continue', () => leave(app, screen), { class: 'primary' }));
 }
 
+// The position of a square in the piece layer. Each unit is the width of one square.
+const placeAt = (s: Square): string => `${(s & 7) * 100}% ${(7 - (s >> 3)) * 100}%`;
+
 // Makes the battle screen one time. After that, each click and each move changes only the elements that are different.
 export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
   const { run, view } = screen, { battle } = view, { state } = battle, spec = floorOf(run);
@@ -83,7 +86,8 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
     w: h('div', { class: 'taken' }, h('span', { class: 'dim' }, 'None')),
     b: h('div', { class: 'taken' }, h('span', { class: 'dim' }, 'None')),
   };
-  const gold = h('p');
+  const captureGold = h('strong', { class: 'gold-count' }, '0');
+  let shownGold = 0;
   const giveUp = button('Give up', () => {
     if (confirm('The run will end. Give up?')) app.endRun(run, false);
   });
@@ -118,7 +122,7 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
         piece.el.textContent = glyph(p.type);
         piece.type = p.type;
       }
-      piece.el.style.translate = `${(s & 7) * 100}% ${(7 - (s >> 3)) * 100}%`;
+      piece.el.style.translate = placeAt(s);
     });
     for (const [id, { el }] of shown) {
       if (onBoard.has(id)) continue;
@@ -149,7 +153,18 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
       pieceEl(m.promo, 'w'))] : [])));
     syncTray('w');
     syncTray('b');
-    gold.textContent = `Gold: ${run.gold} (+${Math.round(battle.gold)} from captures)`;
+    const gold = Math.round(battle.gold);
+    if (gold !== shownGold) captureGold.replaceChildren(counter({ from: shownGold, to: gold }));
+    shownGold = gold;
+  }
+
+  // Shows the gold of a capture above the square of the captured piece.
+  function showCapture({ capture }: MoveReport): void {
+    if (!capture || capture.gold <= 0) return;
+    const floater = h('span', { class: 'floater' }, `+${Number(capture.gold.toFixed(1))}`);
+    floater.style.translate = placeAt(capture.square);
+    pieceLayer.append(floater);
+    removeWhenDone(floater);
   }
 
   function sync(): void {
@@ -176,7 +191,7 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
   }
 
   function commit(move: Move): void {
-    playMove(battle, run, move);
+    const report = playMove(battle, run, move);
     Object.assign(view, { last: move, selected: -1, targets: [], promotion: null });
     if (battle.result) {
       wrap.append(viewResult(app, screen, battle.result));
@@ -190,6 +205,7 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
       }, ENEMY_DELAY_MS);
     }
     sync();
+    showCapture(report);
   }
 
   sync();
@@ -204,6 +220,6 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
       h('h3', {}, 'Your relics'), relicList(run.relics, 'player'),
       h('h3', {}, 'Pieces that you captured'), trays.w,
       h('h3', {}, 'Pieces that you lost'), trays.b,
-      gold,
+      h('p', {}, `Gold: ${run.gold} (+`, captureGold, ' from captures)'),
       giveUp));
 }

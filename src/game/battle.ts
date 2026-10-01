@@ -1,6 +1,6 @@
 // One battle of a run. This module connects the chess engine to the run and its relics.
 import { VALUE, chooseMove, createState, makeMove, outcome } from '../engine';
-import type { Color, Move, Outcome, PieceSetup, PieceType, State } from '../engine';
+import type { Color, Move, Outcome, PieceSetup, PieceType, Square, State } from '../engine';
 import { FLOORS, floorOf } from './floors';
 import { hooksOf, rulesFor } from './relics';
 import { enterCamp } from './run';
@@ -26,6 +26,12 @@ export interface Battle {
   /** The piece types that each side captured. */
   taken: Record<Color, PieceType[]>;
   result: BattleResult | null;
+}
+
+/** The effects of one move on the run. */
+export interface MoveReport {
+  /** The square of the captured piece and the gold that the capture gave, or null. */
+  capture: { square: Square; gold: number } | null;
 }
 
 export function createBattle(run: Run): Battle {
@@ -55,16 +61,18 @@ export const totalGold = (reward: BattleReward): number =>
   reward.captures + reward.clear + reward.bonuses.reduce((sum, bonus) => sum + bonus.gold, 0);
 
 // Plays a move for the side to move and records its effect on the run.
-export function playMove(battle: Battle, run: Run, move: Move): void {
+export function playMove(battle: Battle, run: Run, move: Move): MoveReport {
   const { state } = battle;
   const mover = state.turn;
-  const { captured } = makeMove(state, move);
-  if (captured) {
+  const { captured, capSq } = makeMove(state, move);
+  const report: MoveReport = { capture: captured && { square: capSq, gold: 0 } };
+  if (captured && report.capture) {
     battle.taken[mover].push(captured.type);
     const relics = hooksOf(run.relics);
     const unit = run.army.find((u) => u.id === captured.id);
     if (mover === 'w') {
-      battle.gold += relics.reduce((gold, { hooks }) => hooks.captureGold?.(gold) ?? gold, VALUE[captured.type]);
+      report.capture.gold = relics.reduce((gold, { hooks }) => hooks.captureGold?.(gold) ?? gold, VALUE[captured.type]);
+      battle.gold += report.capture.gold;
     } else if (unit) {
       const rescued = relics.some(({ hooks }) => hooks.rescueUnit?.({ rescued: battle.rescued.length }));
       (rescued ? battle.rescued : battle.lost).push(unit.id);
@@ -72,6 +80,7 @@ export function playMove(battle: Battle, run: Run, move: Move): void {
   }
   const result = outcome(state);
   if (result) battle.result = { ...result, reward: rewardFor(run, battle, result) };
+  return report;
 }
 
 export function enemyMove(battle: Battle, run: Run): Move {

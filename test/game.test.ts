@@ -6,7 +6,7 @@ import {
   buyOffer, buyUpgrade, createBattle, finishRun, generateEnemy, newRun, parseMeta, parseRun,
   playMove, priceOf, rollDraft, rollShop, settleBattle, takeDraft, takeOffer,
 } from '../src/game';
-import type { Battle, Enemy, Meta, Run } from '../src/game';
+import type { Battle, Enemy, Meta, MoveReport, Run } from '../src/game';
 import { sq } from './helpers';
 
 const emptyMeta = (): Meta => ({ crowns: 0, best: 0, runs: 0, upgrades: {} });
@@ -19,10 +19,10 @@ function runAgainst(pieces: Enemy['pieces'], change: (run: Run) => void = () => 
   return run;
 }
 
-function play(battle: Battle, run: Run, from: string, to: string): void {
+function play(battle: Battle, run: Run, from: string, to: string): MoveReport {
   const move = legalMoves(battle.state).find((m: Move) => m.from === sq(from) && m.to === sq(to));
   if (!move) throw new Error(`${from}-${to} is not a legal move`);
-  playMove(battle, run, move);
+  return playMove(battle, run, move);
 }
 
 const KING = { type: 'k', square: sq('e8') } as const;
@@ -77,7 +77,7 @@ test('Bounty and Interest add gold', () => {
     r.gold = 20;
   });
   const battle = createBattle(run);
-  play(battle, run, 'a1', 'a2');
+  expect(play(battle, run, 'a1', 'a2')).toEqual({ capture: { square: sq('a2'), gold: 7.5 } });
   // Captures: 5 * 1.5 = 7.5, which rounds to 8. Interest: floor((20 + 8 + 4) / 5) = 6.
   expect(battle.result?.reward).toEqual({ captures: 8, clear: 4, bonuses: [{ label: 'Interest', gold: 6 }] });
 });
