@@ -1,6 +1,6 @@
 // The contract between the screens and the application shell in shell.ts.
 import type { Move, Square } from '../engine';
-import type { Battle, Meta, RelicId, Run, RunSummary, UpgradeId } from '../game';
+import type { Battle, Meta, Offer, RelicId, Run, RunSummary, UpgradeId } from '../game';
 
 /** A battle and the selection state of its board. */
 export interface BattleView {
@@ -28,7 +28,8 @@ export type Screen =
   // bought is the upgrade that the player bought last on this screen.
   | { name: 'upgrades'; bought: UpgradeId | null }
   | { name: 'battle'; run: Run; view: BattleView }
-  | { name: 'camp'; run: Run; selected: Square; cue: CampCue | null }
+  // reward holds the reward cards of this visit and the card that the player took. It is null when the visit has no reward.
+  | { name: 'camp'; run: Run; selected: Square; cue: CampCue | null; reward: { offers: Offer[]; taken: Offer | null } | null }
   | { name: 'over'; summary: RunSummary };
 
 export type ScreenOf<N extends Screen['name']> = Extract<Screen, { name: N }>;

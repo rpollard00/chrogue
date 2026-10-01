@@ -59,7 +59,7 @@ export function createApp(root: HTMLElement, store: Store): App {
     },
     openCamp(current: Run) {
       store.saveRun(current);
-      app.show({ name: 'camp', run: current, selected: -1, cue: { kind: 'enter' } });
+      app.show({ name: 'camp', run: current, selected: -1, cue: { kind: 'enter' }, reward: current.draft && { offers: current.draft, taken: null } });
     },
     endRun(current: Run, won: boolean) {
       const summary = finishRun(meta, current, won);

@@ -81,6 +81,8 @@ export interface CardFace {
   bought?: boolean;
   /** True if the card has no more levels. */
   maxed?: boolean;
+  /** For a reward after the player selects: the card that the player took, or a card that the player passed. */
+  settled?: 'chosen' | 'passed';
 }
 
 export interface CardAction {
@@ -100,7 +102,7 @@ export function actionButton({ verb, cost, run, disabled }: CardAction, props: R
 
 /** The one card of the game. Each kind has its color. `extra` goes between the name and the button. */
 export function card(face: CardFace, action: CardAction, extra?: HTMLElement): HTMLElement {
-  const classes = ['card', face.stamp && 'blocked', face.bought && 'bought', face.maxed && 'maxed'];
+  const classes = ['card', face.stamp && 'blocked', face.bought && 'bought', face.maxed && 'maxed', face.settled];
   return h('div', { class: classes.filter(Boolean).join(' '), 'data-kind': face.kind },
     h('div', { class: 'card-top' },
       h('span', { class: 'kind' }, KIND_LABEL[face.kind]),
@@ -119,6 +121,11 @@ function offerArt(offer: Offer): Art {
     case 'gold': return { kind: 'icon', id: 'coins' };
   }
 }
+
+/** A reward card after the player selects. The card has no function. */
+export const settledCard = (offer: Offer, taken: boolean): HTMLElement =>
+  card({ kind: offer.kind, art: offerArt(offer), ...describeOffer(offer), settled: taken ? 'chosen' : 'passed' },
+    { verb: taken ? 'Taken' : 'Take', run: null, disabled: true });
 
 export function offerCard(offer: Offer, run: Run, action: CardAction): HTMLElement {
   const info = describeOffer(offer), stamp = blockedReason(offer, run);

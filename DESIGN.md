@@ -40,6 +40,7 @@ Rules:
 - Battle: the state frames the board. The enemy plaque is above the board, and the player plaque is below it. There is no side rail.
 - Camp: one table. The next enemy and the start action are at the top, the reward and the shop are in the middle, and the army, the relics, and the purse are at the bottom. Camp has the same frame as the battle: the enemy above, the player below.
 - At 1440×900, camp shows all its content with no page scroll.
+- The camp layout is stable during a visit. After the player takes or skips the reward, the reward shelf stays: the card that the player took keeps its color, and the other cards are dim. A visit that starts with no reward has no reward shelf.
 
 Status: provisional. Reference surfaces: the battle screen and the camp screen in `gallery.html`.
 

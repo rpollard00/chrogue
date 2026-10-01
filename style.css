@@ -159,7 +159,6 @@ button.primary:disabled {
   border-radius: 10px;
   padding: 1.5rem;
 }
-.panel section { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--line); }
 
 .title { max-width: 460px; text-align: center; margin-top: 8vh; }
 .tagline { color: var(--dim); }
@@ -331,7 +330,7 @@ button.info:active { translate: 0 1px; }
 
 /* A recessed area that holds a row of cards. */
 .shelf {
-  padding: 0.8rem 1.1rem 1.25rem;
+  padding: 0.8rem 1rem 1.25rem;
   border-radius: 12px;
   background: linear-gradient(var(--shelf-hi), var(--shelf-lo));
   box-shadow: inset 0 3px 7px var(--shade), inset 0 -1px 0 var(--shine-soft);
@@ -373,7 +372,7 @@ button.info:active { translate: 0 1px; }
   border-radius: 7px;
   pointer-events: none;
 }
-.card:hover:not(.blocked) {
+.card:hover:not(.blocked, .chosen, .passed) {
   translate: 0 -0.3rem;
   rotate: -0.6deg;
   box-shadow:
@@ -405,6 +404,9 @@ button.info:active { translate: 0 1px; }
   padding: 0 0.5rem;
 }
 .card.blocked > :not(.stamp, .card-top) { filter: grayscale(0.8); opacity: 0.55; }
+/* The reward cards after the player selects. The card that the player took keeps its color. */
+.card.passed > * { filter: grayscale(0.8); opacity: 0.45; }
+.card.chosen .act:disabled { color: var(--accent); }
 .stamp {
   position: absolute;
   top: 3.9rem;
@@ -428,11 +430,71 @@ button.info:active { translate: 0 1px; }
 :is(.deal, .flip) > .card:nth-child(4) { animation-delay: 240ms; }
 .homes .unit.new { animation: pip 500ms cubic-bezier(0.2, 1.6, 0.4, 1) 100ms both; }
 
-.camp header { display: flex; justify-content: space-between; align-items: baseline; }
 .gold-count { color: var(--gold); font-weight: 600; }
 .purse { font: 800 1.35rem/1.2 var(--display); letter-spacing: 0.02em; }
 .purse small { font: 400 0.8rem/1.3 var(--body); letter-spacing: 0; color: var(--dim); white-space: nowrap; }
 .purse small strong { color: var(--gold); }
+
+/* The camp is one table: the next enemy and the start key, the offers, and the army. The shelves take the free height. */
+.camp {
+  display: grid;
+  align-content: center;
+  gap: 1rem;
+  box-sizing: content-box;
+  width: min(80rem, var(--view-w) - 2rem);
+  min-height: calc(var(--view-h) - 2rem);
+  padding: 1rem 0;
+}
+.camp .plaque { gap: 0.75rem 1.25rem; padding: 0.9rem 1.1rem; }
+.camp .plaque > .medal { --size: 3.5rem; }
+/* The enemy plaque keeps its height when the text below the start key goes away. */
+.camp .plaque.foe { min-height: 6.5rem; }
+.camp .foe .well { flex: 0 1 auto; }
+.camp .taken .piece { font-size: 1.8rem; }
+.start { display: grid; gap: 0.5rem; justify-items: end; margin-left: auto; text-align: right; }
+.reason { margin: 0; font-size: 0.8rem; color: var(--dim); }
+/* 20.5rem is the height of the two plaques and of the space around the table. */
+.shelves { display: flex; flex-wrap: wrap; gap: 1rem; min-height: min(26rem, var(--view-h) - 20.5rem); }
+.shelf { flex: 1 1 auto; display: flex; flex-direction: column; }
+.shelf header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-height: 2.4rem; margin-bottom: 0.75rem; }
+.shelf h2, .army h2 { margin: 0; font-size: 1.2rem; }
+.shelf .cards { justify-content: center; margin: auto 0; }
+.shelf > .dim { margin: auto; }
+/* A shelf is as wide as its row of cards, thus the width of a card cannot come from the width of the shelf. */
+@media (min-width: 721px) { .shelf .card { flex: none; width: 9.75rem; } }
+.army { display: grid; gap: 0.2rem; max-width: 12.5rem; }
+.army h2 span { color: var(--dim); }
+.hint { margin: 0; font-size: 0.8rem; line-height: 1.35; color: var(--dim); }
+.relics { flex: 1 1 10rem; display: grid; gap: 0.4rem; }
+.camp .me .purse { margin-left: auto; }
+.pin { display: none; }
+/* On a narrow screen, the camp scrolls. The gold and the start key stay in view in a bar at the bottom. */
+@media (max-width: 720px) {
+  .camp { display: flex; flex-direction: column; gap: 0.75rem; width: calc(var(--view-w) - 1.2rem); min-height: 0; padding: 0.6rem 0 0; }
+  .camp .plaque.foe { min-height: 0; }
+  .shelves { min-height: 0; }
+  .camp .plaque :is(.start, .purse) { display: none; }
+  .camp .board.homes { width: 100%; }
+  .camp .taken .piece { font-size: 1.5rem; }
+  .army { flex: 1 1 0; max-width: none; }
+  .shelf { padding: 0.7rem 0.75rem 1.1rem; }
+  .shelf .cards { justify-content: flex-start; }
+  .pin {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 0.35rem 0.75rem;
+    margin: 0 -0.6rem;
+    padding: 0.6rem 0.75rem 0.8rem;
+    background: linear-gradient(var(--raised-hi), var(--panel));
+    box-shadow: inset 0 1px 0 var(--shine), 0 -8px 14px var(--shade-soft);
+  }
+  .pin .primary { min-height: 2.7rem; font-size: 1.15rem; }
+  .pin .reason { grid-column: 1 / -1; }
+}
 
 /* The battle is one column: the enemy plaque, the board, and the player plaque. The board takes the height that the plaques leave. */
 .battle {
@@ -481,7 +543,7 @@ button.info:active { translate: 0 1px; }
   position: relative;
   isolation: isolate;
 }
-.board.homes { width: min(100%, 480px); margin-bottom: 0.5rem; }
+.board.homes { flex: none; width: 30rem; max-width: 100%; }
 
 .square {
   position: relative;
