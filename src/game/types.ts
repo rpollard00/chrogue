@@ -53,4 +53,6 @@ export interface RunSummary {
   bonus: number;
   /** All the crowns of the run. */
   crowns: number;
+  /** True if the run cleared more floors than each run before it. */
+  newBest: boolean;
 }

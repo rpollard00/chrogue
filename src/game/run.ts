@@ -61,8 +61,9 @@ export function rerollShop(run: Run): boolean {
 export function finishRun(meta: Meta, run: Run, won: boolean): RunSummary {
   const cleared = won ? FLOORS.length : run.floor - 1;
   const bonus = won ? WIN_CROWNS : 0, crowns = cleared + bonus;
+  const newBest = cleared > meta.best;
   meta.crowns += crowns;
   meta.best = Math.max(meta.best, cleared);
   meta.runs++;
-  return { won, cleared, bonus, crowns };
+  return { won, cleared, bonus, crowns, newBest };
 }
