@@ -22,7 +22,9 @@ export const button = (label: string, onclick: (() => void) | null, props: Props
 // The text selector U+FE0E stops the browser from drawing the pawn as an emoji.
 const GLYPH: Record<PieceType, string> = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
 
+export const glyph = (type: PieceType): string => GLYPH[type] + '︎';
+
 export const pieceEl = (type: PieceType, color: Color): HTMLElement =>
-  h('span', { class: `piece ${color}`, 'aria-hidden': 'true' }, GLYPH[type] + '︎');
+  h('span', { class: `piece ${color}`, 'aria-hidden': 'true' }, glyph(type));
 
 export const squareName = (s: Square): string => 'abcdefgh'[s & 7] + ((s >> 3) + 1);

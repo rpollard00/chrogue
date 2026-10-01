@@ -14,6 +14,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -99,6 +100,8 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
   border: 4px solid #3b2f24;
   border-radius: 4px;
   container-type: inline-size;
+  position: relative;
+  isolation: isolate;
 }
 .board.homes { width: min(100%, 480px); margin-bottom: 0.5rem; }
 
@@ -138,7 +141,10 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
   line-height: 1;
   user-select: none;
 }
-.square .piece { font-size: 9.5cqw; }
+.square .piece, .pieces .piece { font-size: 9.5cqw; }
+/* The layer is above a square that has the keyboard focus. */
+.pieces { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.pieces .piece { position: absolute; top: 0; left: 0; width: 12.5%; height: 12.5%; display: grid; place-items: center; }
 .piece.w { color: #fbf8f0; -webkit-text-stroke: 1.5px #1c1a17; paint-order: stroke fill; }
 .piece.b { color: #17161a; -webkit-text-stroke: 1px #8d8a84; paint-order: stroke fill; }
 

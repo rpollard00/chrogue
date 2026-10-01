@@ -1,9 +1,9 @@
-import { inCheck, kingSquare, legalMoves } from '../../engine';
-import type { Color, Move, Square } from '../../engine';
+import { inCheck, kingSquare, legalMoves, other } from '../../engine';
+import type { Color, Move, PieceId, PieceType, Square } from '../../engine';
 import { FLOORS, PIECE_NAME, enemyMove, floorOf, playMove, settleBattle } from '../../game';
 import type { BattleResult } from '../../game';
 import type { App, ScreenOf } from '../app';
-import { button, h, pieceEl, squareName } from '../dom';
+import { button, glyph, h, pieceEl, squareName } from '../dom';
 import { burst, tally } from '../effects';
 import type { TallyRow } from '../effects';
 import { relicList } from '../widgets';
@@ -12,40 +12,6 @@ type BattleScreen = ScreenOf<'battle'>;
 
 // The delay lets the browser show the move of the player before the search starts.
 const ENEMY_DELAY_MS = 350;
-
-function clickSquare(app: App, screen: BattleScreen, s: Square): void {
-  const { view } = screen, { state } = view.battle;
-  if (view.busy || view.battle.result || view.promotion || state.turn !== 'w') return;
-  const moves = view.targets.filter((m) => m.to === s);
-  if (moves.length > 1) {
-    view.promotion = moves;
-  } else if (moves.length === 1) {
-    return commit(app, screen, moves[0]);
-  } else if (state.board[s]?.color === 'w' && s !== view.selected) {
-    view.selected = s;
-    view.targets = legalMoves(state).filter((m) => m.from === s);
-  } else {
-    view.selected = -1;
-    view.targets = [];
-  }
-  app.render();
-}
-
-function commit(app: App, screen: BattleScreen, move: Move): void {
-  const { run, view } = screen;
-  playMove(view.battle, run, move);
-  Object.assign(view, { last: move, selected: -1, targets: [], promotion: null });
-  if (!view.battle.result && view.battle.state.turn === 'b') {
-    view.busy = true;
-    setTimeout(() => {
-      // The player can leave the battle while the enemy waits.
-      if (app.screen !== screen) return;
-      view.busy = false;
-      commit(app, screen, enemyMove(view.battle, run));
-    }, ENEMY_DELAY_MS);
-  }
-  app.render();
-}
 
 function leave(app: App, screen: BattleScreen): void {
   const { run, view } = screen;
@@ -89,56 +55,154 @@ function viewResult(app: App, screen: BattleScreen, result: BattleResult): HTMLE
     button('Continue', () => leave(app, screen), { class: 'primary' }));
 }
 
-function viewBoard(app: App, screen: BattleScreen): HTMLElement {
-  const { view } = screen, { state } = view.battle;
-  const check = inCheck(state, state.turn) ? kingSquare(state, state.turn) : -1;
+// Makes the battle screen one time. After that, each click and each move changes only the elements that are different.
+export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
+  const { run, view } = screen, { battle } = view, { state } = battle, spec = floorOf(run);
+
+  const squares: HTMLElement[] = [];
   const board = h('div', { class: 'board' });
   for (let r = 7; r >= 0; r--) {
     for (let f = 0; f < 8; f++) {
-      const s = r * 8 + f, p = state.board[s];
-      const targets = view.targets.filter((m) => m.to === s);
-      const classes = ['square', (f + r) % 2 ? 'light' : 'dark'];
-      if (s === view.selected) classes.push('selected');
-      if (view.last && (s === view.last.from || s === view.last.to)) classes.push('last');
-      if (s === check) classes.push('check');
-      if (targets.length) classes.push(p || targets.some((m) => m.epCapture) ? 'capture' : 'target');
-      const label = squareName(s) + (p ? `, ${p.color === 'w' ? 'white' : 'black'} ${PIECE_NAME[p.type].toLowerCase()}` : '');
-      board.append(h('button',
-        { type: 'button', class: classes.join(' '), 'aria-label': label, onclick: () => clickSquare(app, screen, s) },
-        p && pieceEl(p.type, p.color),
+      const s = r * 8 + f;
+      squares[s] = h('button',
+        { type: 'button', class: `square ${(f + r) % 2 ? 'light' : 'dark'}`, onclick: () => clickSquare(s) },
         f === 0 && h('span', { class: 'rank', 'aria-hidden': 'true' }, String(r + 1)),
-        r === 0 && h('span', { class: 'file', 'aria-hidden': 'true' }, 'abcdefgh'[f])));
+        r === 0 && h('span', { class: 'file', 'aria-hidden': 'true' }, 'abcdefgh'[f]));
+      board.append(squares[s]);
     }
   }
-  return board;
-}
+  // The pieces are in a layer above the squares. Each piece keeps its element for the full battle.
+  const pieceLayer = h('div', { class: 'pieces', 'aria-hidden': 'true' });
+  const shown = new Map<PieceId, { el: HTMLElement; type: PieceType }>();
+  board.append(pieceLayer);
 
-export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
-  const { run, view } = screen, { battle } = view, spec = floorOf(run);
-  let status = 'Your move.';
-  if (view.promotion) status = 'Select a piece for the promotion.';
-  else if (view.busy) status = 'The enemy thinks.';
-  else if (inCheck(battle.state, 'w')) status = 'Your king is in check.';
-  const taken = (color: Color, by: Color) => h('div', { class: 'taken' },
-    battle.taken[by].length ? battle.taken[by].map((type) => pieceEl(type, color)) : h('span', { class: 'dim' }, 'None'));
-  const promotion = view.promotion && h('div', { class: 'promotion' },
-    view.promotion.map((m) => m.promo && h('button',
-      { type: 'button', 'aria-label': PIECE_NAME[m.promo], onclick: () => commit(app, screen, m) },
-      pieceEl(m.promo, 'w'))));
-  const giveUp = () => {
-    if (confirm('The run will end. Give up?')) app.endRun(run, false);
+  const status = h('p', { class: 'status', role: 'status' });
+  const promotion = h('div', { class: 'promotion' });
+  // The pieces that each side captured.
+  const trays: Record<Color, HTMLElement> = {
+    w: h('div', { class: 'taken' }, h('span', { class: 'dim' }, 'None')),
+    b: h('div', { class: 'taken' }, h('span', { class: 'dim' }, 'None')),
   };
+  const gold = h('p');
+  const giveUp = button('Give up', () => {
+    if (confirm('The run will end. Give up?')) app.endRun(run, false);
+  });
+  const wrap = h('div', { class: 'board-wrap' }, board);
+
+  function syncSquares(): void {
+    const check = inCheck(state, state.turn) ? kingSquare(state, state.turn) : -1;
+    squares.forEach((el, s) => {
+      const p = state.board[s], targets = view.targets.filter((m) => m.to === s);
+      const capture = targets.length > 0 && (p !== null || targets.some((m) => m.epCapture));
+      el.classList.toggle('selected', s === view.selected);
+      el.classList.toggle('last', view.last !== null && (s === view.last.from || s === view.last.to));
+      el.classList.toggle('check', s === check);
+      el.classList.toggle('capture', capture);
+      el.classList.toggle('target', targets.length > 0 && !capture);
+      el.setAttribute('aria-label',
+        squareName(s) + (p ? `, ${p.color === 'w' ? 'white' : 'black'} ${PIECE_NAME[p.type].toLowerCase()}` : ''));
+    });
+  }
+
+  function syncPieces(): void {
+    const onBoard = new Set<PieceId>();
+    state.board.forEach((p, s) => {
+      if (!p) return;
+      onBoard.add(p.id);
+      let piece = shown.get(p.id);
+      if (!piece) {
+        piece = { el: pieceEl(p.type, p.color), type: p.type };
+        shown.set(p.id, piece);
+        pieceLayer.append(piece.el);
+      } else if (piece.type !== p.type) {
+        piece.el.textContent = glyph(p.type);
+        piece.type = p.type;
+      }
+      piece.el.style.translate = `${(s & 7) * 100}% ${(7 - (s >> 3)) * 100}%`;
+    });
+    for (const [id, { el }] of shown) {
+      if (onBoard.has(id)) continue;
+      el.remove();
+      shown.delete(id);
+    }
+  }
+
+  function syncTray(by: Color): void {
+    const tray = trays[by], types = battle.taken[by];
+    if (!types.length) return;
+    tray.querySelector('.dim')?.remove();
+    for (let i = tray.childElementCount; i < types.length; i++) tray.append(pieceEl(types[i], other(by)));
+  }
+
+  function syncSide(): void {
+    let text = 'Your move.';
+    if (view.promotion) text = 'Select a piece for the promotion.';
+    else if (view.busy) text = 'The enemy thinks.';
+    else if (inCheck(state, 'w')) text = 'Your king is in check.';
+    // A screen reader reads the status again when its content changes, thus the content changes only with the text.
+    if (status.textContent !== text) status.textContent = text;
+    status.hidden = giveUp.hidden = battle.result !== null;
+    promotion.hidden = view.promotion === null;
+    promotion.replaceChildren(...(view.promotion ?? []).flatMap((m) => (m.promo ? [h('button',
+      { type: 'button', 'aria-label': PIECE_NAME[m.promo], onclick: () => commit(m) },
+      pieceEl(m.promo, 'w'))] : [])));
+    syncTray('w');
+    syncTray('b');
+    gold.textContent = `Gold: ${run.gold} (+${Math.round(battle.gold)} from captures)`;
+  }
+
+  function sync(): void {
+    syncSquares();
+    syncPieces();
+    syncSide();
+  }
+
+  function clickSquare(s: Square): void {
+    if (view.busy || battle.result || view.promotion || state.turn !== 'w') return;
+    const moves = view.targets.filter((m) => m.to === s);
+    if (moves.length > 1) {
+      view.promotion = moves;
+    } else if (moves.length === 1) {
+      return commit(moves[0]);
+    } else if (state.board[s]?.color === 'w' && s !== view.selected) {
+      view.selected = s;
+      view.targets = legalMoves(state).filter((m) => m.from === s);
+    } else {
+      view.selected = -1;
+      view.targets = [];
+    }
+    sync();
+  }
+
+  function commit(move: Move): void {
+    playMove(battle, run, move);
+    Object.assign(view, { last: move, selected: -1, targets: [], promotion: null });
+    if (battle.result) {
+      wrap.append(viewResult(app, screen, battle.result));
+    } else if (state.turn === 'b') {
+      view.busy = true;
+      setTimeout(() => {
+        // The player can leave the battle while the enemy waits.
+        if (app.screen !== screen) return;
+        view.busy = false;
+        commit(enemyMove(battle, run));
+      }, ENEMY_DELAY_MS);
+    }
+    sync();
+  }
+
+  sync();
   return h('main', { class: 'battle' },
-    h('div', { class: 'board-wrap' }, viewBoard(app, screen), battle.result && viewResult(app, screen, battle.result)),
+    wrap,
     h('aside', { class: 'side' },
       h('p', { class: 'dim' }, `Floor ${run.floor} of ${FLOORS.length}${spec.boss ? ' · Boss' : ''}`),
       h('h2', {}, spec.name),
-      !battle.result && h('p', { class: 'status', role: 'status' }, status),
+      status,
       promotion,
       h('h3', {}, 'Enemy traits'), relicList(run.enemy.traits, 'enemy'),
       h('h3', {}, 'Your relics'), relicList(run.relics, 'player'),
-      h('h3', {}, 'Pieces that you captured'), taken('b', 'w'),
-      h('h3', {}, 'Pieces that you lost'), taken('w', 'b'),
-      h('p', {}, `Gold: ${run.gold} (+${Math.round(battle.gold)} from captures)`),
-      !battle.result && button('Give up', giveUp)));
+      h('h3', {}, 'Pieces that you captured'), trays.w,
+      h('h3', {}, 'Pieces that you lost'), trays.b,
+      gold,
+      giveUp));
 }
