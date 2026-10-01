@@ -141,7 +141,7 @@ test('the last floor ends the run with a win', () => {
   play(battle, run, 'a1', 'a2');
   expect(settleBattle(run, battle)).toBe('won');
   const meta = emptyMeta();
-  expect(finishRun(meta, run, true)).toEqual({ won: true, cleared: 8, crowns: 13 });
+  expect(finishRun(meta, run, true)).toEqual({ won: true, cleared: 8, bonus: 5, crowns: 13 });
   expect(meta).toMatchObject({ crowns: 13, best: 8, runs: 1 });
 });
 

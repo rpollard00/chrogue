@@ -49,5 +49,8 @@ export interface Meta {
 export interface RunSummary {
   won: boolean;
   cleared: number;
+  /** The crowns for the win of the run. */
+  bonus: number;
+  /** All the crowns of the run. */
   crowns: number;
 }

@@ -60,9 +60,9 @@ export function rerollShop(run: Run): boolean {
 // Adds the result of a run to the permanent data.
 export function finishRun(meta: Meta, run: Run, won: boolean): RunSummary {
   const cleared = won ? FLOORS.length : run.floor - 1;
-  const crowns = cleared + (won ? WIN_CROWNS : 0);
+  const bonus = won ? WIN_CROWNS : 0, crowns = cleared + bonus;
   meta.crowns += crowns;
   meta.best = Math.max(meta.best, cleared);
   meta.runs++;
-  return { won, cleared, crowns };
+  return { won, cleared, bonus, crowns };
 }

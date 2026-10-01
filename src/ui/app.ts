@@ -1,6 +1,6 @@
 // The contract between the screens and the application shell in main.ts.
 import type { Move, Square } from '../engine';
-import type { Battle, Meta, Run, RunSummary } from '../game';
+import type { Battle, Meta, Run, RunSummary, UpgradeId } from '../game';
 
 /** A battle and the selection state of its board. */
 export interface BattleView {
@@ -19,7 +19,8 @@ export interface BattleView {
 export type Screen =
   | { name: 'title' }
   | { name: 'help' }
-  | { name: 'upgrades' }
+  // bought is the upgrade that the player bought last on this screen.
+  | { name: 'upgrades'; bought: UpgradeId | null }
   | { name: 'battle'; run: Run; view: BattleView }
   | { name: 'camp'; run: Run; selected: Square }
   | { name: 'over'; summary: RunSummary };

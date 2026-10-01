@@ -15,7 +15,7 @@ export function viewTitle(app: App): HTMLElement {
     h('div', { class: 'menu' },
       run && button(`Continue run (floor ${run.floor})`, resume, { class: 'primary' }),
       button('New run', start, { class: run ? '' : 'primary' }),
-      button('Upgrades', () => app.show({ name: 'upgrades' })),
+      button('Upgrades', () => app.show({ name: 'upgrades', bought: null })),
       button('How to play', () => app.show({ name: 'help' }))),
     h('p', { class: 'dim' }, `Crowns: ${meta.crowns} · Best: ${meta.best} of ${FLOORS.length} floors · Runs: ${meta.runs}`));
 }

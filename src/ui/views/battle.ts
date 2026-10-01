@@ -4,6 +4,8 @@ import { FLOORS, PIECE_NAME, enemyMove, floorOf, playMove, settleBattle } from '
 import type { BattleResult } from '../../game';
 import type { App, ScreenOf } from '../app';
 import { button, h, pieceEl, squareName } from '../dom';
+import { burst, tally } from '../effects';
+import type { TallyRow } from '../effects';
 import { relicList } from '../widgets';
 
 type BattleScreen = ScreenOf<'battle'>;
@@ -70,18 +72,20 @@ const DRAW_TEXT: Record<'clock' | 'bare', string> = {
 };
 
 function viewResult(app: App, screen: BattleScreen, result: BattleResult): HTMLElement {
-  const { reward } = result, lines: string[] = [];
-  if (result.winner !== 'b') {
-    lines.push(`Gold from captures: ${reward.captures}`);
-    if (reward.clear) lines.push(`Gold for the win: ${reward.clear}`);
-    for (const bonus of reward.bonuses) lines.push(`Gold from ${bonus.label}: ${bonus.gold}`);
-    const rescued = screen.view.battle.rescued.length;
-    if (rescued) lines.push(`Pieces that return to your army: ${rescued}`);
+  const { reward, winner } = result, rows: TallyRow[] = [];
+  let rescued = 0;
+  if (winner !== 'b') {
+    rows.push({ label: 'Gold from captures', value: reward.captures });
+    if (reward.clear) rows.push({ label: 'Gold for the win', value: reward.clear });
+    for (const bonus of reward.bonuses) rows.push({ label: `Gold from ${bonus.label}`, value: bonus.gold });
+    rescued = screen.view.battle.rescued.length;
   }
-  return h('div', { class: 'result', role: 'status' },
-    h('h2', {}, result.winner === 'w' ? 'Victory' : result.winner === 'b' ? 'Defeat' : 'Draw'),
-    h('p', {}, result.winner === null ? DRAW_TEXT[result.reason] : WIN_TEXT[result.winner][result.reason]),
-    lines.map((line) => h('p', { class: 'dim' }, line)),
+  const kind = winner === 'w' ? 'victory' : winner === 'b' ? 'defeat' : 'draw';
+  return h('div', { class: `result ${kind}`, role: 'status' },
+    h('h2', {}, winner === 'w' ? 'Victory' : winner === 'b' ? 'Defeat' : 'Draw', winner === 'w' && burst()),
+    h('p', {}, winner === null ? DRAW_TEXT[result.reason] : WIN_TEXT[winner][result.reason]),
+    rows.length > 0 && tally(rows, 'Total gold'),
+    rescued > 0 && h('p', { class: 'dim' }, `Pieces that return to your army: ${rescued}`),
     button('Continue', () => leave(app, screen), { class: 'primary' }));
 }
 

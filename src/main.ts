@@ -19,7 +19,7 @@ function view(): HTMLElement {
   switch (screen.name) {
     case 'title': return viewTitle(app);
     case 'help': return viewHelp(app);
-    case 'upgrades': return viewUpgrades(app);
+    case 'upgrades': return viewUpgrades(app, screen);
     case 'battle': return viewBattle(app, screen);
     case 'camp': return viewCamp(app, screen);
     case 'over': return viewOver(app, screen);
