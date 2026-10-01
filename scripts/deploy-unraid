@@ -13,6 +13,7 @@ cd "$(dirname "$0")/.."
 image="$NAME:$(date -u +%Y%m%d%H%M%S)"
 remote() { ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 "$SSH_TARGET" "$@"; }
 
+bun run check
 bun test
 docker build --platform linux/amd64 --label "$LABEL" -t "$image" .
 

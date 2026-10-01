@@ -79,7 +79,7 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .card h3 { margin: 0; font-size: 1rem; color: var(--text); text-transform: none; letter-spacing: 0; }
 .card p { flex: 1; font-size: 0.9rem; color: var(--dim); margin: 0 0 0.5rem; }
 .card .piece, .card .icon { font-size: 2.25rem; line-height: 1; }
-.card.relic .icon { color: var(--accent); }
+.icon.relic { color: var(--accent); }
 .icon.gold { color: #e6c34a; }
 
 .camp header { display: flex; justify-content: space-between; align-items: baseline; }

@@ -3,7 +3,8 @@
 !httpd.conf
 !package.json
 !bun.lock
-!vite.config.js
+!vite.config.ts
+!tsconfig.json
 !index.html
 !style.css
 !src/
