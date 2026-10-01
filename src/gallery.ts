@@ -17,7 +17,7 @@ const TYPE: Record<string, PieceType> = { K: 'k', Q: 'q', R: 'r', B: 'b', N: 'n'
 const pieces = (list: string): { type: PieceType; square: Square }[] =>
   list.split(' ').map((item) => (item.length === 3 ? { type: TYPE[item[0]], square: sq(item.slice(1)) } : { type: 'p', square: sq(item) }));
 
-const meta = (): Meta => ({ crowns: 12, best: 3, runs: 4, upgrades: { gold: 2 } });
+const meta = (): Meta => ({ crowns: 12, best: 3, runs: 4, upgrades: { gold: 2, bishop: 1 } });
 
 function run(army: string, enemy: string, rest: Partial<Run> = {}): Run {
   const units = pieces(army).map((piece, i) => ({ id: i + 1, type: piece.type, home: piece.square }));
@@ -28,6 +28,7 @@ function run(army: string, enemy: string, rest: Partial<Run> = {}): Run {
 }
 
 const ARMY = 'Ke1 Ra1 Ng1 c2 d2 e2 f2';
+const FULL_ARMY = 'Ke1 Ra1 Nb1 Bc1 Qd1 Bf1 Ng1 Rh1 a2 b2 c2 d2 e2 f2 g2 h2';
 const DRAFT: Offer[] = [{ kind: 'piece', type: 'n' }, { kind: 'relic', id: 'interest' }, { kind: 'gold', amount: 16 }];
 const SHOP: Offer[] = [
   { kind: 'piece', type: 'b' }, { kind: 'piece', type: 'p' }, { kind: 'relic', id: 'secondWind' }, { kind: 'relic', id: 'sidestep' },
@@ -123,6 +124,18 @@ const DEMOS: Demo[] = [
     group: 'Camp', name: 'New shop items', note: 'The shop cards turn.',
     start: (app) => app.openCamp(camp()),
     steps: [press('Get new items')],
+  },
+  {
+    group: 'Camp', name: 'Cards that the player cannot take',
+    note: 'The army is full, the run has Bounty, and the gold is not sufficient for Sidestep.',
+    start: (app) => app.openCamp(run(FULL_ARMY, 'Ke8 d7 e7', {
+      gold: 8, phase: 'camp', relics: ['bounty'],
+      shop: [{ kind: 'piece', type: 'b' }, { kind: 'relic', id: 'bounty' }, { kind: 'relic', id: 'sidestep' }],
+    })),
+  },
+  {
+    group: 'Between runs', name: 'Relic list', note: 'The help screen shows each relic with its text.',
+    start: (app) => app.show({ name: 'help' }),
   },
   {
     group: 'Between runs', name: 'Upgrade', note: 'The card flashes, and the crowns count down.',
