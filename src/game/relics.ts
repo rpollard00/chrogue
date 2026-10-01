@@ -104,9 +104,9 @@ export const isRelicId = (value: unknown): value is RelicId => typeof value === 
 export const rulesFor = (ids: readonly RelicId[]): RuleSet => Object.assign({}, ...ids.map((id) => RELICS[id].rules));
 
 // The relics of a list that have hooks, with their names.
-export function hooksOf(ids: readonly RelicId[]): { name: string; hooks: RelicHooks }[] {
+export function hooksOf(ids: readonly RelicId[]): { id: RelicId; name: string; hooks: RelicHooks }[] {
   return ids.flatMap((id) => {
     const { name, hooks } = RELICS[id];
-    return hooks ? [{ name, hooks }] : [];
+    return hooks ? [{ id, name, hooks }] : [];
   });
 }

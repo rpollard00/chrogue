@@ -77,9 +77,9 @@ test('Bounty and Interest add gold', () => {
     r.gold = 20;
   });
   const battle = createBattle(run);
-  expect(play(battle, run, 'a1', 'a2')).toEqual({ capture: { square: sq('a2'), gold: 7.5 } });
+  expect(play(battle, run, 'a1', 'a2')).toEqual({ capture: { square: sq('a2'), gold: 7.5 }, relics: ['bounty', 'interest'] });
   // Captures: 5 * 1.5 = 7.5, which rounds to 8. Interest: floor((20 + 8 + 4) / 5) = 6.
-  expect(battle.result?.reward).toEqual({ captures: 8, clear: 4, bonuses: [{ label: 'Interest', gold: 6 }] });
+  expect(battle.result?.reward).toEqual({ captures: 8, clear: 4, bonuses: [{ id: 'interest', label: 'Interest', gold: 6 }] });
 });
 
 test('a captured unit leaves the army, and Second Wind returns the first one', () => {

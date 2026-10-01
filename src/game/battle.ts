@@ -3,6 +3,7 @@ import { VALUE, chooseMove, createState, makeMove, outcome } from '../engine';
 import type { Color, Move, Outcome, PieceSetup, PieceType, Square, State } from '../engine';
 import { FLOORS, floorOf } from './floors';
 import { hooksOf, rulesFor } from './relics';
+import type { RelicId } from './relics';
 import { enterCamp } from './run';
 import type { Run } from './types';
 
@@ -10,7 +11,7 @@ export interface BattleReward {
   captures: number;
   clear: number;
   /** Extra gold from relics. label is the relic name. */
-  bonuses: { label: string; gold: number }[];
+  bonuses: { id: RelicId; label: string; gold: number }[];
 }
 
 export type BattleResult = Outcome & { reward: BattleReward };
@@ -32,6 +33,8 @@ export interface Battle {
 export interface MoveReport {
   /** The square of the captured piece and the gold that the capture gave, or null. */
   capture: { square: Square; gold: number } | null;
+  /** The relics of the player that had an effect. */
+  relics: RelicId[];
 }
 
 export function createBattle(run: Run): Battle {
@@ -50,9 +53,9 @@ function rewardFor(run: Run, battle: Battle, result: Outcome): BattleReward {
   reward.captures = Math.round(battle.gold);
   if (result.winner === null) return reward;
   reward.clear = 3 + run.floor;
-  for (const { name, hooks } of hooksOf(run.relics)) {
+  for (const { id, name, hooks } of hooksOf(run.relics)) {
     const gold = hooks.victoryGold?.(run.gold + totalGold(reward)) ?? 0;
-    if (gold > 0) reward.bonuses.push({ label: name, gold });
+    if (gold > 0) reward.bonuses.push({ id, label: name, gold });
   }
   return reward;
 }
@@ -65,21 +68,32 @@ export function playMove(battle: Battle, run: Run, move: Move): MoveReport {
   const { state } = battle;
   const mover = state.turn;
   const { captured, capSq } = makeMove(state, move);
-  const report: MoveReport = { capture: captured && { square: capSq, gold: 0 } };
+  const report: MoveReport = { capture: captured && { square: capSq, gold: 0 }, relics: [] };
   if (captured && report.capture) {
     battle.taken[mover].push(captured.type);
     const relics = hooksOf(run.relics);
     const unit = run.army.find((u) => u.id === captured.id);
     if (mover === 'w') {
-      report.capture.gold = relics.reduce((gold, { hooks }) => hooks.captureGold?.(gold) ?? gold, VALUE[captured.type]);
-      battle.gold += report.capture.gold;
+      let gold = VALUE[captured.type];
+      for (const { id, hooks } of relics) {
+        const next = hooks.captureGold?.(gold) ?? gold;
+        if (next !== gold) report.relics.push(id);
+        gold = next;
+      }
+      report.capture.gold = gold;
+      battle.gold += gold;
     } else if (unit) {
-      const rescued = relics.some(({ hooks }) => hooks.rescueUnit?.({ rescued: battle.rescued.length }));
-      (rescued ? battle.rescued : battle.lost).push(unit.id);
+      const rescuer = relics.find(({ hooks }) => hooks.rescueUnit?.({ rescued: battle.rescued.length }));
+      if (rescuer) report.relics.push(rescuer.id);
+      (rescuer ? battle.rescued : battle.lost).push(unit.id);
     }
   }
   const result = outcome(state);
-  if (result) battle.result = { ...result, reward: rewardFor(run, battle, result) };
+  if (result) {
+    const reward = rewardFor(run, battle, result);
+    battle.result = { ...result, reward };
+    report.relics.push(...reward.bonuses.map((bonus) => bonus.id));
+  }
   return report;
 }
 

@@ -93,6 +93,7 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
     if (confirm('The run will end. Give up?')) app.endRun(run, false);
   });
   const wrap = h('div', { class: 'board-wrap' }, board);
+  const relics = relicList(run.relics, 'player');
 
   function syncSquares(): void {
     const check = inCheck(state, state.turn) ? kingSquare(state, state.turn) : -1;
@@ -214,6 +215,10 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
     showCapture(report);
     const checked = squares.find((el) => el.classList.contains('check'));
     if (checked) replay(checked, 'alarm');
+    for (const id of report.relics) {
+      const item = relics.querySelector<HTMLElement>(`[data-relic="${id}"]`);
+      if (item) replay(item, 'flash');
+    }
   }
 
   sync();
@@ -225,7 +230,7 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
       status,
       promotion,
       h('h3', {}, 'Enemy traits'), relicList(run.enemy.traits, 'enemy'),
-      h('h3', {}, 'Your relics'), relicList(run.relics, 'player'),
+      h('h3', {}, 'Your relics'), relics,
       h('h3', {}, 'Pieces that you captured'), trays.w,
       h('h3', {}, 'Pieces that you lost'), trays.b,
       h('p', {}, `Gold: ${run.gold} (+`, captureGold, ' from captures)'),

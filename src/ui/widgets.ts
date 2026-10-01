@@ -20,6 +20,6 @@ export function relicList(ids: readonly RelicId[], side: 'player' | 'enemy', emp
   if (!ids.length) return h('p', { class: 'dim' }, empty);
   return h('ul', { class: 'relics' }, ids.map((id) => {
     const relic = RELICS[id];
-    return h('li', {}, h('strong', {}, relic.name), ' ', side === 'enemy' ? relic.foeText ?? relic.text : relic.text);
+    return h('li', { 'data-relic': id }, h('strong', {}, relic.name), ' ', side === 'enemy' ? relic.foeText ?? relic.text : relic.text);
   }));
 }
