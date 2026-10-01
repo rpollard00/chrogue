@@ -92,7 +92,11 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
   const giveUp = button('Give up', () => {
     if (confirm('The run will end. Give up?')) app.endRun(run, false);
   });
-  const wrap = h('div', { class: 'board-wrap' }, board);
+  const floor = `Floor ${run.floor} of ${FLOORS.length}${spec.boss ? ' · Boss' : ''}`;
+  // The banner repeats the text of the side panel, thus a screen reader ignores it.
+  const intro = h('div', { class: spec.boss ? 'intro boss' : 'intro', 'aria-hidden': 'true' },
+    h('p', {}, floor), h('strong', {}, spec.name));
+  const wrap = h('div', { class: 'board-wrap' }, board, intro);
   const relics = relicList(run.relics, 'player');
 
   function syncSquares(): void {
@@ -225,7 +229,7 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
   return h('main', { class: 'battle' },
     wrap,
     h('aside', { class: 'side' },
-      h('p', { class: 'dim' }, `Floor ${run.floor} of ${FLOORS.length}${spec.boss ? ' · Boss' : ''}`),
+      h('p', { class: 'dim' }, floor),
       h('h2', {}, spec.name),
       status,
       promotion,
