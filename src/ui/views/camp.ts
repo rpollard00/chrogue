@@ -7,7 +7,7 @@ import {
 import type { App, ScreenOf } from '../app';
 import { button, h, pieceEl, squareName } from '../dom';
 import { counter } from '../effects';
-import { flashRelics, offerCard, relicList } from '../widgets';
+import { amount, flashRelics, offerCard, relicList } from '../widgets';
 
 type CampScreen = ScreenOf<'camp'>;
 
@@ -80,7 +80,7 @@ export function viewCamp(app: App, screen: CampScreen): HTMLElement {
   return h('main', { class: 'panel camp' },
     h('header', {},
       h('h1', {}, 'Camp'),
-      h('p', { class: 'gold-count' }, 'Gold: ', counter({ from: acted?.goldBefore ?? run.gold, to: run.gold }))),
+      h('p', { class: 'gold-count purse' }, amount('gold', counter({ from: acted?.goldBefore ?? run.gold, to: run.gold })))),
     draft,
     shop,
     h('section', {},

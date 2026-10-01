@@ -6,7 +6,7 @@ import type { App, ScreenOf } from '../app';
 import { button, glyph, h, pieceEl, squareName } from '../dom';
 import { burst, counter, removeWhenDone, replay, tally } from '../effects';
 import type { TallyRow } from '../effects';
-import { flashRelics, relicList } from '../widgets';
+import { amount, flashRelics, relicList } from '../widgets';
 
 type BattleScreen = ScreenOf<'battle'>;
 
@@ -234,6 +234,6 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
       h('h3', {}, 'Your relics'), relics,
       h('h3', {}, 'Pieces that you captured'), trays.w,
       h('h3', {}, 'Pieces that you lost'), trays.b,
-      h('p', {}, `Gold: ${run.gold} (+`, captureGold, ' from captures)'),
+      h('p', {}, amount('gold', String(run.gold)), ' (+', captureGold, ' from captures)'),
       giveUp));
 }

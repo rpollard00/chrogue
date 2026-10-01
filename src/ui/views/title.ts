@@ -37,6 +37,6 @@ export function viewHelp(app: App): HTMLElement {
     h('h2', {}, 'How to play'),
     h('ul', { class: 'rules' }, rules.map((rule) => h('li', {}, rule))),
     h('h2', {}, 'Relics'),
-    relicList(RELIC_IDS, 'player'),
+    relicList(RELIC_IDS, 'player', true),
     button('Back', () => app.show({ name: 'title' })));
 }
