@@ -1,0 +1,7 @@
+**
+!Dockerfile
+!httpd.conf
+!index.html
+!style.css
+!src/
+!src/**

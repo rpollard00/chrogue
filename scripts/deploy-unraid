@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Builds the image on this workstation and replaces the chrogue container on the Unraid server.
+# The script sends the image through SSH. It does not use a registry.
+set -euo pipefail
+
+SSH_TARGET=${CHROGUE_SSH_TARGET:-root@media.media}
+NETWORK=${CHROGUE_NETWORK:-br0}
+ADDRESS=${CHROGUE_ADDRESS:-192.168.88.13}
+NAME=chrogue
+LABEL=io.chrogue.app=1
+
+cd "$(dirname "$0")/.."
+image="$NAME:$(date -u +%Y%m%d%H%M%S)"
+remote() { ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 "$SSH_TARGET" "$@"; }
+
+npm test
+docker build --platform linux/amd64 --label "$LABEL" -t "$image" .
+
+# A container with this name that this script did not make stops the deployment.
+existing=$(remote "docker ps -a --filter name=^$NAME\$ --format '{{.Label \"io.chrogue.app\"}}|{{.ID}}'")
+if [[ -n $existing && $existing != 1\|* ]]; then
+  echo "A container named $NAME exists on $SSH_TARGET, and this script did not make it. Remove it first." >&2
+  exit 1
+fi
+
+docker save "$image" | remote docker load
+if [[ -n $existing ]]; then remote "docker rm -f $NAME" >/dev/null; fi
+# The sysctl lets the unprivileged user listen on port 80.
+remote "docker run -d --name $NAME --label $LABEL --restart unless-stopped \
+  --network $NETWORK --ip $ADDRESS \
+  --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+  --sysctl net.ipv4.ip_unprivileged_port_start=0 $image" >/dev/null
+
+# Remove the images of earlier deployments.
+remote "docker images $NAME --format '{{.Repository}}:{{.Tag}}' | grep -vxF $image | xargs -r docker rmi" >/dev/null || true
+
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if curl -fsS --max-time 3 "http://$ADDRESS/src/main.js" -o /dev/null; then
+    echo "Deployed $image as container $NAME at http://$ADDRESS"
+    exit 0
+  fi
+  sleep 1
+done
+echo "The container started, but http://$ADDRESS did not answer. Run: ssh $SSH_TARGET docker logs $NAME" >&2
+exit 1
