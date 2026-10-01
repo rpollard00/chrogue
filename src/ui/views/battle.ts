@@ -4,7 +4,7 @@ import { FLOORS, PIECE_NAME, enemyMove, floorOf, playMove, settleBattle } from '
 import type { BattleResult } from '../../game';
 import type { App, ScreenOf } from '../app';
 import { button, glyph, h, pieceEl, squareName } from '../dom';
-import { burst, tally } from '../effects';
+import { burst, removeWhenDone, tally } from '../effects';
 import type { TallyRow } from '../effects';
 import { relicList } from '../widgets';
 
@@ -122,7 +122,8 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
     });
     for (const [id, { el }] of shown) {
       if (onBoard.has(id)) continue;
-      el.remove();
+      el.classList.add('gone');
+      removeWhenDone(el);
       shown.delete(id);
     }
   }

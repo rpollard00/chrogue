@@ -24,6 +24,11 @@ export function counter({ to, from = 0, delay = 0 }: { to: number; from?: number
   return el;
 }
 
+/** Removes the element when its animations end. With no animation, the element goes immediately. */
+export function removeWhenDone(el: HTMLElement): void {
+  void Promise.allSettled(el.getAnimations().map((animation) => animation.finished)).then(() => el.remove());
+}
+
 export interface TallyRow {
   label: string;
   value: number;

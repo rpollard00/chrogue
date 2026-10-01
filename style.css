@@ -144,7 +144,18 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .square .piece, .pieces .piece { font-size: 9.5cqw; }
 /* The layer is above a square that has the keyboard focus. */
 .pieces { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
-.pieces .piece { position: absolute; top: 0; left: 0; width: 12.5%; height: 12.5%; display: grid; place-items: center; }
+.pieces .piece {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  width: 12.5%;
+  height: 12.5%;
+  display: grid;
+  place-items: center;
+  transition: translate 180ms ease-out;
+}
+.pieces .piece.gone { z-index: 0; opacity: 0; animation: vanish 260ms ease-in; }
 .piece.w { color: #fbf8f0; -webkit-text-stroke: 1.5px #1c1a17; paint-order: stroke fill; }
 .piece.b { color: #17161a; -webkit-text-stroke: 1px #8d8a84; paint-order: stroke fill; }
 
@@ -253,6 +264,7 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .over .burst i { animation-delay: 700ms; }
 .over .tally { margin-top: 1.25rem; }
 
+@keyframes vanish { from { opacity: 1; } to { opacity: 0; scale: 0.4; } }
 @keyframes pop { from { opacity: 0; transform: translate(-50%, -50%) scale(0.85); } }
 @keyframes dim { from { filter: none; } }
 @keyframes rise { from { opacity: 0; transform: translateY(0.4rem); } }
@@ -270,5 +282,5 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
 }
