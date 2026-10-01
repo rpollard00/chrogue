@@ -92,6 +92,9 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .board-wrap { position: relative; }
 .side { flex: 0 1 300px; }
 .status { font-weight: 600; color: var(--accent); }
+.dots i { font-style: normal; animation: blink 1s infinite; }
+.dots i:nth-child(2) { animation-delay: 150ms; }
+.dots i:nth-child(3) { animation-delay: 300ms; }
 
 .board {
   display: grid;
@@ -119,6 +122,7 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .square.last { box-shadow: inset 0 0 0 100px rgba(217, 164, 65, 0.4); }
 .square.selected { box-shadow: inset 0 0 0 100px rgba(90, 160, 90, 0.6); }
 .square.check { box-shadow: inset 0 0 0 100px rgba(200, 50, 40, 0.65); }
+.square.check.alarm { animation: alarm 380ms ease-in-out 2; }
 .square.target::after {
   content: '';
   width: 28%;
@@ -282,6 +286,8 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .over .tally { margin-top: 1.25rem; }
 
 @keyframes float { from { opacity: 1; } 60% { opacity: 1; } to { opacity: 0; transform: translateY(-90%); } }
+@keyframes alarm { 50% { box-shadow: inset 0 0 0 100px rgba(255, 70, 50, 0.95); } }
+@keyframes blink { 0%, 60%, 100% { opacity: 0.25; } 30% { opacity: 1; } }
 @keyframes vanish { from { opacity: 1; } to { opacity: 0; scale: 0.4; } }
 @keyframes pop { from { opacity: 0; transform: translate(-50%, -50%) scale(0.85); } }
 @keyframes dim { from { filter: none; } }

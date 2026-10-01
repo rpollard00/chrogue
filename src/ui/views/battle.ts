@@ -4,7 +4,7 @@ import { FLOORS, PIECE_NAME, enemyMove, floorOf, playMove, settleBattle } from '
 import type { BattleResult, MoveReport } from '../../game';
 import type { App, ScreenOf } from '../app';
 import { button, glyph, h, pieceEl, squareName } from '../dom';
-import { burst, counter, removeWhenDone, tally } from '../effects';
+import { burst, counter, removeWhenDone, replay, tally } from '../effects';
 import type { TallyRow } from '../effects';
 import { relicList } from '../widgets';
 
@@ -80,6 +80,7 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
   board.append(pieceLayer);
 
   const status = h('p', { class: 'status', role: 'status' });
+  let shownStatus = '';
   const promotion = h('div', { class: 'promotion' });
   // The pieces that each side captured.
   const trays: Record<Color, HTMLElement> = {
@@ -142,10 +143,14 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
   function syncSide(): void {
     let text = 'Your move.';
     if (view.promotion) text = 'Select a piece for the promotion.';
-    else if (view.busy) text = 'The enemy thinks.';
+    else if (view.busy) text = 'The enemy thinks';
     else if (inCheck(state, 'w')) text = 'Your king is in check.';
     // A screen reader reads the status again when its content changes, thus the content changes only with the text.
-    if (status.textContent !== text) status.textContent = text;
+    if (text !== shownStatus) {
+      const dots = view.busy && h('span', { class: 'dots', 'aria-hidden': 'true' }, [1, 2, 3].map(() => h('i', {}, '.')));
+      status.replaceChildren(text, ...(dots ? [dots] : []));
+      shownStatus = text;
+    }
     status.hidden = giveUp.hidden = battle.result !== null;
     promotion.hidden = view.promotion === null;
     promotion.replaceChildren(...(view.promotion ?? []).flatMap((m) => (m.promo ? [h('button',
@@ -206,6 +211,8 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
     }
     sync();
     showCapture(report);
+    const checked = squares.find((el) => el.classList.contains('check'));
+    if (checked) replay(checked, 'alarm');
   }
 
   sync();

@@ -29,6 +29,14 @@ export function removeWhenDone(el: HTMLElement): void {
   void Promise.allSettled(el.getAnimations().map((animation) => animation.finished)).then(() => el.remove());
 }
 
+/** Starts the animation of a class again on an element that stays on the page. */
+export function replay(el: HTMLElement, className: string): void {
+  el.classList.remove(className);
+  // The read of the width makes the browser apply the removal before the class returns.
+  void el.offsetWidth;
+  el.classList.add(className);
+}
+
 export interface TallyRow {
   label: string;
   value: number;
