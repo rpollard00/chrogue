@@ -1,4 +1,4 @@
-// The contract between the screens and the application shell in main.ts.
+// The contract between the screens and the application shell in shell.ts.
 import type { Move, Square } from '../engine';
 import type { Battle, Meta, RelicId, Run, RunSummary, UpgradeId } from '../game';
 
