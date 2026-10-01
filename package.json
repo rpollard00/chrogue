@@ -8,5 +8,8 @@
     "preview": "vite preview",
     "test": "bun test",
     "deploy:unraid": "scripts/deploy-unraid"
+  },
+  "devDependencies": {
+    "vite": "^8.3.1"
   }
 }

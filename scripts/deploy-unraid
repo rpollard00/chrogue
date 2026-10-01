@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 image="$NAME:$(date -u +%Y%m%d%H%M%S)"
 remote() { ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 "$SSH_TARGET" "$@"; }
 
-npm test
+bun test
 docker build --platform linux/amd64 --label "$LABEL" -t "$image" .
 
 # A container with this name that this script did not make stops the deployment.

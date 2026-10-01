@@ -1,6 +1,9 @@
 **
 !Dockerfile
 !httpd.conf
+!package.json
+!bun.lock
+!vite.config.js
 !index.html
 !style.css
 !src/

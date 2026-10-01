@@ -4,18 +4,21 @@ Chrogue is a roguelite chess game for the browser. Each battle is on a standard 
 
 ## Run the game
 
-The game has no build step and no dependencies. It uses ES modules, thus a browser must load it from a web server.
+The project uses Bun and Vite.
 
-1. Run `npm start`.
-2. Open `http://localhost:5188`.
+1. Run `bun install`.
+2. Run `bun run dev`.
+3. Open `http://localhost:5188`.
+
+`bun run build` writes the production files to `dist/`. `bun run preview` serves those files.
 
 ## Run the tests
 
-Run `npm test`. The tests need Node.js 20 or later.
+Run `bun test`.
 
 ## Deploy to Unraid
 
-Run `npm run deploy:unraid`. The command does these steps without a confirmation prompt:
+Run `bun run deploy:unraid`. The command does these steps without a confirmation prompt:
 
 1. It runs the tests and builds the image on this workstation.
 2. It sends the image to `root@media.media` through SSH. It does not use a registry.
@@ -44,6 +47,6 @@ Each run gives crowns. Crowns buy permanent upgrades on the title screen.
 - `src/engine.js`: Chess rules, move generation, and the enemy AI. It has no DOM code.
 - `src/content.js`: Relics, floors, upgrades, prices, and the random generators.
 - `src/main.js`: Run state, screens, and saved data in `localStorage`.
-- `Dockerfile`, `httpd.conf`: The container image. BusyBox `httpd` serves the static files.
+- `Dockerfile`, `httpd.conf`: The container image. Bun and Vite build the files. BusyBox `httpd` serves them.
 - `scripts/deploy-unraid`: The deployment script.
 - `test/engine.test.js`: Perft counts, relic moves, battle results, and AI checks.
