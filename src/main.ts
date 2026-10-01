@@ -53,7 +53,7 @@ const app: App = {
   },
   openCamp(current: Run) {
     saveRun(current);
-    app.show({ name: 'camp', run: current, selected: -1 });
+    app.show({ name: 'camp', run: current, selected: -1, cue: { kind: 'enter' } });
   },
   endRun(current: Run, won: boolean) {
     const summary = finishRun(meta, current, won);

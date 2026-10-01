@@ -2,6 +2,7 @@
 import { RELICS, blockedReason, describeOffer } from '../game';
 import type { Offer, OfferIcon, RelicId, Run } from '../game';
 import { button, h, pieceEl } from './dom';
+import { replay } from './effects';
 
 function offerIcon(icon: OfferIcon): HTMLElement {
   if (icon === 'relic') return h('span', { class: 'icon relic', 'aria-hidden': 'true' }, '✦');
@@ -22,4 +23,12 @@ export function relicList(ids: readonly RelicId[], side: 'player' | 'enemy', emp
     const relic = RELICS[id];
     return h('li', { 'data-relic': id }, h('strong', {}, relic.name), ' ', side === 'enemy' ? relic.foeText ?? relic.text : relic.text);
   }));
+}
+
+/** Starts the flash of some relics in a list that relicList made. */
+export function flashRelics(list: HTMLElement, ids: readonly RelicId[]): void {
+  for (const id of ids) {
+    const item = list.querySelector<HTMLElement>(`[data-relic="${id}"]`);
+    if (item) replay(item, 'flash');
+  }
 }

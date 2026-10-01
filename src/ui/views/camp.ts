@@ -6,7 +6,8 @@ import {
 } from '../../game';
 import type { App, ScreenOf } from '../app';
 import { button, h, pieceEl, squareName } from '../dom';
-import { offerCard, relicList } from '../widgets';
+import { counter } from '../effects';
+import { flashRelics, offerCard, relicList } from '../widgets';
 
 type CampScreen = ScreenOf<'camp'>;
 
@@ -19,10 +20,12 @@ function clickHome(app: App, screen: CampScreen, s: Square): void {
     screen.selected = -1;
     app.saveRun();
   }
+  screen.cue = null;
   app.render();
 }
 
 function viewArmy(app: App, screen: CampScreen): HTMLElement {
+  const added = screen.cue?.kind === 'acted' ? screen.cue.units : [];
   const grid = h('div', { class: 'board homes' });
   for (let r = 1; r >= 0; r--) {
     for (let f = 0; f < 8; f++) {
@@ -31,7 +34,7 @@ function viewArmy(app: App, screen: CampScreen): HTMLElement {
       const label = squareName(s) + (unit ? `, ${PIECE_NAME[unit.type].toLowerCase()}` : '');
       grid.append(h('button',
         { type: 'button', class: classes.join(' '), 'aria-label': label, onclick: () => clickHome(app, screen, s) },
-        unit && pieceEl(unit.type, 'w')));
+        unit && h('span', { class: added.includes(unit.id) ? 'unit new' : 'unit' }, pieceEl(unit.type, 'w'))));
     }
   }
   return grid;
@@ -39,21 +42,31 @@ function viewArmy(app: App, screen: CampScreen): HTMLElement {
 
 export function viewCamp(app: App, screen: CampScreen): HTMLElement {
   const { run } = screen, { meta } = app, spec = floorOf(run);
-  // Runs a camp action, then saves and shows the result.
-  const act = (action: () => void) => () => {
+  const { cue } = screen, acted = cue?.kind === 'acted' ? cue : null;
+  // Runs a camp action, then saves and shows the result. The cue tells the next view what the action changed.
+  const act = (action: () => void, rolled = false) => () => {
+    const goldBefore = run.gold, units = run.army.map((unit) => unit.id), relics = [...run.relics];
     action();
+    screen.cue = {
+      kind: 'acted', goldBefore, rolled,
+      units: run.army.map((unit) => unit.id).filter((id) => !units.includes(id)),
+      relics: run.relics.filter((id) => !relics.includes(id)),
+    };
     app.saveRun();
     app.render();
   };
+  const deal = cue?.kind === 'enter' ? 'cards deal' : 'cards';
+  const relics = relicList(run.relics, 'player');
+  if (acted) flashRelics(relics, acted.relics);
   const draft = run.draft && h('section', {},
     h('h2', {}, 'Select one reward'),
-    h('div', { class: 'cards' },
+    h('div', { class: deal },
       run.draft.map((offer) => offerCard(offer, run, { label: 'Take', run: act(() => takeDraft(run, offer)) }))),
     button('Skip the reward', act(() => skipDraft(run))));
   const shop = h('section', {},
     h('h2', {}, 'Shop'),
     run.shop.length
-      ? h('div', { class: 'cards' }, run.shop.map((offer) => {
+      ? h('div', { class: acted?.rolled ? 'cards flip' : deal }, run.shop.map((offer) => {
         const cost = priceOf(offer, meta);
         return offerCard(offer, run, {
           label: `Buy for ${cost} gold`,
@@ -62,19 +75,19 @@ export function viewCamp(app: App, screen: CampScreen): HTMLElement {
         });
       }))
       : h('p', { class: 'dim' }, 'The shop is empty.'),
-    button(`Get new items for ${REROLL_COST} gold`, act(() => rerollShop(run)), { disabled: run.gold < REROLL_COST }));
+    button(`Get new items for ${REROLL_COST} gold`, act(() => rerollShop(run), true), { disabled: run.gold < REROLL_COST }));
   const enemy = [...run.enemy.pieces].sort((a, b) => VALUE[b.type] - VALUE[a.type] || (a.type === 'k' ? -1 : 1));
   return h('main', { class: 'panel camp' },
     h('header', {},
       h('h1', {}, 'Camp'),
-      h('p', { class: 'gold-count' }, `Gold: ${run.gold}`)),
+      h('p', { class: 'gold-count' }, 'Gold: ', counter({ from: acted?.goldBefore ?? run.gold, to: run.gold }))),
     draft,
     shop,
     h('section', {},
       h('h2', {}, `Your army (${run.army.length} of ${ARMY_MAX})`),
       h('p', { class: 'dim' }, 'To move a piece, select the piece and then select a square.'),
       viewArmy(app, screen),
-      h('h3', {}, 'Your relics'), relicList(run.relics, 'player')),
+      h('h3', {}, 'Your relics'), relics),
     h('section', {},
       h('h2', {}, `Next: floor ${run.floor} of ${FLOORS.length}, ${spec.name}${spec.boss ? ' (boss)' : ''}`),
       h('div', { class: 'taken' }, enemy.map((p) => pieceEl(p.type, 'b'))),

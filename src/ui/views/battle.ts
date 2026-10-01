@@ -6,7 +6,7 @@ import type { App, ScreenOf } from '../app';
 import { button, glyph, h, pieceEl, squareName } from '../dom';
 import { burst, counter, removeWhenDone, replay, tally } from '../effects';
 import type { TallyRow } from '../effects';
-import { relicList } from '../widgets';
+import { flashRelics, relicList } from '../widgets';
 
 type BattleScreen = ScreenOf<'battle'>;
 
@@ -219,10 +219,7 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
     showCapture(report);
     const checked = squares.find((el) => el.classList.contains('check'));
     if (checked) replay(checked, 'alarm');
-    for (const id of report.relics) {
-      const item = relics.querySelector<HTMLElement>(`[data-relic="${id}"]`);
-      if (item) replay(item, 'flash');
-    }
+    flashRelics(relics, report.relics);
   }
 
   sync();
