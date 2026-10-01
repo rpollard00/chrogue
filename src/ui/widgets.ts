@@ -1,7 +1,9 @@
 // Elements that more than one screen uses.
-import { RELICS, blockedReason, describeOffer } from '../game';
+import type { Color, PieceType } from '../engine';
+import { FLOORS, PIECE_NAME, RELICS, blockedReason, describeOffer, floorOf } from '../game';
 import type { Offer, RelicId, Run } from '../game';
-import { h } from './dom';
+import { h, pieceEl } from './dom';
+import type { Child } from './dom';
 import { replay } from './effects';
 import { currencyIcon, medal } from './icons';
 import type { Art, Currency } from './icons';
@@ -10,6 +12,58 @@ import { infoTip } from './tip';
 /** Shows an amount of gold or of crowns with the icon of the currency. */
 export const amount = (currency: Currency, value: Node | string): HTMLElement =>
   h('span', { class: `amount ${currency}` }, currencyIcon(currency), h('span', { class: 'sr-only' }, currency === 'gold' ? 'Gold: ' : 'Crowns: '), value);
+
+export type Side = 'player' | 'enemy';
+
+/** A raised bar that holds the state of one side. Its medal shows the king of the side. */
+export const plaque = (side: Side, label: string, ...kids: (Child | Child[])[]): HTMLElement =>
+  h('section', { class: side === 'enemy' ? 'plaque foe' : 'plaque me', 'aria-label': label },
+    h('span', { class: 'medal' }, pieceEl('k', side === 'enemy' ? 'b' : 'w')), ...kids);
+
+/** The name of the enemy of the floor, the floor, and a badge on a boss floor. `kicker` is a small text above the name. */
+export function enemyName(run: Run, kicker?: string): HTMLElement {
+  const spec = floorOf(run);
+  return h('div', { class: 'id' },
+    kicker && h('span', { class: 'kicker' }, kicker),
+    h('h2', { class: 'name' }, spec.name),
+    h('span', { class: 'sub' }, `Floor ${run.floor} of ${FLOORS.length}`, spec.boss && h('span', { class: 'boss-badge' }, 'Boss')));
+}
+
+/** A recessed slot that shows the gold of the run. `note` is a text after the amount. */
+export const purse = (value: Node | string, note?: Child): HTMLElement =>
+  h('div', { class: 'well purse gold-count' }, amount('gold', value), note);
+
+const ORDER: readonly PieceType[] = ['k', 'q', 'r', 'b', 'n', 'p'];
+
+/** The names of some pieces with the count of each, such as "1 rook, 2 pawns". */
+export const countPieces = (types: readonly PieceType[]): string =>
+  ORDER.flatMap((type) => {
+    const count = types.filter((t) => t === type).length;
+    return count ? [`${count} ${PIECE_NAME[type].toLowerCase()}${count > 1 ? 's' : ''}`] : [];
+  }).join(', ');
+
+export interface PieceWell {
+  el: HTMLElement;
+  /** Shows the pieces. A call adds only the pieces that are new. The well is hidden while it has no piece. */
+  show(types: readonly PieceType[]): void;
+}
+
+/**
+ * A well for pieces that are not on the board. Its lining has the brown of the board.
+ * `label` names the group for a screen reader. `caption` is a visible text before the pieces.
+ */
+export function pieceWell(color: Color, label: string, caption?: string): PieceWell {
+  const row = h('span', { class: 'taken', role: 'img' });
+  const el = h('div', { class: 'well lined', hidden: true }, caption && h('span', { class: 'cap' }, caption), row);
+  return {
+    el,
+    show(types) {
+      for (let i = row.childElementCount; i < types.length; i++) row.append(pieceEl(types[i], color));
+      row.setAttribute('aria-label', `${label}: ${countPieces(types)}`);
+      el.hidden = types.length === 0;
+    },
+  };
+}
 
 type CardKind = Offer['kind'] | 'upgrade';
 
@@ -71,7 +125,7 @@ export function offerCard(offer: Offer, run: Run, action: CardAction): HTMLEleme
   return card({ kind: offer.kind, art: offerArt(offer), ...info, stamp }, { ...action, disabled: stamp !== null || action.disabled });
 }
 
-export function relicList(ids: readonly RelicId[], side: 'player' | 'enemy', detail = false): HTMLElement {
+export function relicList(ids: readonly RelicId[], side: Side, detail = false): HTMLElement {
   if (!ids.length) return h('p', { class: 'dim' }, 'None');
   return h('ul', { class: side === 'enemy' ? 'tokens foe' : 'tokens' }, ids.map((id) => {
     const relic = RELICS[id], text = side === 'enemy' ? relic.foeText ?? relic.text : relic.text;

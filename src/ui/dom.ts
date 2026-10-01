@@ -1,7 +1,7 @@
 // Small helpers that make DOM elements.
 import type { Color, PieceType, Square } from '../engine';
 
-type Child = Node | string | null | undefined | false;
+export type Child = Node | string | null | undefined | false;
 type Props = Record<string, string | boolean | (() => void) | null | undefined>;
 
 export function h(tag: string, props: Props = {}, ...kids: (Child | Child[])[]): HTMLElement {

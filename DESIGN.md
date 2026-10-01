@@ -33,7 +33,7 @@ Rules:
 - A screen has at most two plaques and two shelves. If each group becomes a plaque, the cards do not stand out.
 - A piece that is not on the board is on a board-brown lining. A black piece is not visible on a dark surface.
 - An empty group has no heading and no "None" text.
-- The display typeface is for names, headings, and the wordmark only. Body text uses the system typeface.
+- The display typeface is for names, headings, the wordmark, the primary key, the boss badge, and the purse, as in mockup C. Body text uses the system typeface.
 
 ## Composition
 
@@ -57,6 +57,7 @@ Each color is a custom property in `:root` of `style.css`. A component uses the 
 ## Sources
 
 - Tokens and all styles: `style.css`
+- Display typeface: `src/fonts/ChrogueDisplay.woff2`. It is a Latin subset of Fira Sans Condensed ExtraBold. The license reserves the name "Fira", thus the subset has a different name. The license is in `src/fonts/OFL.txt`.
 - Shared elements: `src/ui/widgets.ts`, `src/ui/icons.ts`, `src/ui/tip.ts`
 - Rendered reference surfaces: `gallery.html` (run `bun run dev`, open `/gallery.html`)
 
