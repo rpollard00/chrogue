@@ -12,6 +12,16 @@ The project uses Bun and Vite.
 
 `bun run build` writes the production files to `dist/`. `bun run preview` serves those files.
 
+## See the animations
+
+The animation gallery shows each screen with prepared data and plays its motion.
+
+1. Run `bun run dev`.
+2. Open `http://localhost:5188/gallery.html`.
+3. Select a demo. Select **Replay** to see the demo again.
+
+The gallery saves nothing, and the production build does not include it.
+
 ## Run the tests
 
 Run `bun test`. Run `bun run check` for the TypeScript type check.
