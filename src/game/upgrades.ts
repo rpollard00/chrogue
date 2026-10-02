@@ -54,6 +54,10 @@ const defs = {
   },
 } satisfies Record<string, UpgradeDef>;
 
+/** The upgrades screen has a set slot for each upgrade. These are the limits of that screen. */
+export const UPGRADE_SLOTS = 16;
+export const UPGRADE_NAME_MAX = 13;
+
 export type UpgradeId = keyof typeof defs;
 export const UPGRADES: Record<UpgradeId, UpgradeDef> = defs;
 export const UPGRADE_IDS = Object.keys(defs) as UpgradeId[];

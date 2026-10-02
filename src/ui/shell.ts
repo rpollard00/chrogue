@@ -24,7 +24,7 @@ export function createApp(root: HTMLElement, store: Store): App {
   function view(): HTMLElement {
     switch (screen.name) {
       case 'title': return viewTitle(app);
-      case 'upgrades': return viewUpgrades(app, screen);
+      case 'upgrades': return viewUpgrades(app);
       case 'battle': return viewBattle(app, screen);
       case 'camp': return viewCamp(app, screen);
       case 'over': return viewOver(app, screen);

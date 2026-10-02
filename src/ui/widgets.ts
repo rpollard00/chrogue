@@ -88,9 +88,9 @@ export function stash(color: Color, label: string, caption: string): PieceWell {
   };
 }
 
-type CardKind = Offer['kind'] | 'upgrade';
+type CardKind = Offer['kind'];
 
-const KIND_LABEL: Record<CardKind, string> = { piece: 'Unit', relic: 'Relic', gold: 'Gold', upgrade: 'Upgrade' };
+const KIND_LABEL: Record<CardKind, string> = { piece: 'Unit', relic: 'Relic', gold: 'Gold' };
 
 export interface CardFace {
   kind: CardKind;
@@ -100,10 +100,6 @@ export interface CardFace {
   text: string | null;
   /** A short text across the card, for a card that the player cannot take. */
   stamp?: string | null;
-  /** True if the player bought the card a moment ago. */
-  bought?: boolean;
-  /** True if the card has no more levels. */
-  maxed?: boolean;
   /** For a reward after the player selects: the card that the player took, or a card that the player passed. */
   settled?: 'chosen' | 'passed';
 }
@@ -123,16 +119,15 @@ export function actionButton({ verb, cost, run, disabled }: CardAction, props: R
     verb, cost && amount(cost.currency, String(cost.value)));
 }
 
-/** The one card of the game. Each kind has its color. `extra` goes between the name and the button. */
-export function card(face: CardFace, action: CardAction, extra?: HTMLElement): HTMLElement {
-  const classes = ['card', face.stamp && 'blocked', face.bought && 'bought', face.maxed && 'maxed', face.settled];
+/** The one card of the game. Each kind has its color. */
+function card(face: CardFace, action: CardAction): HTMLElement {
+  const classes = ['card', face.stamp && 'blocked', face.settled];
   return h('div', { class: classes.filter(Boolean).join(' '), 'data-kind': face.kind },
     h('div', { class: 'card-top' },
       h('span', { class: 'kind' }, KIND_LABEL[face.kind]),
       face.text !== null && infoTip(face.name, face.text)),
     medal(face.art),
     h('h3', {}, face.name),
-    extra,
     face.stamp && h('p', { class: 'stamp' }, face.stamp),
     actionButton(action, { class: 'act' }));
 }

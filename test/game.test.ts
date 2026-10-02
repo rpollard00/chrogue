@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { VALUE, legalMoves } from '../src/engine';
 import type { Move } from '../src/engine';
 import {
-  CONSCRIPT_ID, FLOORS, RELIC_IDS, TRAIT_IDS,
+  CONSCRIPT_ID, FLOORS, RELIC_IDS, TRAIT_IDS, UPGRADES, UPGRADE_IDS, UPGRADE_NAME_MAX, UPGRADE_SLOTS,
   buyOffer, buyUpgrade, canScout, createBattle, finishRun, generateEnemy, newRun, parseMeta, parseRun,
   playMove, priceOf, rollDraft, rollShop, settleBattle, takeDraft, takeOffer,
 } from '../src/game';
@@ -58,6 +58,11 @@ test('buyUpgrade takes crowns and stops at the maximum level', () => {
   expect(buyUpgrade(meta, 'pawn')).toBe(true);
   expect(buyUpgrade(meta, 'pawn')).toBe(false);
   expect(meta.crowns).toBe(1);
+});
+
+test('each upgrade has a slot on the upgrades screen, and its name fits the slot', () => {
+  expect(UPGRADE_IDS.length).toBeLessThanOrEqual(UPGRADE_SLOTS);
+  for (const id of UPGRADE_IDS) expect(UPGRADES[id].name.length).toBeLessThanOrEqual(UPGRADE_NAME_MAX);
 });
 
 test('Scout lets the player see the moves of an enemy piece', () => {

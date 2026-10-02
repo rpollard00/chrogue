@@ -18,6 +18,6 @@ export function viewOver(app: App, { summary }: ScreenOf<'over'>): HTMLElement {
     tally(rows, 'Total crowns', TALLY_START_MS),
     h('nav', { class: 'menu', 'aria-label': 'Menu' },
       button('New run', () => app.startRun(), { class: 'primary' }),
-      button('Upgrades', () => app.show({ name: 'upgrades', bought: null })),
+      button('Upgrades', () => app.show({ name: 'upgrades' })),
       button('Title', () => app.show({ name: 'title' }))));
 }

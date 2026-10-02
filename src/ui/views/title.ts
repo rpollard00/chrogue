@@ -20,7 +20,7 @@ export function viewTitle(app: App): HTMLElement {
     h('nav', { class: 'menu', 'aria-label': 'Main menu' },
       run && button(`Continue run (floor ${run.floor})`, resume, { class: 'primary' }),
       button('New run', start, { class: run ? '' : 'primary' }),
-      button('Upgrades', () => app.show({ name: 'upgrades', bought: null }))),
+      button('Upgrades', () => app.show({ name: 'upgrades' }))),
     h('dl', { class: 'stats' },
       stat('Crowns', currencyIcon('crowns'), String(meta.crowns)),
       stat('Best', `${meta.best} of ${FLOORS.length} floors`),

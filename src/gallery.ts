@@ -41,6 +41,8 @@ type Step = (stage: HTMLElement) => HTMLElement | null | undefined;
 const square = (name: string): Step => (stage) => stage.querySelector<HTMLElement>(`.board button[aria-label^="${name}"]`);
 const press = (label: string): Step => (stage) =>
   [...stage.querySelectorAll('button')].find((el) => el.getAttribute('aria-label') === label || el.textContent?.startsWith(label));
+const slot = (name: string): Step => (stage) =>
+  [...stage.querySelectorAll<HTMLElement>('button.slot')].find((el) => el.querySelector('.name')?.textContent === name);
 const card = (name: string): Step => (stage) =>
   [...stage.querySelectorAll('.card')].find((el) => el.querySelector('h3')?.textContent === name)?.querySelector<HTMLElement>('.act');
 
@@ -144,9 +146,9 @@ const DEMOS: Demo[] = [
     })),
   },
   {
-    group: 'Between runs', name: 'Upgrade', note: 'The card flashes, and the crowns count down.',
-    start: (app) => app.show({ name: 'upgrades', bought: null }),
-    steps: [card('Militia')],
+    group: 'Between runs', name: 'Upgrade', note: 'The panel flashes, the level fills, and the crowns count down.',
+    start: (app) => app.show({ name: 'upgrades' }),
+    steps: [slot('Militia'), press('Buy')],
   },
   {
     group: 'Between runs', name: 'Run won', note: 'The Black King falls. The crown rows count up.',
