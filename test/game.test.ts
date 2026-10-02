@@ -4,7 +4,8 @@ import type { Move } from '../src/engine';
 import {
   CONSCRIPT_ID, FLOORS, RELICS, RELIC_IDS, UPGRADES, UPGRADE_IDS, UPGRADE_NAME_MAX, UPGRADE_SLOTS,
   buyOffer, buyUpgrade, canScout, createBattle, finishRun, generateEnemy, newRun, parseMeta, parseRun,
-  barRelic, playMove, priceOf, relicPool, rollDraft, rollShop, settleBattle, takeDraft, takeOffer, traitPool,
+  barRelic, playMove, priceOf, relicPool, removeUnit, rollDraft, rollShop, setFloor, setRelic, settleBattle, setUpgradeLevel,
+  takeDraft, takeOffer, traitPool,
 } from '../src/game';
 import type { Battle, Enemy, Meta, MoveReport, Run } from '../src/game';
 import { sq } from './helpers';
@@ -235,4 +236,27 @@ test('saved data survives a round trip, and unknown ids are removed', () => {
 
   expect(parseMeta({ crowns: 4, upgrades: { pawn: 2, removedUpgrade: 1 } }))
     .toEqual({ crowns: 4, best: 0, runs: 0, upgrades: { pawn: 2 } });
+});
+
+test('the debug changes keep the saved data valid', () => {
+  const meta = emptyMeta();
+  setUpgradeLevel(meta, 'pawn', 9);
+  expect(meta.upgrades.pawn).toBe(UPGRADES.pawn.costs.length);
+  setUpgradeLevel(meta, 'pawn', -1);
+  expect(meta.upgrades).toEqual({});
+  expect(meta.crowns).toBe(0);
+
+  const run = newRun(meta);
+  setFloor(run, 8);
+  expect(run.enemy.traits).toHaveLength(FLOORS[7].traits);
+  const king = run.army.find((unit) => unit.type === 'k'), rook = run.army.find((unit) => unit.type === 'r');
+  expect(removeUnit(run, king?.id ?? -1)).toBe(false);
+  expect(removeUnit(run, rook?.id ?? -1)).toBe(true);
+  expect(run.army.some((unit) => unit.type === 'r')).toBe(false);
+  setRelic(run.relics, 'bounty', true);
+  setRelic(run.relics, 'bounty', true);
+  expect(run.relics).toEqual(['bounty']);
+  setRelic(run.relics, 'bounty', false);
+  expect(run.relics).toEqual([]);
+  expect(parseRun(JSON.parse(JSON.stringify(run)))).toEqual(run);
 });

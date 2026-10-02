@@ -7,3 +7,4 @@ export * from './floors';
 export * from './run';
 export * from './battle';
 export * from './storage';
+export * from './debug';

@@ -1,0 +1,85 @@
+/* Styles for the debug menu only. The game page loads this file with the menu. */
+.debug-open { position: fixed; top: 0.4rem; right: 0.4rem; z-index: 20; opacity: 0.6; }
+.debug-open:is(:hover, :focus-visible) { opacity: 1; }
+
+/* The menu is above the layout, thus its size comes from its content. */
+.debug {
+  width: min(68rem, 100vw - 1.5rem);
+  max-height: calc(100dvh - 1.5rem);
+  padding: 1rem 1.25rem 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  background: linear-gradient(var(--raised-hi), var(--raised-lo));
+  box-shadow: inset 0 1px 0 var(--shine), 0 12px 30px var(--shade);
+}
+.debug::backdrop { background: var(--shade); }
+.debug > header { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.9rem; }
+.debug h1 { margin: 0; font-size: 1.5rem; }
+.debug > header .hint { flex: 1; }
+.debug > header button { margin-left: auto; }
+
+.debug .sections { display: grid; grid-template-columns: 17rem 1fr 15rem; gap: 1.5rem; align-items: start; }
+.debug section { display: grid; gap: 0.9rem; min-width: 0; }
+.debug h2 { margin: 0; font-size: 1.05rem; color: var(--accent); }
+.debug h3 { margin: 0 0 0.4rem; }
+.debug .hint { margin: 0 0 0.4rem; }
+
+.debug .fields { display: flex; gap: 0.9rem; }
+.debug .field { display: grid; gap: 0.25rem; }
+.debug .field span { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+.debug :is(input, select) {
+  height: 2.25rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  font: 600 0.95rem/1 var(--body);
+  color: var(--text);
+  background: linear-gradient(var(--well-hi), var(--well-lo));
+}
+.debug input { width: 7rem; }
+.debug :is(input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.debug .levels { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.debug .levels li { display: grid; grid-template-columns: 1fr 2.25rem 3.2rem 2.25rem; align-items: center; gap: 0.4rem; }
+.debug .levels button { padding: 0; font-size: 1.1rem; }
+.debug .levels output { text-align: center; font-variant-numeric: tabular-nums; }
+
+.debug .toggles { display: flex; flex-wrap: wrap; gap: 0.55rem 0.45rem; }
+.debug .toggles .piece { margin-left: 0.15rem; font-size: 1.3rem; line-height: 1; }
+/* A key that is on stays down and has an amber ring and a mark. */
+.debug button[aria-pressed='false'] { color: var(--dim); }
+.debug button[aria-pressed='true'] {
+  translate: 0 2px;
+  color: var(--accent);
+  background: linear-gradient(var(--well-hi), var(--well-lo));
+  box-shadow: inset 0 0 0 1px var(--accent), 0 1px 0 var(--key-edge);
+}
+.debug button[aria-pressed]::before { content: ''; width: 1.1rem; text-align: left; }
+.debug button[aria-pressed='true']::before { content: '✓'; }
+
+/* The army has a slot for each of its 16 pieces, thus the menu keeps its size. */
+.debug .units {
+  display: grid;
+  grid-template-columns: repeat(8, 2.4rem);
+  grid-auto-rows: 2.4rem;
+  gap: 0.25rem;
+  justify-content: start;
+  width: max-content;
+  min-height: 5.85rem;
+  margin-bottom: 0.6rem;
+  padding: 0.3rem;
+}
+.debug .units button { min-height: 0; padding: 0; border-radius: 4px; background: none; box-shadow: none; translate: none; }
+.debug .units button:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 55%, transparent); }
+.debug .units .piece { font-size: 1.9rem; line-height: 1; }
+
+@media (max-width: 720px), (orientation: portrait) {
+  .debug .sections { grid-template-columns: 1fr; }
+  .debug > header { flex-wrap: wrap; }
+  .debug > header .hint { order: 3; flex-basis: 100%; }
+  .debug .units { grid-template-columns: repeat(8, 1.85rem); grid-auto-rows: 1.85rem; min-height: 4.55rem; }
+  .debug .units .piece { font-size: 1.5rem; }
+  .debug .adders { flex-wrap: nowrap; }
+  .debug .adders button { flex: 1; padding: 0; }
+}

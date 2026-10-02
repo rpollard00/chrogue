@@ -22,6 +22,25 @@ The animation gallery shows each screen with prepared data and plays its motion.
 
 The gallery saves nothing, and the production build does not include it.
 
+## Change the saved data
+
+The debug menu changes the saved data at no cost. The development server always has it.
+
+1. Run `bun run dev`.
+2. Select **Debug** in the top right corner, or press the `` ` `` key.
+3. Change the items. The menu saves each change immediately.
+4. Select **Close**. The screen shows the changes. If you are in a battle, the battle starts again.
+
+The menu has three sections:
+
+- Progress: The crowns and the level of each upgrade.
+- Run: The floor, the gold, the army, the relics of the player, and the traits of the enemy.
+- Offers: The relics that the game can offer. A relic that is off is not a reward, a shop item, or a boss trait.
+
+The game applies the Offers section only while the menu is on the page.
+
+A deployed game shows the menu only when the address has `?debug`.
+
 ## Run the tests
 
 Run `bun test`. Run `bun run check` for the TypeScript type check.
@@ -58,7 +77,7 @@ The code has three layers. Each layer imports only from the layers before it in 
 
 - `src/engine/`: Chess. It has the rules, the move generation, and the enemy AI. It does not know about runs or relics.
 - `src/game/`: The roguelite. It has runs, battles, relics, upgrades, offers, floors, and saved data. It has no DOM code.
-- `src/ui/`: The screens. `src/main.ts` owns the state and changes the screen.
+- `src/ui/`: The screens. `src/main.ts` owns the state and changes the screen. `src/ui/debug.ts` is the debug menu.
 
 A relic changes a battle in two ways. Its `rules` add movement rules for the engine. Its `hooks` run at fixed points of a battle.
 
