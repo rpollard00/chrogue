@@ -1,6 +1,6 @@
 [package]
 name = "chrogue-engine"
-description = "The chess rules of Chrogue. The movement rules are data."
+description = "The chess rules and the enemy AI of Chrogue. The movement rules are data."
 version.workspace = true
 edition.workspace = true
 publish.workspace = true

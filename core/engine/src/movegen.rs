@@ -92,6 +92,29 @@ fn officer_targets(
     if captures_only { captures } else { captures | quiets }
 }
 
+/// The reach of an officer on `from`: the empty squares where it can move, and the squares
+/// that it attacks. An attacked square can be empty or can have a piece of either color.
+#[inline]
+pub fn officer_reach(side: &SideTables, kind: Kind, from: Square, occupied: Bitboard) -> (Bitboard, Bitboard) {
+    let leaps = &side.leaps[kind.index()][from as usize];
+    let mut quiets = (leaps.both | leaps.quiet) & !occupied;
+    let mut attacks = leaps.both | leaps.capture;
+    for slide in &side.slides[kind.index()] {
+        let ray = slide.rays[from as usize];
+        let (empty, hit) = match first_blocker(ray & occupied, slide.ascending) {
+            Some(blocker) => (ray & !slide.rays[blocker as usize] & !bit(blocker), bit(blocker)),
+            None => (ray, 0),
+        };
+        if slide.quiet {
+            quiets |= empty;
+        }
+        if slide.capture {
+            attacks |= empty | hit;
+        }
+    }
+    (quiets, attacks)
+}
+
 #[inline(always)]
 fn push_pawn_move(side: &SideTables, list: &mut MoveList, from: Square, to: Square, promo: bool, special: Special) {
     if promo {

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::rules::Rules;
 use crate::tables::Tables;
 use crate::types::{Bitboard, Color, Kind, Move, Piece, Placement, Special, Square, bit};
+use crate::zobrist;
 
 /// The state of a battle.
 ///
@@ -15,6 +16,8 @@ pub struct State {
     board: [Option<Piece>; 64],
     by_color: [Bitboard; 2],
     by_kind: [Bitboard; Kind::COUNT],
+    /// The Zobrist key of the pieces. `put` and `remove` keep it up to date.
+    piece_key: u64,
     /// The side that has the move.
     pub turn: Color,
     /// The square that a pawn crossed with a double step on the last move.
@@ -50,6 +53,7 @@ impl State {
             board: [None; 64],
             by_color: [0; 2],
             by_kind: [0; Kind::COUNT],
+            piece_key: 0,
             turn: Color::White,
             ep: None,
             clock: 0,
@@ -113,11 +117,25 @@ impl State {
         (kings != 0).then(|| kings.trailing_zeros() as Square)
     }
 
+    /// The pieces of a side that are not a king. A side with no such piece loses by rout.
+    #[inline(always)]
+    pub fn men(&self, color: Color) -> Bitboard {
+        self.by_color[color.index()] & !self.by_kind[Kind::King.index()]
+    }
+
+    /// The Zobrist key of the state: the pieces, the side that has the move, and the en passant
+    /// square. The clock is not in the key. See `zobrist`.
+    #[inline(always)]
+    pub fn key(&self) -> u64 {
+        self.piece_key ^ zobrist::turn_key(self.turn, self.ep)
+    }
+
     #[inline(always)]
     fn put(&mut self, s: Square, piece: Piece) {
         self.board[s as usize] = Some(piece);
         self.by_color[piece.color.index()] |= bit(s);
         self.by_kind[piece.kind.index()] |= bit(s);
+        self.piece_key ^= zobrist::piece_key(piece, s);
     }
 
     #[inline(always)]
@@ -126,6 +144,7 @@ impl State {
         if let Some(piece) = piece {
             self.by_color[piece.color.index()] &= !bit(s);
             self.by_kind[piece.kind.index()] &= !bit(s);
+            self.piece_key ^= zobrist::piece_key(piece, s);
         }
         piece
     }
@@ -183,6 +202,22 @@ impl State {
         self.ep = undo.ep;
         self.clock = undo.clock;
         self.turn = piece.color;
+    }
+
+    /// Passes the move to the other side: no piece moves. The search uses it for null-move
+    /// pruning. Returns the en passant square for `unmake_null`. The clock stays the same.
+    #[inline]
+    pub fn make_null(&mut self) -> Option<Square> {
+        let ep = self.ep.take();
+        self.turn = self.turn.other();
+        ep
+    }
+
+    /// Takes back `make_null`. `ep` is the value that `make_null` returned.
+    #[inline]
+    pub fn unmake_null(&mut self, ep: Option<Square>) {
+        self.turn = self.turn.other();
+        self.ep = ep;
     }
 
     /// True if the bitboards agree with the mailbox. The tests use this function.

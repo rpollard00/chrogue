@@ -4,6 +4,7 @@
 //! The reverse tables answer "from where can a piece attack this square". The reverse
 //! tables come from the same data, thus an offset does not have to be symmetric.
 
+use crate::eval::EvalTables;
 use crate::rules::{Atom, DoubleStep, Offset, Rules, SideRules};
 use crate::types::{Bitboard, Color, Kind, Square, bit};
 
@@ -79,6 +80,7 @@ pub struct SideTables {
 pub struct Tables {
     rules: Rules,
     sides: [SideTables; 2],
+    eval: EvalTables,
 }
 
 impl Tables {
@@ -89,11 +91,18 @@ impl Tables {
         }
         let sides =
             [side_tables(rules.side(Color::White), Color::White), side_tables(rules.side(Color::Black), Color::Black)];
-        Tables { rules, sides }
+        let eval = EvalTables::new(&rules);
+        Tables { rules, sides, eval }
     }
 
     pub fn rules(&self) -> &Rules {
         &self.rules
+    }
+
+    /// The evaluation data that comes from the rules: the material value of each kind.
+    #[inline(always)]
+    pub fn eval(&self) -> &EvalTables {
+        &self.eval
     }
 
     #[inline(always)]
@@ -103,7 +112,7 @@ impl Tables {
 }
 
 /// The square at an offset from a square, or None if it is off the board.
-fn offset_square(from: Square, (df, dr): Offset) -> Option<Square> {
+pub(crate) fn offset_square(from: Square, (df, dr): Offset) -> Option<Square> {
     let f = (from & 7) as i8 + df;
     let r = (from >> 3) as i8 + dr;
     ((0..8).contains(&f) && (0..8).contains(&r)).then(|| (r * 8 + f) as Square)

@@ -2,7 +2,7 @@
 
 use crate::movegen::{in_check, is_legal, pseudo_moves};
 use crate::state::State;
-use crate::types::{Color, Kind, MoveList};
+use crate::types::{Color, MoveList};
 
 /// A battle ends when the clock reaches this number of half moves.
 pub const CLOCK_LIMIT: u32 = 100;
@@ -49,15 +49,23 @@ pub fn has_legal_move(state: &mut State) -> bool {
     list.iter().any(|&m| is_legal(state, m, color))
 }
 
+/// The result that comes from the pieces only: bare kings or a rout. This test is cheap.
+/// The search uses it at each node and finds "no legal move" in its own move loop.
+#[inline]
+pub fn material_outcome(state: &State) -> Option<Outcome> {
+    match (state.men(Color::White) != 0, state.men(Color::Black) != 0) {
+        (false, false) => Some(Outcome::Bare),
+        (true, false) => Some(Outcome::Rout { winner: Color::White }),
+        (false, true) => Some(Outcome::Rout { winner: Color::Black }),
+        (true, true) => None,
+    }
+}
+
 /// Returns None while the battle continues. The order of the checks is: bare, rout,
 /// checkmate or stalemate, clock.
 pub fn outcome(state: &mut State) -> Option<Outcome> {
-    let men = |color: Color| state.color_set(color) & !state.kind_set(Kind::King) != 0;
-    match (men(Color::White), men(Color::Black)) {
-        (false, false) => return Some(Outcome::Bare),
-        (true, false) => return Some(Outcome::Rout { winner: Color::White }),
-        (false, true) => return Some(Outcome::Rout { winner: Color::Black }),
-        (true, true) => {}
+    if let Some(end) = material_outcome(state) {
+        return Some(end);
     }
     if !has_legal_move(state) {
         let winner = state.turn.other();

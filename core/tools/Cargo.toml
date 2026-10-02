@@ -1,6 +1,6 @@
 [package]
 name = "chrogue-tools"
-description = "Command-line tools for the Chrogue engine: the differential test and a perft timer."
+description = "Command-line tools for the Chrogue engine: the differential test, a perft timer, self-play matches, and data of the AI."
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
