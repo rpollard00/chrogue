@@ -7,6 +7,22 @@ name = "chrogue-engine"
 version = "0.1.0"
 
 [[package]]
+name = "chrogue-game"
+version = "0.1.0"
+dependencies = [
+ "chrogue-engine",
+ "serde_json",
+]
+
+[[package]]
+name = "chrogue-server"
+version = "0.1.0"
+dependencies = [
+ "chrogue-game",
+ "serde_json",
+]
+
+[[package]]
 name = "chrogue-tools"
 version = "0.1.0"
 dependencies = [

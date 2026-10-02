@@ -319,3 +319,46 @@ The run also has these games and positions:
 If the engines disagree, the script prints the position, the rules, and the moves that only one engine has. The exit code is 1. The exit code is also 1 if the run has fewer than 3000 positions, if a rule combination has fewer than 20 positions, or if a kind of move or a result occurs fewer times than its minimum in `MINIMUMS`. The minimums are for en passant captures, en passant captures that promote, backward steps, checks, promotions to each kind, castles of each side to each wing, and each result.
 
 The script uses its own random numbers, thus the same seed gives the same run.
+
+## Game layer and command server
+
+The crate `game/` (`chrogue-game`) has the roguelite layer of `src/game/`: runs, relics, upgrades, offers, floors, battles, and saved data. The crate `server/` has the binary `chrogue-core`. A client, a test, or an agent plays the full game through one JSON protocol with no interface. `PROTOCOL.md` documents the protocol.
+
+The TypeScript game in `src/game/` is the reference. `gametest/parity.ts` proves that the two give the same content and the same results.
+
+### Commands
+
+Run the commands from the `core/` directory, unless the command shows a different directory.
+
+- Server on stdio: `cargo run --release --bin chrogue-core -- --stdio --no-save`
+- Server on TCP: `cargo run --release --bin chrogue-core -- --listen 127.0.0.1:0 --save-dir /path/to/saves`
+- Tests of the game layer and of the server: `cargo test --release -p chrogue-game -p chrogue-server`. With `-- --nocapture`, the fuzz test prints the error codes and the TCP test prints the round-trip times.
+- Parity with the TypeScript game, from the repository root: `bun core/gametest/parity.ts [--seed N] [--battles N]`
+- Whole runs with a bot, two times, with a comparison of the transcripts, from the repository root: `bun core/gametest/play.ts [--sessions N] [--runs N] [--seed N]`. The default (36 runs, two passes) takes about four minutes.
+- Type check of the scripts, from the repository root: `bunx tsc -p core/gametest`
+
+### Structure
+
+- `game/src/content.rs`: The relics, upgrades, floors, prices, and constants as data. The text is a copy of the TypeScript text.
+- `game/src/run.rs`: `Meta`, `Run`, `Unit`, `Enemy`, `Offer`, the enemy of each floor, rewards, the shop, and upgrades.
+- `game/src/battle.rs`: One battle on the engine: relic effects, gold, lost and rescued units, the reward, and `settle`.
+- `game/src/save.rs`: The `Storage` trait, a file storage and a memory storage, and the check of saved data.
+- `game/src/session.rs`: `Screen`, `Session::command`, and the commands.
+- `game/src/view.rs`: The views of the screens and the content tables of `hello`.
+- `game/src/protocol.rs`: The names of the commands, events, and error codes.
+- `game/src/chess.rs`: The one module that calls the engine. A change of the engine API changes only this file.
+- `game/tests/`: The cases of `test/game.test.ts` (`game.rs`), saved data (`saved.rs`), random requests (`fuzz.rs`), and the check of `PROTOCOL.md` (`protocol_doc.rs`).
+- `server/src/main.rs`: The line transport. `server/tests/tcp.rs` starts the binary and tests TCP and stdio.
+- `gametest/`: The Bun scripts `parity.ts` and `play.ts`, and the client `core.ts` that they share.
+
+### Relics as data
+
+A relic has movement rules and an effect. The movement rules are a list of `RuleEdit`: edits of `SideRules::standard()` that the engine and the AI read. The effect is one kind of `Effect`, at a fixed point of a battle. `Effect` has a kind for each hook of `RelicHooks` in `src/game/relics.ts`.
+
+To add a relic, add one entry to `RELICS` in `game/src/content.rs` and the same entry to `src/game/relics.ts`. A new kind of effect needs a kind in `Effect` and code in `battle.rs`. Then run `gametest/parity.ts`.
+
+### Behavior that differs from the TypeScript game
+
+- A draw on the last floor stays on the last floor. The TypeScript game goes to floor 9 and throws.
+- The AI of floor `n` is `Level::floor(n)` of the engine, not the `ai` field of `src/game/floors.ts`.
+- Saved data: a unit id is at most 19999 and appears one time, and a relic id appears one time in a list.

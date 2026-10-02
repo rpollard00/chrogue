@@ -1,0 +1,431 @@
+//! The content of the game as data: relics, upgrades, floors, prices, and constants. The text
+//! is a copy of the TypeScript definitions in `src/game/`. `gametest/parity.ts` compares the two.
+//!
+//! - Relic: add one entry to `RELICS`. If the entry has a `foe_text`, a boss can have it as a trait.
+//! - Relic effect at a new point of a battle: add a kind to `Effect`, and apply it in `battle.rs`.
+//! - Movement rule: add a kind to `RuleEdit` if no kind gives it. The AI reads the rules data.
+//! - Upgrade: add one entry to `UPGRADES`. A new kind of effect needs a kind in `UpgradeEffect`.
+//! - Floor: add one entry to `FLOORS`.
+
+use crate::chess::{self, Atom, CAMEL, KNIGHT, Kind, Mode, ORTHO, Offset, SideRules};
+
+/// An edit of `SideRules::standard()` that a relic gives to its side. The engine builds its
+/// tables and the AI its piece values from the result, thus the AI sees each relic.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RuleEdit {
+    /// Pawns can always move two squares forward.
+    ForcedMarch,
+    /// Pawns promote one rank earlier.
+    EarlyPromo,
+    /// Pawns can move one square backward to an empty square.
+    Backpedal,
+    Leap {
+        kind: Kind,
+        offsets: &'static [Offset],
+        mode: Mode,
+    },
+}
+
+impl RuleEdit {
+    pub fn apply(self, rules: SideRules) -> SideRules {
+        match self {
+            RuleEdit::ForcedMarch => rules.forced_march(),
+            RuleEdit::EarlyPromo => rules.early_promo(),
+            RuleEdit::Backpedal => rules.backpedal(),
+            RuleEdit::Leap { kind, offsets, mode } => rules.with_atom(kind, Atom::leap(offsets, mode)),
+        }
+    }
+}
+
+/// What a relic does at a fixed point of a battle. Each kind is one hook of `RelicHooks` in
+/// `src/game/relics.ts`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Effect {
+    /// The gold of each capture by the player is multiplied by `factor`.
+    CaptureGold { factor: f64 },
+    /// The first unit that the player loses in a battle returns after the battle.
+    RescueFirst,
+    /// One more pawn on the first free square of rank 2, or of rank 3. It is not a unit.
+    ExtraPawn,
+    /// After a win: 1 gold for each `per` gold of the run and the other rewards, at most `max`.
+    VictoryGold { per: u64, max: u64 },
+}
+
+impl Effect {
+    /// The name of the hook in the TypeScript game.
+    pub const fn hook_name(self) -> &'static str {
+        match self {
+            Effect::CaptureGold { .. } => "captureGold",
+            Effect::RescueFirst => "rescueUnit",
+            Effect::ExtraPawn => "setupBattle",
+            Effect::VictoryGold { .. } => "victoryGold",
+        }
+    }
+}
+
+pub struct RelicDef {
+    /// The id in the saved data and in the protocol.
+    pub key: &'static str,
+    pub name: &'static str,
+    pub text: &'static str,
+    /// The text when the enemy has the relic. A relic with this text can be a boss trait.
+    pub foe_text: Option<&'static str>,
+    pub rules: &'static [RuleEdit],
+    pub effect: Option<Effect>,
+}
+
+const fn rule(
+    key: &'static str,
+    name: &'static str,
+    text: &'static str,
+    foe: &'static str,
+    rules: &'static [RuleEdit],
+) -> RelicDef {
+    RelicDef { key, name, text, foe_text: Some(foe), rules, effect: None }
+}
+
+const fn hook(key: &'static str, name: &'static str, text: &'static str, effect: Effect) -> RelicDef {
+    RelicDef { key, name, text, foe_text: None, rules: &[], effect: Some(effect) }
+}
+
+pub static RELICS: [RelicDef; 10] = [
+    rule(
+        "forcedMarch",
+        "Forced March",
+        "Your pawns can always move two squares forward.",
+        "Enemy pawns can always move two squares forward.",
+        &[RuleEdit::ForcedMarch],
+    ),
+    rule(
+        "backpedal",
+        "Tactical Retreat",
+        "Your pawns can move one square backward to an empty square.",
+        "Enemy pawns can move one square backward to an empty square.",
+        &[RuleEdit::Backpedal],
+    ),
+    rule(
+        "earlyPromo",
+        "Field Promotion",
+        "Your pawns promote one rank earlier.",
+        "Enemy pawns promote one rank earlier.",
+        &[RuleEdit::EarlyPromo],
+    ),
+    rule(
+        "kingKnight",
+        "Royal Steed",
+        "Your king can also move as a knight.",
+        "The enemy king can also move as a knight.",
+        &[RuleEdit::Leap { kind: Kind::King, offsets: &KNIGHT, mode: Mode::MoveOrCapture }],
+    ),
+    rule(
+        "longLeap",
+        "Long Leap",
+        "Your knights can also jump three squares in one direction and one square to the side.",
+        "Enemy knights can also jump three squares in one direction and one square to the side.",
+        &[RuleEdit::Leap { kind: Kind::Knight, offsets: &CAMEL, mode: Mode::MoveOrCapture }],
+    ),
+    rule(
+        "sidestep",
+        "Sidestep",
+        "Your bishops can move one square up, down, left, or right to an empty square.",
+        "Enemy bishops can move one square up, down, left, or right to an empty square.",
+        &[RuleEdit::Leap { kind: Kind::Bishop, offsets: &ORTHO, mode: Mode::MoveOnly }],
+    ),
+    hook("bounty", "Bounty", "You get 50% more gold for each capture.", Effect::CaptureGold { factor: 1.5 }),
+    hook(
+        "secondWind",
+        "Second Wind",
+        "The first piece that you lose in each battle returns after the battle.",
+        Effect::RescueFirst,
+    ),
+    hook(
+        "conscription",
+        "Conscription",
+        "You start each battle with one more pawn. The pawn leaves after the battle.",
+        Effect::ExtraPawn,
+    ),
+    hook(
+        "interest",
+        "Interest",
+        "After each battle that you win, you get 1 gold for each 5 gold that you have. The maximum is 6 gold.",
+        Effect::VictoryGold { per: 5, max: 6 },
+    ),
+];
+
+/// A relic: an index in `RELICS`. The only ways to get one are `parse` and `all`.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct RelicId(u8);
+
+impl RelicId {
+    pub fn all() -> impl Iterator<Item = RelicId> {
+        (0..RELICS.len() as u8).map(RelicId)
+    }
+
+    pub fn parse(key: &str) -> Option<RelicId> {
+        RelicId::all().find(|id| id.def().key == key)
+    }
+
+    pub fn def(self) -> &'static RelicDef {
+        &RELICS[self.0 as usize]
+    }
+
+    pub fn key(self) -> &'static str {
+        self.def().key
+    }
+
+    /// True if a boss can have the relic as a trait.
+    pub fn is_trait(self) -> bool {
+        self.def().foe_text.is_some()
+    }
+}
+
+/// The movement rules that a list of relics gives to one side. A relic counts one time.
+pub fn rules_for(ids: &[RelicId]) -> SideRules {
+    let mut seen: Vec<RelicId> = Vec::new();
+    let mut rules = SideRules::standard();
+    for &id in ids {
+        if seen.contains(&id) {
+            continue;
+        }
+        seen.push(id);
+        rules = id.def().rules.iter().fold(rules, |rules, edit| edit.apply(rules));
+    }
+    rules
+}
+
+/// The rule flags of the TypeScript engine that a relic gives, or None for a rule that only the
+/// Rust engine has.
+pub fn relic_flags(id: RelicId) -> Option<Vec<&'static str>> {
+    chess::flags_of(&rules_for(&[id]))
+}
+
+// ---- Upgrades ----
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum UpgradeEffect {
+    /// A new run has one more unit of the kind for each level.
+    RecruitEachLevel(Kind),
+    /// A new run has one more unit of the kind.
+    Recruit(Kind),
+    /// A new run has this gold for each level.
+    GoldEachLevel(u64),
+    /// Shop prices get the factor `1 - per_level * level`.
+    PriceCut { per_level: f64 },
+    /// In a battle, the player can see the moves of each enemy piece.
+    Scout,
+}
+
+impl UpgradeEffect {
+    /// The name of the field of `UpgradeDef` in the TypeScript game.
+    pub const fn hook_name(self) -> &'static str {
+        match self {
+            UpgradeEffect::RecruitEachLevel(_) | UpgradeEffect::Recruit(_) | UpgradeEffect::GoldEachLevel(_) => {
+                "startRun"
+            }
+            UpgradeEffect::PriceCut { .. } => "priceFactor",
+            UpgradeEffect::Scout => "scout",
+        }
+    }
+}
+
+pub struct UpgradeDef {
+    pub key: &'static str,
+    pub name: &'static str,
+    pub text: &'static str,
+    /// The crown cost of each level. The number of costs is the maximum level.
+    pub costs: &'static [u64],
+    pub effect: UpgradeEffect,
+}
+
+pub static UPGRADES: [UpgradeDef; 5] = [
+    UpgradeDef {
+        key: "pawn",
+        name: "Militia",
+        text: "You start each run with one more pawn for each level.",
+        costs: &[3, 5, 8],
+        effect: UpgradeEffect::RecruitEachLevel(Kind::Pawn),
+    },
+    UpgradeDef {
+        key: "gold",
+        name: "Treasury",
+        text: "You start each run with 5 more gold for each level.",
+        costs: &[2, 4, 6],
+        effect: UpgradeEffect::GoldEachLevel(5),
+    },
+    UpgradeDef {
+        key: "bishop",
+        name: "Chaplain",
+        text: "You start each run with a bishop.",
+        costs: &[6],
+        effect: UpgradeEffect::Recruit(Kind::Bishop),
+    },
+    UpgradeDef {
+        key: "haggle",
+        name: "Haggler",
+        text: "Shop prices decrease by 10% for each level.",
+        costs: &[5, 8],
+        effect: UpgradeEffect::PriceCut { per_level: 0.1 },
+    },
+    UpgradeDef {
+        key: "scout",
+        name: "Scout",
+        text: "In a battle, select an enemy piece to see the squares that it can move to.",
+        costs: &[4],
+        effect: UpgradeEffect::Scout,
+    },
+];
+
+/// The upgrades screen has a set slot for each upgrade. These are the limits of that screen.
+pub const UPGRADE_SLOTS: usize = 16;
+pub const UPGRADE_NAME_MAX: usize = 13;
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct UpgradeId(u8);
+
+impl UpgradeId {
+    pub fn all() -> impl Iterator<Item = UpgradeId> {
+        (0..UPGRADES.len() as u8).map(UpgradeId)
+    }
+
+    pub fn parse(key: &str) -> Option<UpgradeId> {
+        UpgradeId::all().find(|id| id.def().key == key)
+    }
+
+    pub fn def(self) -> &'static UpgradeDef {
+        &UPGRADES[self.0 as usize]
+    }
+
+    pub fn key(self) -> &'static str {
+        self.def().key
+    }
+
+    pub fn max_level(self) -> u64 {
+        self.def().costs.len() as u64
+    }
+}
+
+// ---- Floors ----
+
+pub struct FloorDef {
+    pub name: &'static str,
+    /// The total piece value of the enemy army.
+    pub budget: u32,
+    /// The number of boss traits.
+    pub traits: usize,
+    pub boss: bool,
+}
+
+const fn floor(name: &'static str, budget: u32, traits: usize, boss: bool) -> FloorDef {
+    FloorDef { name, budget, traits, boss }
+}
+
+/// The AI of floor `n` is `Level::floor(n)` of the engine. It replaces the `ai` field of the
+/// TypeScript floors.
+pub static FLOORS: [FloorDef; 8] = [
+    floor("Border Patrol", 5, 0, false),
+    floor("Scouts", 9, 0, false),
+    floor("Garrison", 13, 0, false),
+    floor("The Warden", 18, 1, true),
+    floor("Cavalry", 23, 0, false),
+    floor("Royal Guard", 28, 0, false),
+    floor("Vanguard", 33, 0, false),
+    floor("The Black King", 39, 2, true),
+];
+
+/// The floor of a number from 1 to `FLOORS.len()`.
+pub fn floor_def(floor: usize) -> &'static FloorDef {
+    &FLOORS[floor.clamp(1, FLOORS.len()) - 1]
+}
+
+/// The most traits that the enemy can have: the traits of the largest boss.
+pub fn traits_max() -> usize {
+    FLOORS.iter().map(|f| f.traits).max().unwrap_or(0)
+}
+
+// ---- Pieces, prices, and constants ----
+
+/// The kinds that the player can add to the army, and the kinds of the enemy officers.
+pub const RECRUIT_KINDS: [Kind; 5] = [Kind::Pawn, Kind::Knight, Kind::Bishop, Kind::Rook, Kind::Queen];
+
+/// The gold value of a piece (`VALUE` in `src/engine/types.ts`). The enemy budget uses it too.
+pub const fn gold_value(kind: Kind) -> u32 {
+    match kind {
+        Kind::Pawn => 1,
+        Kind::Knight | Kind::Bishop => 3,
+        Kind::Rook => 5,
+        Kind::Queen => 9,
+        Kind::King => 0,
+    }
+}
+
+pub const fn piece_name(kind: Kind) -> &'static str {
+    match kind {
+        Kind::King => "King",
+        Kind::Queen => "Queen",
+        Kind::Rook => "Rook",
+        Kind::Bishop => "Bishop",
+        Kind::Knight => "Knight",
+        Kind::Pawn => "Pawn",
+    }
+}
+
+/// The shop price of a piece before upgrades.
+pub const fn piece_price(kind: Kind) -> u64 {
+    match kind {
+        Kind::Pawn => 5,
+        Kind::Knight | Kind::Bishop => 13,
+        Kind::Rook => 20,
+        Kind::Queen => 34,
+        Kind::King => 0,
+    }
+}
+
+pub const RELIC_PRICE: u64 = 16;
+pub const REROLL_COST: u64 = 3;
+pub const WIN_CROWNS: u64 = 5;
+pub const ARMY_MAX: usize = 16;
+
+/// The gold of the gold reward in the draft of a floor.
+pub const fn draft_gold(floor: usize) -> u64 {
+    10 + 2 * floor as u64
+}
+
+/// A recruit in the draft and the shop: its weight and the first floor that offers it.
+pub struct Recruit {
+    pub kind: Kind,
+    pub weight: f64,
+    pub min_floor: usize,
+}
+
+pub const RECRUITS: [Recruit; 5] = [
+    Recruit { kind: Kind::Pawn, weight: 3.0, min_floor: 1 },
+    Recruit { kind: Kind::Knight, weight: 3.0, min_floor: 1 },
+    Recruit { kind: Kind::Bishop, weight: 3.0, min_floor: 1 },
+    Recruit { kind: Kind::Rook, weight: 1.5, min_floor: 1 },
+    Recruit { kind: Kind::Queen, weight: 0.5, min_floor: 3 },
+];
+
+/// The weight of a relic and of the gold in the draft.
+pub const DRAFT_RELIC_WEIGHT: f64 = 2.0;
+pub const DRAFT_GOLD_WEIGHT: f64 = 2.0;
+
+/// The weight of each kind in an enemy army (`WEIGHT` in `src/game/floors.ts`).
+pub const fn enemy_weight(kind: Kind) -> f64 {
+    match kind {
+        Kind::Pawn => 4.0,
+        Kind::Knight | Kind::Bishop => 2.0,
+        Kind::Rook => 1.5,
+        Kind::Queen => 1.0,
+        Kind::King => 0.0,
+    }
+}
+
+/// The most pieces of a kind in an enemy army.
+pub const fn enemy_cap(kind: Kind, floor: usize) -> u32 {
+    match kind {
+        Kind::Pawn => 8,
+        Kind::Knight | Kind::Bishop | Kind::Rook => 2,
+        Kind::Queen => (floor >= 5) as u32,
+        Kind::King => 0,
+    }
+}
