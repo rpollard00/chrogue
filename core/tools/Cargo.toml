@@ -1,0 +1,11 @@
+[package]
+name = "chrogue-tools"
+description = "Command-line tools for the Chrogue engine: the differential test and a perft timer."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrogue-engine = { path = "../engine" }
+# The differential test sends JSON lines between Bun and this crate.
+serde_json = "1"
