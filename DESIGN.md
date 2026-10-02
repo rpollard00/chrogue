@@ -52,6 +52,7 @@ Rules:
 - Each card has the same size, as a physical card has. The card of a relic in a fan has the size of a reward card, with its text in the place of the key. The card is above the medal of the player and below the medal of the enemy.
 - On a touch screen, a tap on a medal shows its card, and a tap on a different place hides it.
 - An empty area has no "None" text. It shows as an empty slot.
+- On the board, the marks of a piece of the player are green and dark. The marks of an enemy piece that the player selects with Scout are red.
 - In a battle, each plaque is a grid with set rows. A stash shows the last piece that a side captured and the number of the pieces. Its list of all the pieces shows above the layout.
 - The display typeface is for names, headings, the wordmark, the primary key, the boss badge, and the purse, as in mockup C. Body text uses the system typeface.
 
@@ -70,7 +71,7 @@ Status: established. The user accepted the rendered screens on 1 October 2026. R
 ## Responsive and accessibility rules
 
 - A phone width is a first-class target. The game must be fully playable at 390 pixels wide.
-- On a phone, the camp is the one screen that scrolls. The purse and the start action stay in view.
+- On a phone, only the camp and the upgrades screen scroll. In the camp, the purse and the start action stay in view. On the upgrades screen, the crowns stay in view.
 - The phone layout is a second set layout. It is not the wide layout at a smaller size.
 - Each control is a `button` with a visible focus ring. Status text has `role="status"`. Motion stops when the player prefers reduced motion.
 

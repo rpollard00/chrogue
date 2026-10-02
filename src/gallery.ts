@@ -17,7 +17,7 @@ const TYPE: Record<string, PieceType> = { K: 'k', Q: 'q', R: 'r', B: 'b', N: 'n'
 const pieces = (list: string): { type: PieceType; square: Square }[] =>
   list.split(' ').map((item) => (item.length === 3 ? { type: TYPE[item[0]], square: sq(item.slice(1)) } : { type: 'p', square: sq(item) }));
 
-const meta = (): Meta => ({ crowns: 12, best: 3, runs: 4, upgrades: { gold: 2, bishop: 1 } });
+const meta = (): Meta => ({ crowns: 12, best: 3, runs: 4, upgrades: { gold: 2, bishop: 1, scout: 1 } });
 
 function run(army: string, enemy: string, rest: Partial<Run> = {}): Run {
   const units = pieces(army).map((piece, i) => ({ id: i + 1, type: piece.type, home: piece.square }));
@@ -85,6 +85,12 @@ const DEMOS: Demo[] = [
     group: 'Battle', name: 'Promotion', note: 'The pawn becomes a queen.',
     start: (app) => app.startBattle(run('Ke1 a7', 'Kh6 h5')),
     steps: [square('a7'), square('a8'), press('Queen')],
+  },
+  {
+    group: 'Battle', name: 'Scout',
+    note: 'The player selects the enemy knight. The squares that it can move to show in red. Long Leap adds the long jumps.',
+    start: (app) => app.startBattle(run(ARMY, 'Ke8', { enemy: { pieces: pieces('Ke8 Nd5 a7 d7 e7'), traits: ['longLeap'] } })),
+    steps: [square('d5')],
   },
   {
     group: 'Battle', name: 'Each relic', note: 'The fan of relics at its largest. Move the pointer along the medals to see the cards. The boss has two traits.',

@@ -20,6 +20,7 @@ const paths = {
   crown: 'M4 18h16l1-10-5 4-4-7-4 7-5-4z',
   chest: 'M4 19v-9a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v9zM4 12h16M12 11v4',
   tag: 'M3 12V4h8l10 10-8 8zM7.5 8.5h.01',
+  eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6z',
 } satisfies Record<RelicId, string> & Record<string, string>;
 
 export type IconId = keyof typeof paths;
@@ -41,6 +42,7 @@ export const UPGRADE_ART: Record<UpgradeId, Art> = {
   gold: { kind: 'icon', id: 'chest' },
   bishop: { kind: 'piece', type: 'b' },
   haggle: { kind: 'icon', id: 'tag' },
+  scout: { kind: 'icon', id: 'eye' },
 };
 
 /** A round disk that holds the picture. */

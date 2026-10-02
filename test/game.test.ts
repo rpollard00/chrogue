@@ -3,7 +3,7 @@ import { VALUE, legalMoves } from '../src/engine';
 import type { Move } from '../src/engine';
 import {
   CONSCRIPT_ID, FLOORS, RELIC_IDS, TRAIT_IDS,
-  buyOffer, buyUpgrade, createBattle, finishRun, generateEnemy, newRun, parseMeta, parseRun,
+  buyOffer, buyUpgrade, canScout, createBattle, finishRun, generateEnemy, newRun, parseMeta, parseRun,
   playMove, priceOf, rollDraft, rollShop, settleBattle, takeDraft, takeOffer,
 } from '../src/game';
 import type { Battle, Enemy, Meta, MoveReport, Run } from '../src/game';
@@ -58,6 +58,14 @@ test('buyUpgrade takes crowns and stops at the maximum level', () => {
   expect(buyUpgrade(meta, 'pawn')).toBe(true);
   expect(buyUpgrade(meta, 'pawn')).toBe(false);
   expect(meta.crowns).toBe(1);
+});
+
+test('Scout lets the player see the moves of an enemy piece', () => {
+  const meta = { ...emptyMeta(), crowns: 4 };
+  expect(canScout(meta)).toBe(false);
+  expect(buyUpgrade(meta, 'scout')).toBe(true);
+  expect(canScout(meta)).toBe(true);
+  expect(meta.crowns).toBe(0);
 });
 
 test('a win gives gold, keeps the army, and opens the camp', () => {

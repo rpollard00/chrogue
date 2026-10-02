@@ -254,6 +254,20 @@ export function legalMoves(state: State): Move[] {
   });
 }
 
+// The legal moves of the piece on a square, as if its side has the move.
+// A side that does not have the move cannot capture en passant.
+export function movesFrom(state: State, from: Square): Move[] {
+  const p = state.board[from];
+  if (!p) return [];
+  const { turn, ep } = state;
+  state.turn = p.color;
+  if (p.color !== turn) state.ep = -1;
+  const moves = legalMoves(state).filter((m) => m.from === from);
+  state.turn = turn;
+  state.ep = ep;
+  return moves;
+}
+
 // Returns null while the battle continues.
 // A side loses when it has no legal move or when only its king remains.
 export function outcome(state: State): Outcome | null {

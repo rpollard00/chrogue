@@ -11,6 +11,8 @@ export interface UpgradeDef {
   startRun?(run: Run, level: number): void;
   /** Returns the factor that the upgrade applies to shop prices. */
   priceFactor?(level: number): number;
+  /** In a battle, the player can select an enemy piece to see its moves. */
+  scout?: true;
 }
 
 const defs = {
@@ -44,6 +46,12 @@ const defs = {
     costs: [5, 8],
     priceFactor: (level) => 1 - 0.1 * level,
   },
+  scout: {
+    name: 'Scout',
+    text: 'In a battle, select an enemy piece to see the squares that it can move to.',
+    costs: [4],
+    scout: true,
+  },
 } satisfies Record<string, UpgradeDef>;
 
 export type UpgradeId = keyof typeof defs;
@@ -58,6 +66,8 @@ export function ownedUpgrades(meta: Meta): { def: UpgradeDef; level: number }[] 
     return level > 0 ? [{ def: UPGRADES[id], level }] : [];
   });
 }
+
+export const canScout = (meta: Meta): boolean => ownedUpgrades(meta).some(({ def }) => def.scout);
 
 // Returns the crown cost of the next level, or null at the maximum level.
 export const nextCost = (meta: Meta, id: UpgradeId): number | null => UPGRADES[id].costs[meta.upgrades[id] ?? 0] ?? null;

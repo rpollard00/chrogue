@@ -670,6 +670,10 @@ button.info:active { translate: 0 1px; }
   border: 0.45cqw solid rgba(30, 30, 30, 0.45);
   border-width: max(3px, 0.8cqw);
 }
+/* The moves of an enemy piece that the player selected. */
+.scouting .square.selected { box-shadow: inset 0 0 0 100px rgba(200, 86, 75, 0.55); }
+.scouting .square.target::after { background: rgba(160, 30, 22, 0.6); }
+.scouting .square.capture::after { border-color: rgba(160, 30, 22, 0.75); }
 .square:focus-visible { outline-offset: -3px; z-index: 1; }
 
 .piece {
@@ -828,7 +832,7 @@ button.info:active { translate: 0 1px; }
   align-content: center;
   gap: 1rem;
   box-sizing: content-box;
-  width: min(46rem, var(--view-w) - 2rem);
+  width: min(55rem, var(--view-w) - 2rem);
   min-height: calc(var(--view-h) - 2rem);
   padding: 1rem 0;
 }
@@ -838,6 +842,19 @@ button.info:active { translate: 0 1px; }
 .upgrades .hint { text-align: center; }
 .upgrades > button { justify-self: start; }
 .card.maxed { --flair: var(--accent); }
+/* On a phone, the upgrades scroll. The crowns stay in view in a bar at the top. */
+@media (max-width: 720px), (orientation: portrait) {
+  .upgrades { align-content: start; padding-top: 0; }
+  .upgrades header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    margin: 0 -0.5rem;
+    padding: 0.6rem 0.5rem;
+    background: var(--bg);
+    box-shadow: 0 8px 14px var(--shade-soft);
+  }
+}
 .card.bought { overflow: hidden; animation: unlock 800ms ease-out; }
 .card.bought::after {
   content: '';

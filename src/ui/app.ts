@@ -6,7 +6,7 @@ import type { Battle, Meta, Offer, RelicId, Run, RunSummary, UpgradeId } from '.
 export interface BattleView {
   battle: Battle;
   selected: Square;
-  /** The legal moves of the selected piece. */
+  /** The legal moves of the selected piece. The player can play them only if the piece is white. */
   targets: Move[];
   /** The promotion moves that wait for a choice of piece. */
   promotion: Move[] | null;

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { chooseMove, inCheck, legalMoves, makeMove, outcome, unmakeMove } from '../src/engine';
+import { chooseMove, inCheck, legalMoves, makeMove, movesFrom, outcome, unmakeMove } from '../src/engine';
 import type { State } from '../src/engine';
 import { fromFen, sq } from './helpers';
 
@@ -70,6 +70,23 @@ test('sidestep moves a bishop one square without a capture', () => {
   const state = fromFen('4k3/8/8/8/8/p7/P7/B3K3', 'w', { w: { sidestep: true } });
   expect(targets(state, 'a1')).toContain(sq('b1'));
   expect(targets(state, 'a1')).not.toContain(sq('a2'));
+});
+
+test('movesFrom gives the moves of a piece of the side that does not have the move', () => {
+  const to = (state: State, from: string) => movesFrom(state, sq(from)).map((m) => m.to).sort((a, b) => a - b);
+  const leap = fromFen('4k3/8/8/3n4/8/8/8/4K3', 'w', { b: { longLeap: true } });
+  expect(to(leap, 'd5')).toHaveLength(15);
+  expect(to(leap, 'd5')).toContain(sq('a4'));
+  expect(to(leap, 'a1')).toEqual([]);
+
+  // The rook on e7 is pinned to its king, thus it stays on the e-file.
+  expect(to(fromFen('4k3/4r3/8/8/8/8/8/4RK2'), 'e7')).toEqual(squares('e6', 'e5', 'e4', 'e3', 'e2', 'e1'));
+
+  const state = fromFen('4k3/8/8/3pP3/8/8/8/4K3');
+  state.ep = sq('d6');
+  expect(to(state, 'd5')).toEqual(squares('d4'));
+  expect(state).toMatchObject({ turn: 'w', ep: sq('d6') });
+  expect(to(state, 'e5')).toEqual(squares('d6', 'e6'));
 });
 
 test('outcome finds checkmate, stalemate, and a lone king', () => {

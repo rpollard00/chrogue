@@ -1,6 +1,6 @@
-import { inCheck, kingSquare, legalMoves } from '../../engine';
+import { inCheck, kingSquare, movesFrom } from '../../engine';
 import type { Color, Move, PieceId, PieceType, Square } from '../../engine';
-import { FLOORS, PIECE_NAME, enemyMove, floorOf, playMove, settleBattle } from '../../game';
+import { FLOORS, PIECE_NAME, canScout, enemyMove, floorOf, playMove, settleBattle } from '../../game';
 import type { BattleResult, MoveReport } from '../../game';
 import type { App, ScreenOf } from '../app';
 import { button, glyph, h, pieceEl, squareName } from '../dom';
@@ -62,6 +62,7 @@ const placeAt = (s: Square): string => `${(s & 7) * 100}% ${(7 - (s >> 3)) * 100
 // Makes the battle screen one time. After that, each click and each move changes only the elements that are different.
 export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
   const { run, view } = screen, { battle } = view, { state } = battle, spec = floorOf(run);
+  const scout = canScout(app.meta);
 
   const squares: HTMLElement[] = [];
   const board = h('div', { class: 'board' });
@@ -106,6 +107,8 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
 
   function syncSquares(): void {
     const check = inCheck(state, state.turn) ? kingSquare(state, state.turn) : -1;
+    // The marks of an enemy piece have a different color.
+    board.classList.toggle('scouting', state.board[view.selected]?.color === 'b');
     squares.forEach((el, s) => {
       const p = state.board[s], targets = view.targets.filter((m) => m.to === s);
       const capture = targets.length > 0 && (p !== null || targets.some((m) => m.epCapture));
@@ -197,14 +200,15 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
 
   function clickSquare(s: Square): void {
     if (view.busy || battle.result || view.promotion || state.turn !== 'w') return;
-    const moves = view.targets.filter((m) => m.to === s);
+    const own = state.board[view.selected]?.color === 'w', color = state.board[s]?.color;
+    const moves = own ? view.targets.filter((m) => m.to === s) : [];
     if (moves.length > 1) {
       view.promotion = moves;
     } else if (moves.length === 1) {
       return commit(moves[0]);
-    } else if (state.board[s]?.color === 'w' && s !== view.selected) {
+    } else if ((color === 'w' || (color === 'b' && scout)) && s !== view.selected) {
       view.selected = s;
-      view.targets = legalMoves(state).filter((m) => m.from === s);
+      view.targets = movesFrom(state, s);
     } else {
       view.selected = -1;
       view.targets = [];
