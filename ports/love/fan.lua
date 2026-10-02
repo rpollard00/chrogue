@@ -3,7 +3,6 @@
 local gfx = require('gfx')
 local icons = require('icons')
 local layout = require('layout')
-local rules = require('rules')
 local theme = require('theme')
 local lg = love.graphics
 local C, px = theme.color, gfx.px
@@ -15,12 +14,16 @@ local RAISE_TIME = 0.1
 local TIP_TIME = 0.12
 local FLASH_TIME = 1.1
 
-function fan.new(ids, side, area)
-  local self = { ids = ids, side = side, area = area, hovered = nil, hoveredAt = 0, raise = {} }
+-- `items` are the relics or the traits of a view: id, name, text. The text of a trait is the text for the enemy.
+function fan.new(items, side, area, align)
+  local ids = {}
+  for i, item in ipairs(items) do ids[i] = item.id end
+  local self = { items = items, ids = ids, side = side, area = area, hovered = nil, hoveredAt = 0, raise = {} }
   for i = 1, #ids do self.raise[i] = 0 end
   self.flair = side == 'enemy' and C.danger or C.relic
-  -- The medals of the enemy are at the right side of their area, next to the stash, as in the web game.
-  self.left = side == 'enemy' and area.x + area.w - #ids * layout.fanStep or area.x
+  -- In the battle, the medals of the enemy are at the right side of their area, next to the stash, as in the web game.
+  align = align or (side == 'enemy' and 'right' or 'left')
+  self.left = align == 'right' and area.x + area.w - #ids * layout.fanStep or area.x
   return self
 end
 
@@ -119,9 +122,9 @@ end
 -- Draws the card of a relic in a rectangle. It has the size of each card of the game, and its text is in the place of the key.
 function fan.drawCard(self, r)
   local id = self.ids[self.hovered]
-  local relic = rules.relics.RELICS[id]
+  local relic = self.items[self.hovered]
   local enemy = self.side == 'enemy'
-  local text = enemy and (relic.foeText or relic.text) or relic.text
+  local text = relic.text
   local flair = self.flair
   local x, y, w = r.x, r.y, r.w
   gfx.shadow(x, y, w, r.h, px(10), px(18), px(24), -px(6), 0.9)

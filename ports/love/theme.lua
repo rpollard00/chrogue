@@ -25,7 +25,10 @@ theme.color = {
   keyHi = hex('#3a4250'), keyLo = hex('#2a303b'), keyHoverHi = hex('#444d5d'), keyHoverLo = hex('#303743'),
   keyOffHi = hex('#2a2f39'), keyOffLo = hex('#242830'), keyEdge = hex('#0e1014'),
   amberHi = hex('#efc060'), amberLo = hex('#cf9632'), amberEdge = hex('#6b4a12'), amberInk = hex('#1a1408'),
-  wellHi = hex('#121419'), wellLo = hex('#1a1d24'),
+  amberOffHi = hex('#6b5628'), amberOffLo = hex('#59471f'), amberOffEdge = hex('#2a2009'), amberOffInk = hex('#d8ccae'),
+  wellHi = hex('#121419'), wellLo = hex('#1a1d24'), shelfHi = hex('#101216'), shelfLo = hex('#171a20'),
+  paperHi = hex('#efe4c8'), paperLo = hex('#e0d2ad'), paperInk = hex('#2b2417'), paperHead = hex('#6b5320'), paperEdge = hex('#8f7f58'),
+  infoHi = hex('#f1dfae'), infoLo = hex('#b89a56'), infoInk = hex('#2a2110'),
   liningHi = hex('#7a634b'), lining = hex('#675440'), liningLo = hex('#54432f'), liningInk = hex('#e2d8c0'),
   medalRim = hex('#c9c4b8'), lamp = hex('#f2c468'), lampCore = hex('#ffe7a8'),
   bossHi = hex('#e27b6f'), bossInk = hex('#1c0a08'), bossEdge = hex('#5b1d16'),
@@ -53,7 +56,9 @@ local FILES = {
   piece = 'fonts/DejaVuSans.ttf',
 }
 
-local fonts = {}
+local fonts, data = {}, {}
+-- The number of fonts that the game made, for the dump of the test script.
+theme.fontsMade = 0
 
 -- Returns the font of a face for a size in pixels. A change of the window size makes new fonts.
 function theme.font(face, pixels)
@@ -61,8 +66,11 @@ function theme.font(face, pixels)
   local key = face .. pixels
   local font = fonts[key]
   if not font then
-    font = love.graphics.newFont(FILES[face], pixels, 'light')
+    -- The file of each typeface is read one time.
+    data[face] = data[face] or love.filesystem.newFileData(FILES[face])
+    font = love.graphics.newFont(data[face], pixels, 'light')
     fonts[key] = font
+    theme.fontsMade = theme.fontsMade + 1
   end
   return font
 end

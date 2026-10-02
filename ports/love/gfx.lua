@@ -126,24 +126,73 @@ function gfx.well(x, y, w, h, radius, lined)
   lg.line(x + radius * 0.6, y + h - px(0.5), x + w - radius * 0.6, y + h - px(0.5))
 end
 
--- A key. `kind` is 'quiet' or 'primary'. A key goes down when the player presses it.
+-- A shelf: a recessed area that holds a row of cards. Its shadow is deeper than the shadow of a well.
+function gfx.shelf(x, y, w, h, radius)
+  local shape = function() lg.rectangle('fill', x, y, w, h, radius, radius, 12) end
+  gfx.gradient(shape, x, y, w, h, C.shelfHi, C.shelfLo)
+  gfx.gradient(shape, x, y, w, px(10), theme.alpha(C.black, 0.7), theme.alpha(C.black, 0))
+  gfx.setColor(C.shineSoft)
+  lg.setLineWidth(px(1))
+  lg.line(x + radius * 0.6, y + h - px(0.5), x + w - radius * 0.6, y + h - px(0.5))
+end
+
+--[[
+  A key. `kind` is 'key', 'quiet' or 'primary'. A key goes down when the player presses it.
+  A key that the player cannot use (state.disabled) stays down and has no light, as button:disabled in style.css.
+  Returns the distance that the face went down, and the color of the label.
+]]
 function gfx.key(x, y, w, h, kind, state)
   local primary = kind == 'primary'
   local radius = primary and px(8) or px(6)
   local depth = primary and px(4) or (kind == 'quiet' and px(2) or px(3))
   local hi, lo, edge = C.keyHi, C.keyLo, C.keyEdge
+  local ink = primary and C.amberInk or (kind == 'quiet' and C.dim or C.text)
+  local disabled = state.disabled
   if primary then hi, lo, edge = C.amberHi, C.amberLo, C.amberEdge
   elseif kind == 'quiet' then hi, lo = C.keyOffHi, C.keyOffLo
-  elseif state.hover then hi, lo = C.keyHoverHi, C.keyHoverLo end
-  local down = state.pressed and (depth - px(1)) or 0
-  if not state.pressed and kind ~= 'quiet' then gfx.shadow(x, y, w, h, radius, primary and px(7) or px(4), px(7), 0, 0.5) end
+  elseif state.hover and not disabled then hi, lo = C.keyHoverHi, C.keyHoverLo end
+  local down = state.pressed and not disabled and (depth - px(1)) or 0
+  if disabled then
+    down = depth - px(1)
+    if primary then hi, lo, edge, ink = C.amberOffHi, C.amberOffLo, C.amberOffEdge, C.amberOffInk
+    else hi, lo, ink = C.keyOffHi, C.keyOffLo, C.dim end
+  end
+  if down == 0 and kind ~= 'quiet' then gfx.shadow(x, y, w, h, radius, primary and px(7) or px(4), px(7), 0, 0.5) end
   gfx.rect(x, y + depth, w, h, radius, edge)
   gfx.gradientRect(x, y + down, w, h, radius, hi, lo)
-  if primary and state.hover then gfx.rect(x, y + down, w, h, radius, C.white, 0.08) end
-  gfx.setColor(primary and C.shineHard or (kind == 'quiet' and C.shineSoft or C.shine))
+  if primary and state.hover and not disabled then gfx.rect(x, y + down, w, h, radius, C.white, 0.08) end
+  gfx.setColor((primary and not disabled) and C.shineHard or ((kind == 'quiet' or disabled) and C.shineSoft or C.shine))
   lg.setLineWidth(px(1))
   lg.line(x + radius * 0.7, y + down + px(0.5), x + w - radius * 0.7, y + down + px(0.5))
-  return down
+  return down, ink
+end
+
+local gray
+-- Draws with less color and less opacity, as filter: grayscale() with opacity in style.css. `amount` is from 0 to 1.
+function gfx.muted(amount, alpha, draw)
+  gray = gray or lg.newShader([[
+    extern float amount;
+    vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
+      vec4 c = Texel(tex, uv) * color;
+      float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+      return vec4(mix(c.rgb, vec3(l), amount), c.a);
+    }
+  ]])
+  local before = lg.getShader()
+  gray:send('amount', amount)
+  lg.setShader(gray)
+  gfx.withAlpha(alpha, draw)
+  lg.setShader(before)
+end
+
+-- Draws a function with a scale around a point.
+function gfx.scaled(cx, cy, sx, sy, draw)
+  lg.push()
+  lg.translate(cx, cy)
+  lg.scale(sx, sy or sx)
+  lg.translate(-cx, -cy)
+  draw()
+  lg.pop()
 end
 
 -- A medal: a disk that is pressed into its surface. `flair` is the color of its rim and of its picture.
@@ -230,7 +279,16 @@ local GLYPH = { k = '♚', q = '♛', r = '♜', b = '♝', n = '♞', p = '♟'
 -- Draws a piece with its center at a point. `size` is the font size in units. The glyph is solid for each color,
 -- and it has an outline, thus a piece is readable on each square and on the lining.
 function gfx.piece(kind, color, cx, cy, size, alpha, scale)
-  local font = fontOf('piece', size * (scale or 1))
+  if scale and scale ~= 1 then
+    -- The scale of an animation is a transform. A font for each scaled size would load the typeface again in each frame.
+    lg.push()
+    lg.translate(cx, cy)
+    lg.scale(scale)
+    gfx.piece(kind, color, 0, 0, size, alpha)
+    lg.pop()
+    return
+  end
+  local font = fontOf('piece', size)
   local glyph, s = GLYPH[kind], 1 / gfx.u
   local x = cx - font:getWidth(glyph) * s / 2
   local y = cy - (font:getAscent() - font:getDescent()) * s / 2

@@ -2,7 +2,7 @@
 local gfx = require('gfx')
 local icons = require('icons')
 local layout = require('layout')
-local screen = require('screen')
+local text = require('text')
 local theme = require('theme')
 local lg = love.graphics
 local C, px = theme.color, gfx.px
@@ -26,7 +26,7 @@ local function stash(r, types, color, changedAt, time)
   local scale = 1
   if changedAt then
     -- The new piece comes into view larger than its size, then it goes to its size.
-    local t = (time - changedAt) / screen.PIP_TIME
+    local t = (time - changedAt) / 0.5
     if t < 0.6 then scale = 1.7 * t / 0.6 elseif t < 1 then scale = 1.7 - 0.7 * (t - 0.6) / 0.4 end
   end
   local half = gfx.textWidth('♜', 'piece', PIECE_SIZE) / 2
@@ -38,7 +38,7 @@ end
 function plaques.stashList(self, side)
   local enemy = side == 'enemy'
   local r = enemy and layout.foe.stash or layout.me.stash
-  local types = enemy and self.battle.taken.b or self.battle.taken.w
+  local types = enemy and self.view.taken.b or self.view.taken.w
   if #types == 0 then return end
   local color = enemy and 'w' or 'b'
   local sorted = {}
@@ -72,10 +72,11 @@ function plaques.enemy(self, foeFan, drawFan)
   local p = L.plaque
   gfx.raised(p.x, p.y, p.w, p.h, px(12))
   kingMedal(L.medal, 'b', C.danger)
-  name(L.name, self.spec.name)
-  local sub = ('Floor %d of %d'):format(self.run.floor, self.floors)
+  local floor = self.view.floor
+  name(L.name, floor.name)
+  local sub = text.floor(floor)
   local width = gfx.text(sub, 'body', 0.8, L.sub.x, L.sub.y, { color = C.dim, line = L.sub.h })
-  if self.spec.boss then
+  if floor.boss then
     local bx, by, bh = L.sub.x + width + 0.45, L.sub.y + 0.08, 1.04
     local bw = gfx.textWidth('BOSS', 'display', 0.72, 0.12) + 0.8 - 0.12 * 0.72
     gfx.rect(bx, by + px(1), bw, bh, px(3), C.bossEdge)
@@ -83,12 +84,12 @@ function plaques.enemy(self, foeFan, drawFan)
     gfx.text('BOSS', 'display', 0.72, bx + 0.4, by, { color = C.bossInk, tracking = 0.12, line = bh })
   end
   drawFan(foeFan)
-  stash(L.stash, self.battle.taken.b, 'w', self.stashAt.b, self.time)
+  stash(L.stash, self.view.taken.b, 'w', self.stashAt.b, self.time)
 end
 
 -- The lamp: the turn status. It is lit when the player can move.
 local function lamp(self, r)
-  local text, lit = screen.status(self)
+  local status, lit = self:status()
   local cx, cy = r.x + 0.3, r.y + r.h / 2
   gfx.circle(cx, cy, 0.3 + px(1.5), C.keyEdge)
   if lit then
@@ -98,8 +99,8 @@ local function lamp(self, r)
     gfx.circle(cx, cy, 0.3, C.wellHi)
   end
   local color = lit and C.lamp or C.dim
-  local width = gfx.text(text, 'bold', 1.05, r.x + 1.05, r.y, { color = color, line = r.h })
-  if self.busy then
+  local width = gfx.text(status, 'bold', 1.05, r.x + 1.05, r.y, { color = color, line = r.h })
+  if self:busy() then
     -- Three dots that blink one after the other.
     for i = 0, 2 do
       local phase = (self.time - i * 0.15) % 1
@@ -117,11 +118,11 @@ local function purse(self, r)
   gfx.setColor(C.gold)
   icons.coin(x + 0.675, r.y + r.h / 2, 1.35)
   x = x + 1.35 + 0.405
-  x = x + gfx.text(tostring(self.run.gold), 'display', 1.35, x, r.y, { color = C.gold, tracking = 0.02, line = r.h }) + 0.5
+  x = x + gfx.text(tostring(self.view.gold), 'display', 1.35, x, r.y, { color = C.gold, tracking = 0.02, line = r.h }) + 0.5
   if self.gold.to > 0 then
     local opts = { color = C.dim, line = r.h }
     x = x + gfx.text('+', 'body', 0.8, x, r.y, opts)
-    x = x + gfx.text(tostring(screen.shownGold(self)), 'bold', 0.8, x, r.y, { color = C.gold, line = r.h })
+    x = x + gfx.text(tostring(self:shownGold()), 'bold', 0.8, x, r.y, { color = C.gold, line = r.h })
     gfx.text(' from captures', 'body', 0.8, x, r.y, opts)
   end
 end
@@ -132,11 +133,11 @@ function plaques.player(self, myFan, drawFan, ui)
   gfx.raised(p.x, p.y, p.w, p.h, px(12), { top = C.accent })
   kingMedal(L.medal, 'w', C.medalRim)
   name(L.name, 'You')
-  local over = self.battle.result ~= nil
+  local over = self.view.result ~= nil
   -- The lamp and the Give up key go away when the battle has a result. Their slots stay.
   if not over then lamp(self, L.lamp) end
   purse(self, L.purse)
-  stash(L.stash, self.battle.taken.w, 'b', self.stashAt.w, self.time)
+  stash(L.stash, self.view.taken.w, 'b', self.stashAt.w, self.time)
   drawFan(myFan)
   if not over then
     local k = L.giveUp

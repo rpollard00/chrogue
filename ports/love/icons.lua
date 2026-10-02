@@ -15,6 +15,19 @@ local PATHS = {
   secondWind = 'M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5',
   conscription = 'M6 21V4M6 5h12l-3 4 3 4H6',
   interest = 'M3 17l6-6 4 4 8-8M15 7h6v6',
+  coins = 'M5 8c0-1.7 3.1-3 7-3s7 1.3 7 3-3.1 3-7 3-7-1.3-7-3zM5 8v4c0 1.7 3.1 3 7 3s7-1.3 7-3V8M5 12v4c0 1.7 3.1 3 7 3s7-1.3 7-3v-4',
+  chest = 'M4 19v-9a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v9zM4 12h16M12 11v4',
+  tag = 'M3 12V4h8l10 10-8 8zM7.5 8.5h.01',
+  eye = 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6z',
+}
+
+-- The art of each upgrade, as UPGRADE_ART in src/ui/icons.ts: a piece, or an icon.
+icons.UPGRADE_ART = {
+  pawn = { kind = 'piece', type = 'p' },
+  gold = { kind = 'icon', id = 'chest' },
+  bishop = { kind = 'piece', type = 'b' },
+  haggle = { kind = 'icon', id = 'tag' },
+  scout = { kind = 'icon', id = 'eye' },
 }
 
 -- Reads the numbers and the command letters of a path. A number can start with '-' or '.' with no space before it.
@@ -57,12 +70,24 @@ local function arc(points, x1, y1, r, large, sweep, x2, y2)
   end
 end
 
-local ARGS = { M = 2, L = 2, H = 1, V = 1, A = 7, Z = 0 }
+local ARGS = { M = 2, L = 2, H = 1, V = 1, A = 7, C = 6, S = 4, Z = 0 }
+
+-- The points of a cubic Bézier curve from the current point.
+local function cubic(points, x0, y0, x1, y1, x2, y2, x3, y3)
+  for i = 1, 12 do
+    local t = i / 12
+    local u = 1 - t
+    points[#points + 1] = u * u * u * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3
+    points[#points + 1] = u * u * u * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3
+  end
+end
 
 -- Returns the lines of a path. Each line is a list of x, y values.
 local function parse(path)
   local list, lines, points = tokens(path), {}, nil
   local x, y, startX, startY = 0, 0, 0, 0
+  -- The second control point of the last curve, for the reflection of S.
+  local lastCX, lastCY = nil, nil
   local i, command = 1, nil
   while i <= #list do
     if type(list[i]) == 'string' then
@@ -91,15 +116,28 @@ local function parse(path)
       if upper == 'L' then nx, ny = (relative and x or 0) + a[1], (relative and y or 0) + a[2]
       elseif upper == 'H' then nx = (relative and x or 0) + a[1]
       elseif upper == 'V' then ny = (relative and y or 0) + a[1]
-      elseif upper == 'A' then nx, ny = (relative and x or 0) + a[6], (relative and y or 0) + a[7] end
+      elseif upper == 'A' then nx, ny = (relative and x or 0) + a[6], (relative and y or 0) + a[7]
+      elseif upper == 'C' then nx, ny = (relative and x or 0) + a[5], (relative and y or 0) + a[6]
+      elseif upper == 'S' then nx, ny = (relative and x or 0) + a[3], (relative and y or 0) + a[4] end
+      local ox, oy = relative and x or 0, relative and y or 0
       if upper == 'A' then
         arc(points, x, y, a[1], a[4], a[5], nx, ny)
+      elseif upper == 'C' then
+        cubic(points, x, y, ox + a[1], oy + a[2], ox + a[3], oy + a[4], nx, ny)
+        lastCX, lastCY = ox + a[3], oy + a[4]
+      elseif upper == 'S' then
+        local c1x, c1y = x, y
+        if lastCX then c1x, c1y = 2 * x - lastCX, 2 * y - lastCY end
+        cubic(points, x, y, c1x, c1y, ox + a[1], oy + a[2], nx, ny)
+        lastCX, lastCY = ox + a[1], oy + a[2]
       else
         points[#points + 1] = nx
         points[#points + 1] = ny
       end
+      if upper ~= 'C' and upper ~= 'S' then lastCX = nil end
       x, y = nx, ny
     end
+    if upper == 'M' or upper == 'Z' then lastCX = nil end
   end
   return lines
 end
@@ -126,6 +164,22 @@ function icons.draw(id, cx, cy, size)
   end
   lg.setLineJoin('miter')
   lg.pop()
+end
+
+local crown
+-- The crown of the crowns: a solid shape, as the solid icons of the currencies in the web game.
+function icons.crown(cx, cy, size)
+  crown = crown or love.math.triangulate(4, 18, 20, 18, 21, 8, 16, 12, 12, 5, 8, 12, 3, 8)
+  lg.push()
+  lg.translate(cx - size / 2, cy - size / 2)
+  lg.scale(size / 24)
+  for _, t in ipairs(crown) do lg.polygon('fill', t) end
+  lg.pop()
+end
+
+-- The icon of a currency: 'gold' or 'crowns'. Set the color before the call.
+function icons.currency(currency, cx, cy, size)
+  if currency == 'crowns' then icons.crown(cx, cy, size) else icons.coin(cx, cy, size) end
 end
 
 -- The coin of the purse: a ring and a disk.
