@@ -1,11 +1,13 @@
 // Saved data in localStorage. This module checks the data that it reads.
 import { isRelicId } from './relics';
+import type { RelicId } from './relics';
 import { FLOORS } from './floors';
 import type { Enemy, Meta, Offer, Run, Unit } from './types';
 import { isUpgradeId } from './upgrades';
 
 const META_KEY = 'chrogue.meta';
 const RUN_KEY = 'chrogue.run';
+const BARRED_KEY = 'chrogue.barred';
 const PIECE_TYPES = 'pnbrqk';
 
 type Json = Record<string, unknown>;
@@ -83,3 +85,6 @@ export function saveRun(run: Run | null): void {
   if (run) localStorage.setItem(RUN_KEY, JSON.stringify(run));
   else localStorage.removeItem(RUN_KEY);
 }
+
+export const loadBarred = (): RelicId[] => list(read(BARRED_KEY)).filter(isRelicId);
+export const saveBarred = (ids: readonly RelicId[]): void => localStorage.setItem(BARRED_KEY, JSON.stringify(ids));

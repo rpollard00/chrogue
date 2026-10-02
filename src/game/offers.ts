@@ -5,7 +5,7 @@
 import { PIECE_NAME, addUnit, canAddUnit } from './army';
 import { pickWeighted, shuffle } from './random';
 import type { Weighted } from './random';
-import { RELICS, RELIC_IDS } from './relics';
+import { RELICS, relicPool } from './relics';
 import type { Offer, RecruitType, Run } from './types';
 
 export interface OfferInfo {
@@ -73,7 +73,7 @@ const piecePool = (floor: number): Weighted<Offer>[] =>
   RECRUITS.filter((r) => floor >= r.minFloor).map((r) => ({ item: { kind: 'piece', type: r.type }, weight: r.weight }));
 
 const newRelics = (run: Run, n: number): Offer[] =>
-  shuffle(RELIC_IDS.filter((id) => !run.relics.includes(id))).slice(0, n).map((id) => ({ kind: 'relic', id }));
+  shuffle(relicPool().filter((id) => !run.relics.includes(id))).slice(0, n).map((id) => ({ kind: 'relic', id }));
 
 // The three free rewards after a win. run.floor is the floor that comes next.
 export function rollDraft(run: Run): Offer[] {

@@ -97,8 +97,23 @@ const defs = {
 export type RelicId = keyof typeof defs;
 export const RELICS: Record<RelicId, RelicDef> = defs;
 export const RELIC_IDS = Object.keys(defs) as RelicId[];
-export const TRAIT_IDS = RELIC_IDS.filter((id) => RELICS[id].foeText);
 export const isRelicId = (value: unknown): value is RelicId => typeof value === 'string' && Object.hasOwn(defs, value);
+
+// The relics that the game does not offer. The debug menu changes this set.
+const barred = new Set<RelicId>();
+
+export const isBarred = (id: RelicId): boolean => barred.has(id);
+
+export function barRelic(id: RelicId, bar: boolean): void {
+  if (bar) barred.add(id);
+  else barred.delete(id);
+}
+
+// The relics that the game can offer as a reward or in the shop.
+export const relicPool = (): RelicId[] => RELIC_IDS.filter((id) => !barred.has(id));
+
+// The relics that the game can give to a boss as a trait.
+export const traitPool = (): RelicId[] => relicPool().filter((id) => RELICS[id].foeText);
 
 // The movement rules that a list of relics gives to one side.
 export const rulesFor = (ids: readonly RelicId[]): RuleSet => Object.assign({}, ...ids.map((id) => RELICS[id].rules));

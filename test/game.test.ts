@@ -2,9 +2,9 @@ import { expect, test } from 'bun:test';
 import { VALUE, legalMoves } from '../src/engine';
 import type { Move } from '../src/engine';
 import {
-  CONSCRIPT_ID, FLOORS, RELIC_IDS, TRAIT_IDS, UPGRADES, UPGRADE_IDS, UPGRADE_NAME_MAX, UPGRADE_SLOTS,
+  CONSCRIPT_ID, FLOORS, RELICS, RELIC_IDS, UPGRADES, UPGRADE_IDS, UPGRADE_NAME_MAX, UPGRADE_SLOTS,
   buyOffer, buyUpgrade, canScout, createBattle, finishRun, generateEnemy, newRun, parseMeta, parseRun,
-  playMove, priceOf, rollDraft, rollShop, settleBattle, takeDraft, takeOffer,
+  barRelic, playMove, priceOf, relicPool, rollDraft, rollShop, settleBattle, takeDraft, takeOffer, traitPool,
 } from '../src/game';
 import type { Battle, Enemy, Meta, MoveReport, Run } from '../src/game';
 import { sq } from './helpers';
@@ -37,7 +37,7 @@ test('each floor makes an enemy army that uses the budget', () => {
       expect(total).toBeGreaterThanOrEqual(spec.budget - 4);
       expect(new Set(pieces.map((p) => p.square)).size).toBe(pieces.length);
       expect(traits).toHaveLength(spec.traits);
-      expect(traits.every((id) => TRAIT_IDS.includes(id))).toBe(true);
+      expect(traits.every((id) => RELICS[id].foeText)).toBe(true);
     }
   });
 });
@@ -178,6 +178,24 @@ test('the draft and the shop do not offer a relic that the run has', () => {
       if (offer.kind === 'relic') expect(offer.id).toBe(RELIC_IDS[0]);
     }
   }
+});
+
+test('the game does not offer a barred relic, and a boss does not get it as a trait', () => {
+  const [kept, ...rest] = traitPool();
+  for (const id of rest) barRelic(id, true);
+  try {
+    expect(relicPool()).not.toContain(rest[0]);
+    const run = newRun(emptyMeta());
+    for (let n = 0; n < 50; n++) {
+      for (const offer of [...rollDraft(run), ...rollShop(run)]) {
+        if (offer.kind === 'relic') expect(rest).not.toContain(offer.id);
+      }
+      expect(generateEnemy(4).traits).toEqual([kept]);
+    }
+  } finally {
+    for (const id of rest) barRelic(id, false);
+  }
+  expect(relicPool()).toEqual(RELIC_IDS);
 });
 
 test('the shop takes gold, and Haggler decreases the price', () => {

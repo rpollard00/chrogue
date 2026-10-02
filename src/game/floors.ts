@@ -2,7 +2,7 @@
 import { VALUE } from '../engine';
 import type { AiLevel, Square } from '../engine';
 import { pickWeighted, shuffle } from './random';
-import { TRAIT_IDS } from './relics';
+import { traitPool } from './relics';
 import type { Enemy, RecruitType, Run } from './types';
 
 export interface Floor {
@@ -51,5 +51,5 @@ export function generateEnemy(floor: number): Enemy {
   for (const type of TYPES) {
     for (let i = 0; i < counts[type]; i++) pieces.push({ type, square: squares[type][i] });
   }
-  return { pieces, traits: shuffle(TRAIT_IDS).slice(0, spec.traits) };
+  return { pieces, traits: shuffle(traitPool()).slice(0, spec.traits) };
 }
