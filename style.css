@@ -284,11 +284,6 @@ button.info:active { translate: 0 1px; }
   background: linear-gradient(160deg, var(--raised-hi), var(--raised-lo));
   box-shadow: inset 0 1px 0 var(--shine), inset 0 0 0 1px var(--rim), 0 3px 0 var(--edge), 0 12px 14px -8px var(--shade);
 }
-.plaque:has(.lamp.lit) {
-  box-shadow:
-    inset 0 2px 0 var(--accent), inset 0 0 0 1px var(--rim), 0 3px 0 var(--edge), 0 12px 14px -8px var(--shade),
-    0 -6px 16px -8px color-mix(in srgb, var(--accent) 50%, transparent);
-}
 .plaque > .medal { --size: 2.6rem; --flair: var(--medal-rim); background: radial-gradient(circle at 50% 30%, var(--lining-hi), var(--lining-lo) 78%); }
 .plaque.foe > .medal { --flair: var(--danger); }
 .id { display: grid; }
@@ -518,25 +513,27 @@ button.info:active { translate: 0 1px; }
   container-type: inline-size;
 }
 .battle .plaque { min-height: 3.6rem; }
-.battle .well { margin-left: auto; }
-.battle .well:not([hidden]) ~ .well { margin-left: 0; }
-/* The player plaque has a second line for the relics and the Give up key. With no relic, it has one line. */
+/* Each plaque keeps its size for the full battle, thus the board keeps its size. No item comes or goes with the state. */
+.battle .foe .well { margin-left: auto; }
+/* The player plaque has two lines. Line 1: the status and the gold. Line 2: the captured pieces, the relics, and the Give up key. */
+.battle .me { box-shadow: inset 0 2px 0 var(--accent), inset 0 0 0 1px var(--rim), 0 3px 0 var(--edge), 0 12px 14px -8px var(--shade); }
+.battle .me .id { flex: 1 1 8rem; min-height: 3.2rem; align-content: center; }
 .battle .me::after { content: ''; order: 1; flex-basis: 100%; }
-.battle .me:has(.tokens[hidden])::after { display: none; }
-.battle .me .tokens { order: 2; }
-.battle .me .quiet { order: 2; margin-left: auto; }
-.battle .me:has(.tokens[hidden]) .quiet { margin-left: 0; }
-.battle .taken .piece { animation: pip 500ms cubic-bezier(0.2, 1.6, 0.4, 1); }
-/* A narrow plaque: the tokens have their own line, and the gold goes below them. */
+.battle .me :is(.lined, .tokens, .quiet) { order: 2; }
+.battle .me .quiet { margin-left: auto; }
+/* A tray has a slot for each piece that it can get, thus it keeps its width. The pieces overlap. */
+.battle .taken { --step: 1.1rem; flex-wrap: nowrap; gap: 0; min-width: calc(var(--slots) * var(--step) + 0.5rem); }
+.battle .taken .piece { display: grid; place-items: center; width: var(--step); animation: pip 500ms cubic-bezier(0.2, 1.6, 0.4, 1); }
+/* A narrow plaque: the tray and the tokens have their own lines, and the gold goes below them. */
 @container (max-width: 34rem) {
   .battle .tokens { order: 1; flex-basis: 100%; }
-  .battle .me::after { display: none; }
-  .battle .me:has(.tokens[hidden])::after { display: block; order: 2; }
-  /* The status text has the full line beside the medal, thus a long text does not wrap. The captured pieces go to the next line. */
-  .battle .me .id { flex: 1 1 calc(100% - 4rem); }
-  .battle .me .lined { order: 1; margin-left: 0; }
-  .battle .me .purse { order: 3; margin-left: 0; }
-  .battle .me .quiet, .battle .me:has(.tokens[hidden]) .quiet { order: 3; min-height: 2.25rem; margin-left: auto; }
+  .battle .taken { --step: 0.85rem; }
+  .battle .taken .piece { font-size: 1.4rem; }
+  .battle .lined { flex: 1 1 100%; }
+  .battle .foe .tokens { order: 2; }
+  .battle .me .tokens { order: 2; }
+  .battle .me .purse { order: 3; }
+  .battle .me .quiet { order: 3; min-height: 2.25rem; }
 }
 .board-wrap { position: relative; }
 .dots i { font-style: normal; animation: blink 1s infinite; }

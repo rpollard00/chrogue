@@ -34,6 +34,7 @@ Rules:
 - A screen has at most two plaques and two shelves. If each group becomes a plaque, the cards do not stand out.
 - A piece that is not on the board is on a board-brown lining. A black piece is not visible on a dark surface.
 - An empty group has no heading and no "None" text.
+- In a battle, the plaques keep their size, thus the board keeps its size. No item of a plaque comes or goes with the state. The trays for the captured pieces are an exception to the rule above: each tray shows from the start, with a slot for each piece that it can get.
 - The display typeface is for names, headings, the wordmark, the primary key, the boss badge, and the purse, as in mockup C. Body text uses the system typeface.
 
 ## Composition

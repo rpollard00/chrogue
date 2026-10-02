@@ -88,9 +88,12 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
   let shownPromotion: Move[] | null = null;
   board.append(promotion);
   // The pieces that each side captured.
+  // Each tray has a slot for each piece that it can get. The kings do not go to a tray.
+  const slots = (of: Color, by: Color): number =>
+    battle.taken[by].length + state.board.filter((p) => p?.color === of && p.type !== 'k').length;
   const trays: Record<Color, PieceWell> = {
-    w: pieceWell('b', 'Pieces that you captured', 'Captured'),
-    b: pieceWell('w', 'Pieces that you lost', 'Lost'),
+    w: pieceWell('b', 'Pieces that you captured', 'Captured', slots('b', 'w')),
+    b: pieceWell('w', 'Pieces that you lost', 'Lost', slots('w', 'b')),
   };
   const captureGold = h('strong', {}, '0');
   const captureNote = h('small', { hidden: true }, '+', captureGold, ' from captures');
@@ -160,7 +163,7 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
 
   function syncSide(): void {
     let text = 'Your move.';
-    if (view.promotion) text = 'Select a piece for the promotion.';
+    if (view.promotion) text = 'Select the new piece.';
     else if (view.busy) text = 'The enemy thinks';
     else if (inCheck(state, 'w')) text = 'Your king is in check.';
     // A screen reader reads the status again when its content changes, thus the content changes only with the text.

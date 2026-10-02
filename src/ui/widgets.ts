@@ -44,23 +44,26 @@ export const countPieces = (types: readonly PieceType[]): string =>
 
 export interface PieceWell {
   el: HTMLElement;
-  /** Shows the pieces. A call adds only the pieces that are new. The well is hidden while it has no piece. */
+  /** Shows the pieces. A call adds only the pieces that are new. */
   show(types: readonly PieceType[]): void;
 }
 
 /**
  * A well for pieces that are not on the board. Its lining has the brown of the board.
  * `label` names the group for a screen reader. `caption` is a visible text before the pieces.
+ * With `slots`, the well has the width of that number of pieces from the start, thus it does not change the layout when a piece comes.
+ * With no `slots`, the well is hidden while it has no piece.
  */
-export function pieceWell(color: Color, label: string, caption?: string): PieceWell {
+export function pieceWell(color: Color, label: string, caption?: string, slots?: number): PieceWell {
   const row = h('span', { class: 'taken', role: 'img' });
-  const el = h('div', { class: 'well lined', hidden: true }, caption && h('span', { class: 'cap' }, caption), row);
+  const el = h('div', { class: 'well lined', hidden: slots === undefined, style: slots === undefined ? null : `--slots: ${slots}` },
+    caption && h('span', { class: 'cap' }, caption), row);
   return {
     el,
     show(types) {
       for (let i = row.childElementCount; i < types.length; i++) row.append(pieceEl(types[i], color));
-      row.setAttribute('aria-label', `${label}: ${countPieces(types)}`);
-      el.hidden = types.length === 0;
+      row.setAttribute('aria-label', `${label}: ${countPieces(types) || 'none'}`);
+      el.hidden = slots === undefined && types.length === 0;
     },
   };
 }
