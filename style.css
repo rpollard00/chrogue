@@ -208,19 +208,47 @@ button .amount { margin-left: 0.45rem; }
 }
 .medal .piece { font-size: 1.2em; }
 
-.tokens { --flair: var(--relic); display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
-.tokens.foe { --flair: var(--danger); }
-.token {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0.5rem 0.25rem 0.3rem;
-  border-radius: 999px;
-  font-size: 0.9rem;
+/* The relics are a fan of medals that overlap with a fixed step. */
+.fan { --flair: var(--relic); --step: 1.75rem; display: flex; margin: 0; padding: 0 0.9rem 0 0; list-style: none; }
+.fan.foe { --flair: var(--danger); }
+.fan li { position: relative; display: flex; width: var(--step); }
+button.chip {
+  flex: none;
+  min-height: 0;
+  padding: 0.2rem;
+  border: 0;
+  border-radius: 50%;
   background: linear-gradient(#2c323d, #22262f);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), inset 0 -1px 0 rgba(0, 0, 0, 0.4), 0 2px 0 #0d0e12, 0 4px 6px -2px rgba(0, 0, 0, 0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), -2px 0 3px rgba(0, 0, 0, 0.45), 0 2px 0 #0d0e12, 0 4px 6px -2px rgba(0, 0, 0, 0.6);
+  transition: translate 100ms ease-out;
 }
-.token.flash { animation: relic 1100ms ease-out; }
+.chip .medal { --size: 1.9rem; }
+.fan li:is(:hover, :focus-within) { z-index: 6; }
+.fan li:is(:hover, :focus-within) .chip { translate: 0 -0.35rem; box-shadow: 0 0 0 1.5px var(--flair), 0 6px 10px rgba(0, 0, 0, 0.7); }
+.fan.foe li:is(:hover, :focus-within) .chip { translate: 0 0.35rem; }
+.fan li.flash .chip { animation: relic 1100ms ease-out; }
+/* The card of a relic shows above its medal. It has the size of each card of the game, and its text is in the place of the key. */
+.fan .card {
+  --flair: var(--relic);
+  position: absolute;
+  bottom: calc(100% + 1.5rem);
+  left: 50%;
+  translate: calc(-50% + var(--shift, 0px)) 0;
+  display: none;
+  width: 9.75rem;
+  pointer-events: none;
+  box-shadow:
+    inset 0 1px 0 var(--shine),
+    inset 0 0 0 1px color-mix(in srgb, var(--flair) 70%, #111),
+    0 3px 0 var(--edge),
+    0 18px 24px -6px rgba(0, 0, 0, 0.9);
+  animation: tip 120ms ease-out;
+}
+.fan.foe .card { --flair: var(--danger); top: calc(100% + 1.5rem); bottom: auto; }
+.fan li:is(:hover, :focus-within) .card { display: flex; }
+.fan .card .medal { --size: 3rem; }
+.fan .card h3 { min-height: 0; }
+.fan .card p { margin: 0; padding: 0 0.3rem; font-size: 0.75rem; line-height: 1.35; text-wrap: balance; }
 
 /* The info button looks the same on each surface. Its touch area is larger than the button. */
 button.info {
@@ -510,7 +538,6 @@ button.info:active { translate: 0 1px; }
   width: min(var(--view-w) - 1.5rem, 56rem, max(20rem, var(--view-h) - var(--plaques, 11rem) - 2.8rem));
   min-height: calc(var(--view-h) - 1.5rem);
   padding: 0.75rem 0;
-  container-type: inline-size;
 }
 .battle .plaque { min-height: 3.6rem; }
 /* Each plaque keeps its size for the full battle, thus the board keeps its size. No item comes or goes with the state. */
@@ -519,19 +546,19 @@ button.info:active { translate: 0 1px; }
 .battle .me { box-shadow: inset 0 2px 0 var(--accent), inset 0 0 0 1px var(--rim), 0 3px 0 var(--edge), 0 12px 14px -8px var(--shade); }
 .battle .me .id { flex: 1 1 8rem; min-height: 3.2rem; align-content: center; }
 .battle .me::after { content: ''; order: 1; flex-basis: 100%; }
-.battle .me :is(.lined, .tokens, .quiet) { order: 2; }
+.battle .me :is(.lined, .fan, .quiet) { order: 2; }
 .battle .me .quiet { margin-left: auto; }
 /* A tray has a slot for each piece that it can get, thus it keeps its width. The pieces overlap. */
 .battle .taken { --step: 1.1rem; flex-wrap: nowrap; gap: 0; min-width: calc(var(--slots) * var(--step) + 0.5rem); }
 .battle .taken .piece { display: grid; place-items: center; width: var(--step); animation: pip 500ms cubic-bezier(0.2, 1.6, 0.4, 1); }
-/* A narrow plaque: the tray and the tokens have their own lines, and the gold goes below them. */
-@container (max-width: 34rem) {
-  .battle .tokens { order: 1; flex-basis: 100%; }
+/* A narrow screen: the tray and the fan have their own lines, and the gold goes below them. The rule uses the width of the screen. The width of the board is not applicable, because it comes from the height of the plaques. */
+@media (max-width: 600px) {
+  .battle .fan { --step: 1.65rem; order: 1; flex-basis: 100%; }
   .battle .taken { --step: 0.85rem; }
   .battle .taken .piece { font-size: 1.4rem; }
   .battle .lined { flex: 1 1 100%; }
-  .battle .foe .tokens { order: 2; }
-  .battle .me .tokens { order: 2; }
+  .battle .foe .fan { order: 2; }
+  .battle .me .fan { order: 2; }
   .battle .me .purse { order: 3; }
   .battle .me .quiet { order: 3; min-height: 2.25rem; }
 }

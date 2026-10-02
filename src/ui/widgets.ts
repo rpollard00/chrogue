@@ -135,15 +135,41 @@ export function offerCard(offer: Offer, run: Run, action: CardAction): HTMLEleme
   return card({ kind: offer.kind, art: offerArt(offer), ...info, stamp }, { ...action, disabled: stamp !== null || action.disabled });
 }
 
-/** A list of relic tokens, or of enemy traits. The list is hidden when it has no item. */
+const EDGE_PX = 8;
+let fans = 0;
+
+// Moves the card to the side when it is near an edge of the screen, thus the full card stays in view.
+function keepInView(item: HTMLElement, card: HTMLElement): void {
+  card.style.setProperty('--shift', '0px');
+  const at = item.getBoundingClientRect(), half = card.offsetWidth / 2, center = at.left + at.width / 2;
+  const max = document.documentElement.clientWidth - EDGE_PX - half;
+  card.style.setProperty('--shift', `${Math.max(EDGE_PX + half, Math.min(center, max)) - center}px`);
+}
+
+/**
+ * The relics of the player, or the traits of the enemy, as a fan of medals. The fan is hidden when it has no item.
+ * The medal under the pointer, or with the keyboard focus, shows its card. The cards of the player are above the fan,
+ * and the cards of the enemy are below it, because the enemy is at the top of the screen.
+ */
 export function relicList(ids: readonly RelicId[], side: Side): HTMLElement {
-  const label = side === 'enemy' ? 'Enemy traits' : 'Your relics';
-  return h('ul', { class: side === 'enemy' ? 'tokens foe' : 'tokens', 'aria-label': label, hidden: !ids.length }, ids.map((id) => {
+  const label = side === 'enemy' ? 'Enemy traits' : 'Your relics', fan = ++fans;
+  return h('ul', { class: side === 'enemy' ? 'fan foe' : 'fan', 'aria-label': label, hidden: !ids.length }, ids.map((id) => {
     const relic = RELICS[id], text = side === 'enemy' ? relic.foeText ?? relic.text : relic.text;
-    return h('li', { class: 'token', 'data-relic': id },
+    const cardId = `relic-${fan}-${id}`;
+    const face = h('div', { class: 'card', role: 'tooltip', id: cardId },
+      h('div', { class: 'card-top' }, h('span', { class: 'kind' }, side === 'enemy' ? 'Enemy trait' : 'Relic')),
       medal({ kind: 'icon', id }),
-      h('strong', {}, relic.name),
-      infoTip(relic.name, text));
+      h('h3', {}, relic.name),
+      h('p', {}, text));
+    const item = h('li', { 'data-relic': id });
+    // A tap gives the focus to the medal in each browser, thus a touch screen shows the card.
+    const chip = h('button', { type: 'button', class: 'chip', 'aria-label': relic.name, 'aria-describedby': cardId, onclick: () => chip.focus() },
+      medal({ kind: 'icon', id }));
+    const place = () => keepInView(item, face);
+    item.addEventListener('pointerenter', place);
+    chip.addEventListener('focus', place);
+    item.append(chip, face);
+    return item;
   }));
 }
 

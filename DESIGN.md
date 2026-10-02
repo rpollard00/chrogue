@@ -19,9 +19,9 @@ Decision source: the user selected mockup C, "Platform with objects", on 1 Octob
 | Object | Meaning | Status |
 |---|---|---|
 | Card | One thing that the player can take, buy, or upgrade | Established |
-| Medal | The picture of a card or of a token | Established |
-| Token | A relic or an enemy trait | Established |
-| Info button and paper tip | The text of a card or of a token | Established |
+| Medal | The picture of a card or of a relic | Established |
+| Fan | The relics of the player, or the traits of the enemy: medals that overlap with a fixed step. The medal under the pointer shows the card of the relic. | Provisional |
+| Info button and paper tip | The text of a reward, shop, or upgrade card | Established |
 | Key | Each button. A key goes down when the player presses it. The primary key is amber. | Established |
 | Plaque | A raised bar that holds the state of one side: the enemy, or the player | Established |
 | Well | A recessed slot that holds a count or a group of pieces | Established |
@@ -33,6 +33,8 @@ Rules:
 
 - A screen has at most two plaques and two shelves. If each group becomes a plaque, the cards do not stand out.
 - A piece that is not on the board is on a board-brown lining. A black piece is not visible on a dark surface.
+- Each card has the same size, as a physical card has. The card of a relic in a fan has the size of a reward card, with its text in the place of the key. The card is above the medal of the player and below the medal of the enemy.
+- On a touch screen, a tap on a medal shows its card, and a tap on a different place hides it.
 - An empty group has no heading and no "None" text.
 - In a battle, the plaques keep their size, thus the board keeps its size. No item of a plaque comes or goes with the state. The trays for the captured pieces are an exception to the rule above: each tray shows from the start, with a slot for each piece that it can get.
 - The display typeface is for names, headings, the wordmark, the primary key, the boss badge, and the purse, as in mockup C. Body text uses the system typeface.

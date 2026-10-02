@@ -33,7 +33,7 @@ export function icon(id: IconId): HTMLElement {
   return el;
 }
 
-/** The picture of a card or of a token: a chess piece or an icon. */
+/** The picture of a card or of a relic: a chess piece or an icon. */
 export type Art = { kind: 'piece'; type: PieceType } | { kind: 'icon'; id: IconId };
 
 export const UPGRADE_ART: Record<UpgradeId, Art> = {

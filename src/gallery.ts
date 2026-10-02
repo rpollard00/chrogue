@@ -1,7 +1,7 @@
 // The animation gallery, a page for development. Each demo shows a screen of the game with prepared data.
 // Then the demo does the clicks that start the motion.
 import type { PieceType, Square } from './engine';
-import { generateEnemy } from './game';
+import { RELIC_IDS, generateEnemy } from './game';
 import type { Meta, Offer, Run } from './game';
 import type { App } from './ui/app';
 import { button, h } from './ui/dom';
@@ -85,6 +85,10 @@ const DEMOS: Demo[] = [
     group: 'Battle', name: 'Promotion', note: 'The pawn becomes a queen.',
     start: (app) => app.startBattle(run('Ke1 a7', 'Kh6 h5')),
     steps: [square('a7'), square('a8'), press('Queen')],
+  },
+  {
+    group: 'Battle', name: 'Each relic', note: 'The fan of relics at its largest. Move the pointer along the medals to see the cards. The boss has two traits.',
+    start: (app) => app.startBattle(run(ARMY, 'Ke8', { floor: 8, enemy: generateEnemy(8), relics: [...RELIC_IDS] })),
   },
   {
     group: 'Battle result', name: 'Victory', note: 'Checkmate. The gold rows count up, and Interest flashes.',
