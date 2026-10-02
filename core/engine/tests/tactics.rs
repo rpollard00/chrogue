@@ -4,11 +4,14 @@
 //! and a side with no legal move loses with or without a check. Thus each side of a position
 //! has one piece or more that is not the king.
 
-use chrogue_engine::fen::{from_fen, square};
+mod common;
+
+use chrogue_engine::fen::square;
 use chrogue_engine::{
     Color, Kind, Level, MATE, MATE_BOUND, Move, MoveList, Outcome, Rules, SearchResult, SideRules, Special, State,
     choose_move, legal_moves, outcome,
 };
+use common::from_fen;
 
 const WHITE: Color = Color::White;
 const BLACK: Color = Color::Black;
@@ -60,7 +63,7 @@ fn outcome_after(state: &State, result: &SearchResult) -> Option<Outcome> {
 /// True if the side that has the move can end the battle as the winner with one move.
 fn can_win_at_once(state: &State) -> bool {
     let mut state = state.clone();
-    let us = state.turn;
+    let us = state.turn();
     let mut list = MoveList::new();
     legal_moves(&mut state, &mut list);
     list.iter().any(|&m| {
@@ -359,16 +362,17 @@ fn the_capture_of_the_king_is_a_win() {
 }
 
 #[test]
-fn a_castle_and_a_king_leap_to_the_same_square_are_two_moves() {
+fn a_castle_and_a_king_leap_to_the_same_square_are_one_move() {
     use chrogue_engine::{Atom, Mode};
     // The king has a leap of two squares to the side, thus e1-g1 is a castle and also a leap.
-    let leap = SideRules::standard().with_atom(Kind::King, Atom::leap(&[(2, 0), (-2, 0)], Mode::MoveOrCapture));
+    // The engine gives only the castle.
+    let leap =
+        SideRules::standard().with_atom(Kind::King, Atom::leap(&[(2, 0), (-2, 0)], Mode::MoveOrCapture)).unwrap();
     let mut state = from_fen("4k3/7p/8/8/8/8/7P/4K2R", WHITE, Rules::new(leap, SideRules::standard()));
     let mut list = MoveList::new();
     legal_moves(&mut state, &mut list);
     let to_g1: Vec<Move> = list.iter().copied().filter(|m| squares_of(*m) == mv("e1", "g1")).collect();
-    assert_eq!(to_g1.len(), 2);
-    assert_ne!(to_g1[0], to_g1[1]);
+    assert_eq!(to_g1, vec![Move { from: square("e1"), to: square("g1"), promo: None, special: Special::Castle }]);
     // The search gives one of the generated moves, with its `special` field.
     let result = solve(&mut state, 20_000);
     assert!(list.iter().any(|&m| m == result.mv));

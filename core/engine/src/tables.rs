@@ -5,7 +5,7 @@
 //! tables come from the same data, thus an offset does not have to be symmetric.
 
 use crate::eval::EvalTables;
-use crate::rules::{Atom, DoubleStep, Offset, Rules, SideRules};
+use crate::rules::{Atom, DoubleStep, Offset, Promotions, Rules, RulesError, SideRules};
 use crate::types::{Bitboard, Color, Kind, Square, bit};
 
 /// The leap targets of one kind from one square, divided by what the leap can do there.
@@ -71,8 +71,11 @@ pub struct SideTables {
     pub promo_zone: Bitboard,
     pub double_step_always: bool,
     pub backward_step: bool,
-    pub promotions: [Kind; 4],
+    pub promotions: Promotions,
     pub castling: bool,
+    /// True if the movement of the king can go from its home square to a castle square. Then
+    /// the move generation removes that king move when the castle is possible.
+    pub king_move_to_castle_square: bool,
 }
 
 /// The rules of a battle and the tables that come from them.
@@ -84,11 +87,19 @@ pub struct Tables {
 }
 
 impl Tables {
-    /// Panics if `rules.validate()` gives an error.
-    pub fn new(rules: Rules) -> Tables {
-        if let Err(error) = rules.validate() {
-            panic!("{error}");
-        }
+    /// Gives the error of `rules.validate()` if the rules are not valid.
+    pub fn new(rules: Rules) -> Result<Tables, RulesError> {
+        rules.validate()?;
+        Ok(Tables::build(rules))
+    }
+
+    /// The tables of ordinary chess.
+    pub fn standard() -> Tables {
+        Tables::build(Rules::standard())
+    }
+
+    /// The rules must be valid.
+    fn build(rules: Rules) -> Tables {
         let sides =
             [side_tables(rules.side(Color::White), Color::White), side_tables(rules.side(Color::Black), Color::Black)];
         let eval = EvalTables::new(&rules);
@@ -151,6 +162,7 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
         backward_step: rules.pawn.backward_step,
         promotions: rules.pawn.promotions,
         castling: rules.castling,
+        king_move_to_castle_square: false,
     };
 
     for from in 0..64u8 {
@@ -171,7 +183,7 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
     let mut dirs: [Vec<(Offset, bool, bool)>; Kind::COUNT] = std::array::from_fn(|_| Vec::new());
     for kind in Kind::OFFICERS {
         let k = kind.index();
-        for atom in &rules.kind(kind).atoms {
+        for atom in rules.atoms(kind) {
             match atom {
                 Atom::Leap { offsets, mode } => {
                     for &(df, dr) in offsets {
@@ -216,6 +228,16 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
         }
     }
 
+    // The castle squares are empty when the castle is possible, thus only a move to an empty
+    // square can have the same squares as a castle. A slide gets there only over empty squares.
+    let king = Kind::King.index();
+    let home: Square = if color == Color::White { 4 } else { 60 };
+    let castle_squares = bit(home - 2) | bit(home + 2);
+    let leaps = &t.leaps[king][home as usize];
+    let slides =
+        dirs[king].iter().filter(|&&(_, quiet, _)| quiet).fold(0, |set, &(dir, ..)| set | rays(dir)[home as usize]);
+    t.king_move_to_castle_square = (leaps.both | leaps.quiet | slides) & castle_squares != 0;
+
     t.leap_attacker_kinds =
         Kind::OFFICERS.into_iter().filter(|kind| t.leap_attackers[kind.index()].iter().any(|&set| set != 0)).collect();
 
@@ -238,13 +260,14 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
     }
     for (dir, kinds) in attack_dirs {
         let line = AttackLine { rays: rays(dir), ascending: ascending(dir) };
-        let group = match t.slide_attackers.iter_mut().find(|group| group.kinds == kinds) {
-            Some(group) => group,
+        let index = match t.slide_attackers.iter().position(|group| group.kinds == kinds) {
+            Some(index) => index,
             None => {
                 t.slide_attackers.push(SlideAttackGroup { kinds, reach: [0; 64], lines: Vec::new() });
-                t.slide_attackers.last_mut().expect("the list has the new group")
+                t.slide_attackers.len() - 1
             }
         };
+        let group = &mut t.slide_attackers[index];
         for (reach, ray) in group.reach.iter_mut().zip(&line.rays) {
             *reach |= ray;
         }

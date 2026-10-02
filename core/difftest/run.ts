@@ -1,9 +1,11 @@
-// The differential test: it proves that the Rust engine and the TypeScript engine agree.
+// The differential test: it compares the results of the Rust engine with the results of the
+// TypeScript engine on the same positions and games.
 //
 // Usage: bun core/difftest/run.ts [--seed N] [--playouts N]
 //
 // The script plays random legal games with the TypeScript engine. It sends the positions and
 // the games to the Rust tool `difftest`, and compares each answer with the TypeScript engine.
+// The run fails if a move kind or a result occurs fewer times than its minimum in `MINIMUMS`.
 // The same seed always gives the same games.
 import { resolve } from 'node:path';
 import {
@@ -12,6 +14,7 @@ import {
 import type { Color, Move, MoveRules, PieceSetup, PieceType, RuleSet, Square, State } from '../../src/engine';
 import { baseArmy, freeHome } from '../../src/game/army';
 import { FLOORS } from '../../src/game/floors';
+import { CONSCRIPT_ID } from '../../src/game/relics';
 
 // ---- Options ----
 
@@ -31,6 +34,8 @@ const MIN_POSITIONS = 3000;
 const MIN_DEEP = 300;
 /** The minimum number of positions for each rule combination of each side. */
 const MIN_PER_COMBO = 20;
+/** The number of games from the start that gives en passant captures with a promotion. */
+const EP_PROMO_PLAYOUTS = 64;
 
 // ---- Random numbers ----
 
@@ -145,11 +150,12 @@ function gameStart(rng: Rng): Start {
   if (rng.next() < 0.2) {
     for (let square = 8; square < 24; square++) {
       if (pieces.some((p) => p.square === square)) continue;
-      pieces.push({ id: 99, type: 'p', color: 'w', square });
+      pieces.push({ id: CONSCRIPT_ID, type: 'p', color: 'w', square });
       break;
     }
   }
-  enemyPieces(floor, rng).forEach((e, i) => pieces.push({ id: 100 + i, type: e.type, color: 'b', square: e.square }));
+  // The ids of the enemy pieces are those of createBattle: "e0", "e1", and so on.
+  enemyPieces(floor, rng).forEach((e, i) => pieces.push({ id: `e${i}`, type: e.type, color: 'b', square: e.square }));
   return { name: `game floor ${floor}`, pieces, turn: 'w', clock: 0 };
 }
 
@@ -194,6 +200,28 @@ const SPECIAL_FENS: [name: string, fen: string][] = [
   ['en passant for Black', '4k3/8/8/8/pppppppp/8/PPPPPPPP/4K3'],
   ['knights and bishops', '1nb1kbn1/1nb2bn1/8/8/8/8/1NB2BN1/1NB1KBN1'],
 ];
+
+// Positions where more than one end of the battle is true. `outcome` must do its checks in
+// the same order in the two engines: bare, rout, no legal move, clock.
+const ENDINGS: Start[] = [
+  { name: 'checkmate at the clock limit', pieces: fenPieces('R5k1/5ppp/8/8/8/8/8/4K3'), turn: 'b', clock: 100 },
+  { name: 'checkmate after the clock limit', pieces: fenPieces('6k1/5ppp/8/8/8/8/5PPP/r5K1'), turn: 'w', clock: 130 },
+  { name: 'stalemate at the clock limit', pieces: fenPieces('k7/2Q5/1K6/8/8/7p/7P/8'), turn: 'b', clock: 100 },
+  { name: 'stalemate after the clock limit', pieces: fenPieces('8/8/8/8/8/1k5p/2q4P/K7'), turn: 'w', clock: 140 },
+  { name: 'rout at the clock limit', pieces: fenPieces('4k3/8/8/8/8/8/P7/4K3'), turn: 'b', clock: 100 },
+  { name: 'rout and checkmate at the clock limit', pieces: fenPieces('R3k3/8/4K3/8/8/8/8/8'), turn: 'b', clock: 120 },
+  { name: 'rout of White after the clock limit', pieces: fenPieces('4k3/p7/8/8/8/8/8/4K3'), turn: 'w', clock: 199 },
+  { name: 'bare kings at the clock limit', pieces: fenPieces('4k3/8/8/8/8/8/8/4K3'), turn: 'w', clock: 100 },
+  { name: 'clock limit with legal moves', pieces: fenPieces('r3k3/p7/8/8/8/8/P7/R3K3'), turn: 'w', clock: 100 },
+  { name: 'bare kings after the clock limit', pieces: fenPieces('k7/8/1K6/8/8/8/8/8'), turn: 'b', clock: 150 },
+];
+
+// White pawns on rank 1 that have not moved, and black pawns on rank 3. A double step of a
+// white pawn crosses rank 2. With earlyPromo for Black, a capture en passant there promotes.
+function epPromoStart(): Start {
+  const pieces = fenPieces('4k3/8/8/8/8/1p1p1p2/8/P1P1P1PK').map((p) => ({ ...p, moved: p.color === 'w' && p.type === 'p' ? false : p.moved }));
+  return { name: 'en passant promotion', pieces, turn: 'w', clock: 0 };
+}
 
 function makeStart(index: number, rng: Rng): Start {
   const turn = rng.pick<Color>(['w', 'b']);
@@ -261,8 +289,10 @@ interface RustAnalysis {
 /** The answer of the Rust tool to a PlayoutJob. */
 interface RustPlayout {
   states: PlainState[];
-  restored: boolean;
-  consistent: boolean;
+  /** The first move (from 1) after which the bitboards, the mailbox, and the key disagree. 0 is the start. */
+  inconsistentAfter: number | null;
+  /** The first move (from 1) whose take-back did not give back the state before the move. */
+  notRestored: number | null;
 }
 
 // ---- Comparison ----
@@ -330,7 +360,11 @@ function perft(state: State, depth: number): number {
 }
 
 const COLORS: Color[] = ['w', 'b'];
-const seen = { moves: 0, promo: 0, ep: 0, epCapture: 0, back: 0, castle: 0, check: 0 };
+const seen = {
+  moves: 0, ep: 0, epCapture: 0, epPromo: 0, back: 0, check: 0,
+  promo: { q: 0, n: 0, r: 0, b: 0 },
+  castle: { wK: 0, wQ: 0, bK: 0, bQ: 0 },
+};
 const outcomes: Record<string, number> = {};
 let perftNodes = 0;
 
@@ -342,11 +376,12 @@ function compareAnalysis(job: AnalyzeJob, rust: RustAnalysis): void {
   compareMoves(job, 'legalMoves', moves, rust.moves);
   seen.moves += moves.length;
   for (const m of moves) {
-    if (m.promo) seen.promo++;
+    if (m.promo) seen.promo[m.promo]++;
     if (m.ep !== undefined) seen.ep++;
     if (m.epCapture) seen.epCapture++;
+    if (m.epCapture && m.promo) seen.epPromo++;
     if (m.back) seen.back++;
-    if (m.castle) seen.castle++;
+    if (m.castle) seen.castle[`${m.from === 4 ? 'w' : 'b'}${m.to > m.from ? 'K' : 'Q'}`]++;
   }
 
   const occupied = state.board.flatMap((p, s) => (p ? [s] : []));
@@ -390,8 +425,12 @@ function comparePlayout(job: PlayoutJob, rust: RustPlayout): void {
       `Rust:       ${states[i]}`,
     ].join('\n'));
   }
-  if (!rust.restored) report(job, 'unmake', 'Rust did not get the first state back after it took back each move.');
-  if (!rust.consistent) report(job, 'bitboards', 'The bitboards of Rust did not agree with its mailbox.');
+  if (rust.notRestored !== null) {
+    report(job, 'unmake', `The take-back of move ${rust.notRestored} did not give back the state before the move.`);
+  }
+  if (rust.inconsistentAfter !== null) {
+    report(job, 'the bitboards and the key', `After move ${rust.inconsistentAfter}, the bitboards, the mailbox, and the Zobrist key of Rust disagree.`);
+  }
 }
 
 // ---- Play the games ----
@@ -410,27 +449,19 @@ function addAnalysis(state: State, flags: RuleFlags, combos: Record<Color, numbe
   for (const color of COLORS) coverage[color][combos[color]]++;
 }
 
-// Each block of 64 playouts gives each combination to each side one time. The pairs change from block to block.
-const whiteOrder = rng.shuffle([...Array(COMBOS).keys()]);
-for (let i = 0; i < PLAYOUTS; i++) {
-  const block = Math.floor(i / COMBOS);
-  const combos = { w: whiteOrder[i % COMBOS], b: (i * 5 + block * 13 + 7) % COMBOS };
+/** Plays one random game and adds the game and the sampled positions to the jobs. */
+function playGame(start: Start, combos: Record<Color, number>, label: string, sampleAll: boolean): void {
   const flags: RuleFlags = { w: flagsOf(combos.w), b: flagsOf(combos.b) };
-  // The start changes with the block, thus each combination gets each kind of start.
-  const start = makeStart(i + block, rng);
-  startNames[start.name.replace(/ floor \d/, '')] = (startNames[start.name.replace(/ floor \d/, '')] ?? 0) + 1;
-
   const state = createState(start.pieces, { w: ruleSet(flags.w), b: ruleSet(flags.b) });
   state.turn = start.turn;
   state.clock = start.clock;
-  const label = `seed ${SEED}, playout ${i}, start "${start.name}"`;
   const playout: PlayoutJob = { op: 'playout', label, state: structuredClone(plain(state)), rules: flags, moves: [], expected: [] };
 
-  const maxPlies = 40 + rng.int(120);
+  const maxPlies = sampleAll ? 8 + rng.int(24) : 40 + rng.int(120);
   const captureBias = rng.next() * 0.7;
   for (let ply = 0; ; ply++) {
     const ended = outcome(state) !== null || ply === maxPlies;
-    if (ended || rng.next() < (ply === 0 ? 0.3 : 0.08)) addAnalysis(state, flags, combos, `${label}, ply ${ply}`);
+    if (ended || sampleAll || rng.next() < (ply === 0 ? 0.3 : 0.08)) addAnalysis(state, flags, combos, `${label}, ply ${ply}`);
     if (ended) break;
     const moves = legalMoves(state);
     // Captures and promotions make the positions with few pieces and with promoted pieces.
@@ -442,6 +473,43 @@ for (let i = 0; i < PLAYOUTS; i++) {
     plies++;
   }
   jobs.push(playout);
+}
+
+const countStart = (name: string) => {
+  const key = name.replace(/ floor \d/, '');
+  startNames[key] = (startNames[key] ?? 0) + 1;
+};
+
+// Each block of 64 playouts gives each combination to each side one time. The pairs change from block to block.
+const whiteOrder = rng.shuffle([...Array(COMBOS).keys()]);
+for (let i = 0; i < PLAYOUTS; i++) {
+  const block = Math.floor(i / COMBOS);
+  const combos = { w: whiteOrder[i % COMBOS], b: (i * 5 + block * 13 + 7) % COMBOS };
+  // The start changes with the block, thus each combination gets each kind of start.
+  const start = makeStart(i + block, rng);
+  countStart(start.name);
+  playGame(start, combos, `seed ${SEED}, playout ${i}, start "${start.name}"`, false);
+}
+
+// Games with earlyPromo for Black, with an analysis of each position.
+const EARLY_PROMO = 1 << FLAGS.indexOf('earlyPromo');
+for (let i = 0; i < EP_PROMO_PLAYOUTS; i++) {
+  const start = epPromoStart();
+  countStart(start.name);
+  playGame(start, { w: rng.int(COMBOS), b: rng.int(COMBOS) | EARLY_PROMO }, `seed ${SEED}, en passant game ${i}`, true);
+}
+
+// Each prepared ending with ordinary rules, and with three random rule combinations.
+for (const ending of ENDINGS) {
+  for (let i = 0; i < 4; i++) {
+    const combos = i === 0 ? { w: 0, b: 0 } : { w: rng.int(COMBOS), b: rng.int(COMBOS) };
+    const flags: RuleFlags = { w: flagsOf(combos.w), b: flagsOf(combos.b) };
+    const state = createState(ending.pieces, { w: ruleSet(flags.w), b: ruleSet(flags.b) });
+    state.turn = ending.turn;
+    state.clock = ending.clock;
+    countStart('ending');
+    addAnalysis(state, flags, combos, `seed ${SEED}, ending "${ending.name}", rules ${JSON.stringify(flags)}`);
+  }
 }
 
 // ---- Run the Rust tool and compare ----
@@ -476,6 +544,28 @@ const tsMs = performance.now() - tsStart;
 
 // ---- Report ----
 
+/** The minimum count of each kind of move and of each result in the compared positions. */
+// Seeds 1, 2, and 3 give two times these counts or more.
+const MINIMUMS = {
+  epCapture: 100, epPromo: 80, back: 2000, check: 200,
+  promo: { q: 500, n: 500, r: 500, b: 500 },
+  castle: { wK: 15, wQ: 15, bK: 15, bQ: 15 },
+  outcome: { checkmate: 15, stalemate: 3, rout: 200, bare: 6, clock: 6 },
+};
+
+function minimumChecks(): [name: string, count: number, minimum: number][] {
+  const m = MINIMUMS;
+  return [
+    ['an en passant capture', seen.epCapture, m.epCapture],
+    ['an en passant capture with a promotion', seen.epPromo, m.epPromo],
+    ['a backward step', seen.back, m.back],
+    ['a check', seen.check, m.check],
+    ...Object.entries(m.promo).map(([kind, min]): [string, number, number] => [`a promotion to ${kind}`, seen.promo[kind as keyof typeof m.promo], min]),
+    ...Object.entries(m.castle).map(([wing, min]): [string, number, number] => [`a castle ${wing}`, seen.castle[wing as keyof typeof m.castle], min]),
+    ...Object.entries(m.outcome).map(([reason, min]): [string, number, number] => [`the result ${reason}`, outcomes[reason] ?? 0, min]),
+  ];
+}
+
 const minCoverage = Math.min(...coverage.w, ...coverage.b);
 console.log(`seed ${SEED}: ${PLAYOUTS} playouts with ${plies} moves, from these starts: ${JSON.stringify(startNames)}`);
 console.log(`positions compared: ${positions} (perft depth 2 on each, depth 3 on ${deep}), ${perftNodes} perft nodes`);
@@ -487,6 +577,9 @@ console.log(`mismatches: ${mismatches}`);
 
 const problems: string[] = [];
 if (mismatches) problems.push(`${mismatches} mismatches`);
+for (const [name, count, minimum] of minimumChecks()) {
+  if (count < minimum) problems.push(`${name} occurred ${count} times, the minimum is ${minimum}`);
+}
 if (positions < MIN_POSITIONS) problems.push(`only ${positions} positions, the minimum is ${MIN_POSITIONS}`);
 if (deep < MIN_DEEP) problems.push(`only ${deep} positions with perft depth 3, the minimum is ${MIN_DEEP}`);
 if (minCoverage < MIN_PER_COMBO) problems.push(`a rule combination has only ${minCoverage} positions, the minimum is ${MIN_PER_COMBO}`);

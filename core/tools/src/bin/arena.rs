@@ -215,7 +215,7 @@ struct Start {
 /// The start position of chess and `count` armies of floors 3 to 8.
 fn starts(seed: u64, count: usize) -> Vec<Start> {
     let mut rng = Rng::new(mix(seed, 0x57A7));
-    let mut list = vec![Start { pieces: fen::placements(fen::START) }];
+    let mut list = vec![Start { pieces: fen::placements(fen::START).expect("the start position is valid") }];
     for index in 0..count {
         list.push(Start { pieces: game_start(&mut rng, 3 + index % 6) });
     }
@@ -231,12 +231,12 @@ enum End {
 
 /// Plays one game. Returns the end and the number of half moves.
 fn play(start: &Start, rules: Rules, white: &Level, black: &Level, seed: u64, max_plies: u32) -> (End, u32) {
-    let mut state = State::new(&start.pieces, rules);
+    let mut state = State::new(&start.pieces, rules).expect("the arena makes valid starts");
     for ply in 0..max_plies {
         if let Some(end) = outcome(&mut state) {
             return (End::Outcome(end), ply);
         }
-        let level = if state.turn == Color::White { white } else { black };
+        let level = if state.turn() == Color::White { white } else { black };
         let result = choose_move(&mut state, level, mix(seed, ply as u64)).expect("the battle continues");
         state.make(result.mv);
     }

@@ -80,7 +80,7 @@ pub fn clock_key(clock: u32) -> u64 {
 
 /// The key of a state, from all its pieces. `State::key` gives the same number faster.
 pub fn key_from_scratch(state: &State) -> u64 {
-    let mut key = turn_key(state.turn, state.ep);
+    let mut key = turn_key(state.turn(), state.ep());
     for (s, piece) in state.board().iter().enumerate() {
         if let Some(piece) = piece {
             key ^= piece_key(*piece, s as Square);

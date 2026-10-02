@@ -255,14 +255,14 @@ impl SideEval {
         let mut reach = [0.0; Kind::COUNT];
         let mut mobility_scale = [0; Kind::COUNT];
         for kind in Kind::OFFICERS {
-            let profile = officer_profile(&rules.kind(kind).atoms);
+            let profile = officer_profile(rules.atoms(kind));
             value[kind.index()] = mobility_value(profile).round() as i32;
             reach[kind.index()] = profile.reach;
             mobility_scale[kind.index()] =
                 if profile.reach > 0.0 { (MOBILITY as f64 * 1024.0 / profile.reach).round() as i32 } else { 0 };
         }
 
-        let best_promotion = rules.pawn.promotions.iter().map(|kind| value[kind.index()]).max().unwrap_or(0);
+        let best_promotion = rules.pawn.promotions.as_slice().iter().map(|kind| value[kind.index()]).max().unwrap_or(0);
         let steps = pawn_steps(&rules.pawn);
         let start = promotion_term(best_promotion, steps[1]);
         let profile = pawn_profile(&rules.pawn);
@@ -330,7 +330,7 @@ impl Evaluator {
     pub fn new(state: &State, variant: EvalVariant) -> Evaluator {
         let tables = match variant {
             EvalVariant::Derived | EvalVariant::FixedValues => state.shared_tables(),
-            EvalVariant::RuleBlind => Arc::new(Tables::new(Rules::standard())),
+            EvalVariant::RuleBlind => Arc::new(Tables::standard()),
         };
         let mut sides = tables.eval().sides.clone();
         if variant == EvalVariant::FixedValues {
@@ -450,7 +450,7 @@ impl Evaluator {
         }
 
         let white = score[0] - score[1];
-        let mut result = if state.turn == Color::White { white } else { -white } + TEMPO;
+        let mut result = if state.turn() == Color::White { white } else { -white } + TEMPO;
         // The battle is a draw when the clock gets to its limit. The score goes to 0 before that,
         // thus the side that is ahead prefers a capture or a pawn advance.
         if state.clock > CLOCK_FADE_START {

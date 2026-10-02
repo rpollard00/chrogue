@@ -1,5 +1,7 @@
 //! The basic values of the engine: squares, colors, kinds, pieces, and moves.
 
+use std::mem::MaybeUninit;
+
 /// A square is an index from 0 (a1) to 63 (h8). White moves toward higher ranks.
 pub type Square = u8;
 
@@ -169,32 +171,55 @@ impl Move {
     }
 }
 
-/// A list of moves with a fixed capacity. The list does not use the heap.
+/// A list of moves. The first `CAPACITY` moves are in the list itself. A list with more moves
+/// puts all its moves on the heap, thus a push cannot fail for any rules or any position.
+///
+/// A new list does not write its slots, because the search makes a list at each node.
 #[derive(Clone)]
 pub struct MoveList {
-    moves: [Move; MoveList::CAPACITY],
+    /// The slots `..len` have a move while `len <= CAPACITY`.
+    inline: [MaybeUninit<Move>; MoveList::CAPACITY],
     len: usize,
+    /// Empty while `len <= CAPACITY`. Then it has all the moves.
+    heap: Vec<Move>,
 }
 
 impl MoveList {
-    /// Ordinary chess has no position with more than 218 moves. Added movement rules can give more.
+    /// The number of moves that the list holds without the heap. Ordinary chess has no position
+    /// with more than 218 moves. Added movement rules and added pieces can give more.
     pub const CAPACITY: usize = 384;
 
     #[inline(always)]
     pub const fn new() -> MoveList {
-        MoveList { moves: [Move::NULL; MoveList::CAPACITY], len: 0 }
+        MoveList { inline: [const { MaybeUninit::uninit() }; MoveList::CAPACITY], len: 0, heap: Vec::new() }
     }
 
-    /// Adds a move. Panics if the list is full.
+    /// Adds a move.
     #[inline(always)]
     pub fn push(&mut self, m: Move) {
-        self.moves[self.len] = m;
+        match self.inline.get_mut(self.len) {
+            Some(slot) => {
+                slot.write(m);
+            }
+            None => self.push_to_heap(m),
+        }
         self.len += 1;
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn push_to_heap(&mut self, m: Move) {
+        if self.heap.is_empty() {
+            let moves = self.as_slice().to_vec();
+            self.heap = moves;
+        }
+        self.heap.push(m);
     }
 
     #[inline(always)]
     pub fn clear(&mut self) {
         self.len = 0;
+        self.heap.clear();
     }
 
     #[inline(always)]
@@ -209,12 +234,22 @@ impl MoveList {
 
     #[inline(always)]
     pub fn as_slice(&self) -> &[Move] {
-        &self.moves[..self.len]
+        if self.len <= MoveList::CAPACITY {
+            // SAFETY: the slots `..len` have a move, and `MaybeUninit<Move>` has the layout of `Move`.
+            unsafe { std::slice::from_raw_parts(self.inline.as_ptr().cast::<Move>(), self.len) }
+        } else {
+            &self.heap
+        }
     }
 
     #[inline(always)]
     pub fn as_mut_slice(&mut self) -> &mut [Move] {
-        &mut self.moves[..self.len]
+        if self.len <= MoveList::CAPACITY {
+            // SAFETY: the same as in `as_slice`.
+            unsafe { std::slice::from_raw_parts_mut(self.inline.as_mut_ptr().cast::<Move>(), self.len) }
+        } else {
+            &mut self.heap
+        }
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, Move> {
@@ -223,14 +258,23 @@ impl MoveList {
 
     /// Keeps only the moves for which `keep` returns true. The order stays the same.
     pub fn retain(&mut self, mut keep: impl FnMut(Move) -> bool) {
+        let moves = self.as_mut_slice();
         let mut kept = 0;
-        for i in 0..self.len {
-            let m = self.moves[i];
+        for i in 0..moves.len() {
+            let m = moves[i];
             if keep(m) {
-                self.moves[kept] = m;
+                moves[kept] = m;
                 kept += 1;
             }
         }
+        // A list that is small again goes back from the heap.
+        if self.len > MoveList::CAPACITY && kept <= MoveList::CAPACITY {
+            for (slot, &m) in self.inline.iter_mut().zip(&self.heap[..kept]) {
+                slot.write(m);
+            }
+            self.heap.clear();
+        }
+        self.heap.truncate(kept);
         self.len = kept;
     }
 }

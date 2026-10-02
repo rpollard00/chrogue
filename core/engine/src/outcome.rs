@@ -43,7 +43,7 @@ impl Outcome {
 
 /// True if the side that has the move has one legal move or more.
 pub fn has_legal_move(state: &mut State) -> bool {
-    let color = state.turn;
+    let color = state.turn();
     let mut list = MoveList::new();
     pseudo_moves(state, color, false, &mut list);
     list.iter().any(|&m| is_legal(state, m, color))
@@ -68,8 +68,8 @@ pub fn outcome(state: &mut State) -> Option<Outcome> {
         return Some(end);
     }
     if !has_legal_move(state) {
-        let winner = state.turn.other();
-        return Some(if in_check(state, state.turn) {
+        let winner = state.turn().other();
+        return Some(if in_check(state, state.turn()) {
             Outcome::Checkmate { winner }
         } else {
             Outcome::Stalemate { winner }

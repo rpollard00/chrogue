@@ -41,7 +41,7 @@ pub fn evaluate(state: &State) -> i32 {
     if state.men(Color::Black) == 0 {
         score += BARE;
     }
-    if state.turn == Color::White { score } else { -score }
+    if state.turn() == Color::White { score } else { -score }
 }
 
 /// Puts captures of valuable pieces and promotions first. The order of equal moves stays.
@@ -63,7 +63,7 @@ fn quiesce(state: &mut State, mut alpha: i32, beta: i32, depth: u32, nodes: &mut
         return stand;
     }
     alpha = alpha.max(stand);
-    let color = state.turn;
+    let color = state.turn();
     let mut list = MoveList::new();
     pseudo_moves(state, color, true, &mut list);
     order(state, &mut list);
@@ -90,7 +90,7 @@ fn search(state: &mut State, depth: u32, mut alpha: i32, beta: i32, ply: i32, no
         return quiesce(state, alpha, beta, QUIESCENCE_DEPTH, nodes);
     }
     *nodes += 1;
-    let color = state.turn;
+    let color = state.turn();
     let mut list = MoveList::new();
     pseudo_moves(state, color, false, &mut list);
     order(state, &mut list);

@@ -81,10 +81,10 @@ fn a_new_atom_never_makes_a_value_lower() {
     for kind in Kind::OFFICERS {
         let base = SideRules::standard();
         for first in &atoms {
-            let one = base.clone().with_atom(kind, first.clone());
+            let one = base.clone().with_atom(kind, first.clone()).unwrap();
             assert!(value(one.clone(), kind) >= value(base.clone(), kind), "{first:?} made {kind:?} less valuable");
             for second in &atoms {
-                let two = one.clone().with_atom(kind, second.clone());
+                let two = one.clone().with_atom(kind, second.clone()).unwrap();
                 assert!(value(two, kind) >= value(one.clone(), kind), "{second:?} after {first:?} for {kind:?}");
                 checks += 1;
             }
@@ -93,10 +93,10 @@ fn a_new_atom_never_makes_a_value_lower() {
     assert_eq!(checks, 5 * 24 * 24);
 
     // An atom that the kind has already adds no value.
-    let twice = SideRules::standard().with_atom(Kind::Rook, Atom::slide(&ORTHO, Mode::MoveOrCapture));
+    let twice = SideRules::standard().with_atom(Kind::Rook, Atom::slide(&ORTHO, Mode::MoveOrCapture)).unwrap();
     assert_eq!(value(twice, Kind::Rook), value(SideRules::standard(), Kind::Rook));
     // A pawn with a better promotion kind is not less valuable.
-    let strong_queen = SideRules::standard().with_atom(Kind::Queen, Atom::leap(&KNIGHT, Mode::MoveOrCapture));
+    let strong_queen = SideRules::standard().with_atom(Kind::Queen, Atom::leap(&KNIGHT, Mode::MoveOrCapture)).unwrap();
     assert!(value(strong_queen, Kind::Pawn) > value(SideRules::standard(), Kind::Pawn));
 }
 
@@ -113,15 +113,17 @@ fn reach_that_can_only_move_counts_less_than_reach_that_can_capture() {
     }
     // The sidestep of the bishop is a `MoveOnly` leap. The same leap with captures is worth more.
     let sidestep = value(SideRules::standard().sidestep(), Kind::Bishop);
-    let with_captures =
-        value(SideRules::standard().with_atom(Kind::Bishop, Atom::leap(&ORTHO, Mode::MoveOrCapture)), Kind::Bishop);
+    let with_captures = value(
+        SideRules::standard().with_atom(Kind::Bishop, Atom::leap(&ORTHO, Mode::MoveOrCapture)).unwrap(),
+        Kind::Bishop,
+    );
     assert!(sidestep < with_captures);
 }
 
 #[test]
 fn a_bishop_that_can_get_to_each_square_is_worth_more_than_its_added_reach() {
-    let bishop = officer_profile(&SideRules::standard().kind(Kind::Bishop).atoms);
-    let sidestep = officer_profile(&SideRules::standard().sidestep().kind(Kind::Bishop).atoms);
+    let bishop = officer_profile(SideRules::standard().atoms(Kind::Bishop));
+    let sidestep = officer_profile(SideRules::standard().sidestep().atoms(Kind::Bishop));
     assert!(bishop.coverage < 0.5 && sidestep.coverage == 1.0);
 }
 

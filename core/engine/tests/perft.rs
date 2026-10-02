@@ -1,7 +1,10 @@
-//! Perft counts for ordinary chess, and the proof that unmake restores the state.
+//! Perft counts for ordinary chess, and a walk that compares the state after each unmake with the state before the move.
 
-use chrogue_engine::fen::{KIWIPETE, START, from_fen};
+mod common;
+
+use chrogue_engine::fen::{KIWIPETE, START};
 use chrogue_engine::{Color, MoveList, Rules, SideRules, State, perft, pseudo_moves};
+use common::from_fen;
 
 fn start() -> State {
     from_fen(START, Color::White, Rules::standard())
@@ -42,7 +45,7 @@ fn walk(state: &mut State, depth: u32) {
     }
     let before = state.clone();
     let mut list = MoveList::new();
-    pseudo_moves(state, state.turn, false, &mut list);
+    pseudo_moves(state, state.turn(), false, &mut list);
     for &m in &list {
         let undo = state.make(m);
         assert!(state.is_consistent(), "the bitboards do not agree with the mailbox after {m:?}");
@@ -71,7 +74,7 @@ fn unmake_restores_the_state_with_all_the_relic_rules() {
     let before = state.clone();
     walk(&mut state, 3);
     assert!(state == before);
-    state.turn = Color::Black;
+    let mut state = state.with_turn(Color::Black);
     let before = state.clone();
     walk(&mut state, 3);
     assert!(state == before);

@@ -7,13 +7,20 @@
 //! - `{"op":"analyze","state":S,"rules":R,"perft":[depth, ...]}` gives the moves, the checks,
 //!   the attacked squares, the outcome, and the perft counts of a state.
 //! - `{"op":"playout","state":S,"rules":R,"moves":[M, ...]}` plays the moves and gives the
-//!   state after each move. Then it takes back each move and reports if the first state returned.
+//!   state after each move. After each move and after each take-back, it compares the bitboards
+//!   with the mailbox and the Zobrist key with the key from all the pieces. It also compares
+//!   the state after each take-back with the state before that move.
 //!
 //! `S` is `{"board":[null | {"id","type","color","moved"}, ...64],"turn","ep","clock"}`.
 //! `R` is `{"w":[flag, ...],"b":[flag, ...]}` with the flag names of `MoveRules`.
+//!
+//! The game gives a piece a number or a string as its id (`PieceId` in `src/engine/types.ts`),
+//! for example `3`, `"e0"`, and `"conscript"`. The engine has `u16` ids. `Ids` gives each id
+//! of a request its own number, and changes the numbers back to the ids in the answer.
 
 use std::io::{BufRead, BufWriter, Write};
 
+use chrogue_engine::zobrist::key_from_scratch;
 use chrogue_engine::{
     Color, Kind, Move, MoveList, Outcome, Piece, Placement, Rules, SideRules, Special, Square, State, in_check,
     is_attacked, legal_moves, moves_from, outcome, perft, pseudo_moves,
@@ -35,12 +42,39 @@ fn main() {
     }
 }
 
+/// The ids of the pieces of one request. The number of an id is its index in the list.
+#[derive(Default)]
+struct Ids {
+    names: Vec<Value>,
+}
+
+impl Ids {
+    fn number(&mut self, id: &Value) -> Res<u16> {
+        if !(id.is_string() || id.is_u64()) {
+            return Err(format!("the piece id {id} is not a string or a whole number"));
+        }
+        let index = match self.names.iter().position(|name| name == id) {
+            Some(index) => index,
+            None => {
+                self.names.push(id.clone());
+                self.names.len() - 1
+            }
+        };
+        u16::try_from(index).map_err(|_| "the request has too many piece ids".to_string())
+    }
+
+    fn name(&self, number: u16) -> Value {
+        self.names.get(number as usize).cloned().unwrap_or(Value::Null)
+    }
+}
+
 fn answer(line: &str) -> Res<Value> {
     let request: Value = serde_json::from_str(line).map_err(|error| error.to_string())?;
-    let mut state = read_state(&request["state"], read_rules(&request["rules"])?)?;
+    let mut ids = Ids::default();
+    let mut state = read_state(&request["state"], read_rules(&request["rules"])?, &mut ids)?;
     match request["op"].as_str() {
         Some("analyze") => analyze(&mut state, &request["perft"]),
-        Some("playout") => playout(&mut state, &request["moves"]),
+        Some("playout") => playout(&mut state, &request["moves"], &ids),
         _ => Err("\"op\" must be \"analyze\" or \"playout\"".to_string()),
     }
 }
@@ -93,24 +127,38 @@ fn analyze(state: &mut State, depths: &Value) -> Res<Value> {
     }))
 }
 
-fn playout(state: &mut State, moves: &Value) -> Res<Value> {
-    let start = state.clone();
+/// True if the bitboards agree with the mailbox and the Zobrist key is the key of the pieces.
+fn consistent(state: &State) -> bool {
+    state.is_consistent() && state.key() == key_from_scratch(state)
+}
+
+fn playout(state: &mut State, moves: &Value, ids: &Ids) -> Res<Value> {
+    let mut before = Vec::new();
     let mut states = Vec::new();
     let mut undos = Vec::new();
-    for value in moves.as_array().ok_or("\"moves\" must be a list")? {
+    // The first move after which the state was not consistent, from 1. 0 is the start.
+    let mut inconsistent: Option<usize> = (!consistent(state)).then_some(0);
+    for (index, value) in moves.as_array().ok_or("\"moves\" must be a list")?.iter().enumerate() {
         let m = read_move(value)?;
         if state.piece_at(m.from).is_none() {
             return Err(format!("the move {value} starts on an empty square"));
         }
+        before.push(state.clone());
         undos.push((m, state.make(m)));
-        states.push(write_state(state));
+        states.push(write_state(state, ids));
+        if inconsistent.is_none() && !consistent(state) {
+            inconsistent = Some(index + 1);
+        }
     }
-    let mut consistent = state.is_consistent();
-    for (m, undo) in undos.into_iter().rev() {
+    // The first move, from 1, that its take-back did not undo.
+    let mut not_restored: Option<usize> = None;
+    for (index, (m, undo)) in undos.into_iter().enumerate().rev() {
         state.unmake(m, undo);
-        consistent &= state.is_consistent();
+        if *state != before[index] || !consistent(state) {
+            not_restored = Some(index + 1);
+        }
     }
-    Ok(json!({ "states": states, "restored": *state == start, "consistent": consistent }))
+    Ok(json!({ "states": states, "inconsistentAfter": inconsistent, "notRestored": not_restored }))
 }
 
 fn color_name(color: Color) -> &'static str {
@@ -147,42 +195,39 @@ fn read_rules(value: &Value) -> Res<Rules> {
     Ok(Rules::new(side("w")?, side("b")?))
 }
 
-fn read_state(value: &Value, rules: Rules) -> Res<State> {
+fn read_state(value: &Value, rules: Rules, ids: &mut Ids) -> Res<State> {
     let board = value["board"].as_array().filter(|board| board.len() == 64).ok_or("\"board\" must have 64 items")?;
     let mut pieces = Vec::new();
     for (square, entry) in board.iter().enumerate() {
         if entry.is_null() {
             continue;
         }
-        let id = entry["id"]
-            .as_u64()
-            .filter(|&id| id <= u16::MAX as u64)
-            .ok_or("a piece id must be a number below 65536")?;
         let piece = Piece {
-            id: id as u16,
+            id: ids.number(&entry["id"])?,
             kind: read_kind(&entry["type"])?,
             color: read_color(&entry["color"])?,
             moved: entry["moved"].as_bool().ok_or("\"moved\" must be true or false")?,
         };
         pieces.push(Placement { piece, square: square as Square });
     }
-    let mut state = State::new(&pieces, rules);
-    state.turn = read_color(&value["turn"])?;
-    state.ep = match value["ep"].as_i64() {
+    let ep = match value["ep"].as_i64() {
         Some(-1) => None,
         _ => Some(read_square(&value["ep"])?),
     };
+    let state = State::new(&pieces, rules).map_err(|error| error.to_string())?;
+    let mut state =
+        state.with_turn(read_color(&value["turn"])?).with_en_passant(ep).map_err(|error| error.to_string())?;
     state.clock = value["clock"].as_u64().ok_or("\"clock\" must be a number")? as u32;
     Ok(state)
 }
 
-fn write_state(state: &State) -> Value {
+fn write_state(state: &State, ids: &Ids) -> Value {
     let board: Vec<Value> = state
         .board()
         .iter()
         .map(|entry| match entry {
             Some(piece) => json!({
-                "id": piece.id,
+                "id": ids.name(piece.id),
                 "type": piece.kind.letter().to_string(),
                 "color": color_name(piece.color),
                 "moved": piece.moved,
@@ -192,8 +237,8 @@ fn write_state(state: &State) -> Value {
         .collect();
     json!({
         "board": board,
-        "turn": color_name(state.turn),
-        "ep": state.ep.map_or(-1, i64::from),
+        "turn": color_name(state.turn()),
+        "ep": state.ep().map_or(-1, i64::from),
         "clock": state.clock,
     })
 }

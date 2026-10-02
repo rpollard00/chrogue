@@ -127,7 +127,19 @@ fn table_key(state: &State) -> u64 {
 /// thus never in check.
 #[inline(always)]
 fn captures_royal(state: &State, m: Move) -> bool {
-    state.king_square(state.turn.other()) == Some(m.to)
+    state.king_square(state.turn().other()) == Some(m.to)
+}
+
+/// The order scores for a list of `len` moves. A list with more than `MoveList::CAPACITY`
+/// moves gets its scores on the heap.
+#[inline(always)]
+fn score_slots<'a>(inline: &'a mut [i32; MoveList::CAPACITY], heap: &'a mut Vec<i32>, len: usize) -> &'a mut [i32] {
+    if len <= MoveList::CAPACITY {
+        &mut inline[..len]
+    } else {
+        heap.resize(len, 0);
+        heap
+    }
 }
 
 #[inline(always)]
@@ -177,7 +189,7 @@ impl Searcher {
     #[inline(always)]
     fn rout_score(state: &State, ply: usize) -> Option<i32> {
         Some(match material_outcome(state)? {
-            Outcome::Rout { winner } if winner == state.turn => MATE - ply as i32,
+            Outcome::Rout { winner } if winner == state.turn() => MATE - ply as i32,
             Outcome::Rout { .. } => -MATE + ply as i32,
             _ => 0,
         })
@@ -187,7 +199,7 @@ impl Searcher {
     /// captures and promotions (most valuable victim, least valuable attacker), then the
     /// killer moves, then the other moves by their history.
     fn score_moves(&self, state: &State, list: &MoveList, scores: &mut [i32], table_move: Move, ply: usize) {
-        let us = state.turn;
+        let us = state.turn();
         let them = us.other();
         for (i, &m) in list.iter().enumerate() {
             scores[i] = if m == table_move {
@@ -238,14 +250,15 @@ impl Searcher {
             return stand;
         }
         alpha = alpha.max(stand);
-        let us = state.turn;
+        let us = state.turn();
         let mut list = MoveList::new();
         pseudo_moves(state, us, true, &mut list);
-        let mut scores = [0i32; MoveList::CAPACITY];
-        self.score_moves(state, &list, &mut scores, Move::NULL, MAX_PLY);
+        let (mut inline, mut heap) = ([0i32; MoveList::CAPACITY], Vec::new());
+        let scores = score_slots(&mut inline, &mut heap, list.len());
+        self.score_moves(state, &list, scores, Move::NULL, MAX_PLY);
         let mut best = stand;
         for i in 0..list.len() {
-            let m = Self::pick(&mut list, &mut scores, i);
+            let m = Self::pick(&mut list, scores, i);
             if captures_royal(state, m) {
                 return MATE - ply as i32 - 1;
             }
@@ -273,7 +286,7 @@ impl Searcher {
     }
 
     fn negamax(&mut self, state: &mut State, mut depth: i32, mut alpha: i32, beta: i32, ply: usize, null: bool) -> i32 {
-        let us = state.turn;
+        let us = state.turn();
         let checked = in_check(state, us);
         // A check makes the search one half move longer, thus the quiescence search never
         // starts with a king in check.
@@ -325,9 +338,9 @@ impl Searcher {
             // With few pieces, a side with no good move is a real result: the null move is not safe.
             let officers = state.men(us) & !state.kind_set(Kind::Pawn);
             if officers.count_ones() >= 2 && state.men(us).count_ones() >= 4 && self.eval.evaluate(state) >= beta {
-                let ep = state.make_null();
+                let null_undo = state.make_null();
                 let score = -self.negamax(state, depth - 3 - depth / 4, -beta, -beta + 1, ply + 1, false);
-                state.unmake_null(ep);
+                state.unmake_null(null_undo);
                 if self.stopped {
                     return 0;
                 }
@@ -339,15 +352,16 @@ impl Searcher {
 
         let mut list = MoveList::new();
         pseudo_moves(state, us, false, &mut list);
-        let mut scores = [0i32; MoveList::CAPACITY];
-        self.score_moves(state, &list, &mut scores, table_move, ply);
+        let (mut inline, mut heap) = ([0i32; MoveList::CAPACITY], Vec::new());
+        let scores = score_slots(&mut inline, &mut heap, list.len());
+        self.score_moves(state, &list, scores, table_move, ply);
 
         let first_alpha = alpha;
         let mut best = -INFINITE;
         let mut best_move = Move::NULL;
         let mut legal = 0;
         for i in 0..list.len() {
-            let m = Self::pick(&mut list, &mut scores, i);
+            let m = Self::pick(&mut list, scores, i);
             if captures_royal(state, m) {
                 return MATE - ply as i32 - 1;
             }
@@ -446,7 +460,7 @@ impl Searcher {
             if entry.bound == Bound::Empty || entry.key != key || Self::rout_score(state, 0).is_some() {
                 break;
             }
-            let us = state.turn;
+            let us = state.turn();
             let mut list = MoveList::new();
             pseudo_moves(state, us, false, &mut list);
             if !list.iter().any(|&m| m == entry.mv) {
@@ -487,16 +501,17 @@ pub fn search(
     noise_cp: i32,
     seed: u64,
 ) -> Option<SearchResult> {
-    let us = state.turn;
+    let us = state.turn();
     let mut searcher = Searcher::new(state, limits, variant, options);
 
     let mut list = MoveList::new();
     pseudo_moves(state, us, false, &mut list);
-    let mut scores = [0i32; MoveList::CAPACITY];
-    searcher.score_moves(state, &list, &mut scores, Move::NULL, 0);
+    let (mut inline, mut heap) = ([0i32; MoveList::CAPACITY], Vec::new());
+    let scores = score_slots(&mut inline, &mut heap, list.len());
+    searcher.score_moves(state, &list, scores, Move::NULL, 0);
     let mut roots: Vec<RootMove> = Vec::new();
     for i in 0..list.len() {
-        let m = Searcher::pick(&mut list, &mut scores, i);
+        let m = Searcher::pick(&mut list, scores, i);
         if captures_royal(state, m) {
             return Some(SearchResult { mv: m, score: MATE - 1, depth: 1, nodes: 0, pv: vec![m] });
         }

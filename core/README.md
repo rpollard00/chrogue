@@ -5,9 +5,9 @@ This directory has the Rust core of Chrogue. At this time it has two parts:
 - The chess rules: the move generation, the functions that make and unmake a move, and the result of a battle.
 - The enemy AI: a search with an evaluation that comes from the movement rules of the battle.
 
-The TypeScript engine in `src/engine/` is the reference. The Rust engine gives the same moves and the same results for the rules that the game has today. A differential test proves this.
+The TypeScript engine in `src/engine/` is the reference. The Rust engine gives the same moves and the same results for the rules that the game has today. A differential test compares the two engines on random games and on prepared positions.
 
-The Rust engine is not a copy of the TypeScript engine. The movement rules are data, thus a new movement rule for a relic needs no new engine code.
+The Rust engine is not a copy of the TypeScript engine. The movement of the knight, bishop, rook, queen, and king is data, thus a new movement rule for these kinds needs no new engine code. The pawn moves, en passant, and castling are code that reads options. A new rule of that type needs a new option and new engine code.
 
 ## Commands
 
@@ -30,13 +30,13 @@ Run the commands from the `core/` directory, unless the command shows a differen
 ## Structure
 
 - `engine/`: The library crate `chrogue-engine`. It has no dependencies.
-  - `src/types.rs`: Squares, colors, kinds, pieces, moves, and the move list.
+  - `src/types.rs`: Squares, colors, kinds, pieces, moves, and the move list. The move list holds 384 moves without the heap. A list with more moves puts its moves on the heap.
   - `src/rules.rs`: The movement rules as data.
   - `src/tables.rs`: The lookup tables that come from the rules. The engine builds them one time for each battle.
   - `src/movegen.rs`: The move generation and the attack detection.
-  - `src/state.rs`: The state of a battle, `make`, and `unmake`.
+  - `src/state.rs`: The state of a battle, `make`, and `unmake`. Only `make`, `unmake`, and the null move change the side to move and the en passant square after construction.
   - `src/outcome.rs`: The result of a battle.
-  - `src/perft.rs`: The count of move sequences. It proves the move generation.
+  - `src/perft.rs`: The count of move sequences. The tests compare it with the known counts of chess positions.
   - `src/zobrist.rs`: The Zobrist keys. `State::key` gives the key of a state.
   - `src/eval.rs`: The piece values that come from the rules, and the evaluation of a position.
   - `src/search.rs`: The search.
@@ -44,7 +44,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
   - `src/reference.rs`: The algorithm of the old TypeScript AI. It is a baseline opponent only.
   - `src/rng.rs`: A small seeded random number generator.
   - `src/fen.rs`: A reader for the piece field of a FEN string. The tests and the tools use it.
-  - `tests/`: Perft counts, the cases of `test/engine.test.ts`, rules that the TypeScript engine does not have, the Zobrist key, the derived values, and the tactics of the AI.
+  - `tests/`: Perft counts, the cases of `test/engine.test.ts`, rules that the TypeScript engine does not have, the Zobrist key, the derived values, and the tactics of the AI. `tests/property.rs` compares the engine with a naive move generator on 6000 random rule sets, and walks the move tree of 1500 more rule sets to make sure that `unmake` gives back the state.
 - `tools/`: The crate `chrogue-tools`. It has the binaries `difftest` (the Rust side of the differential test), `perft` (a timer), `arena` (self-play matches), and `ai` (values, speed, and the move for one position). Only `difftest` uses `serde_json`.
 - `difftest/`: The Bun scripts. `run.ts` is the differential test. `bench.ts` measures the TypeScript engine.
 
@@ -65,7 +65,9 @@ The mode tells what the atom can do on its target square:
 - `Mode::MoveOnly`: Move to an empty square only. This atom attacks no square, thus it does not give check.
 - `Mode::CaptureOnly`: Capture an enemy piece only. This atom attacks its squares, thus it gives check.
 
-`PawnRules` has the options of the pawn: the double step, the start of the promotion zone, the backward step, and the promotion kinds. `SideRules::castling` permits or prevents castling. The pawn moves, en passant, and castling are code in `movegen.rs` that reads these options.
+`PawnRules` has the options of the pawn: the double step, the start of the promotion zone, the backward step, and the promotion kinds. `Promotions::new` accepts one to four different kinds, and not the pawn or the king. `SideRules::castling` permits or prevents castling. The pawn moves, en passant, and castling are code in `movegen.rs` that reads these options.
+
+`Tables::new`, `State::new`, and `fen::from_fen` give an error for rules or pieces that are not valid. `SideRules::with_atom` and `SideRules::with_kind` give an error for the pawn, because the pawn has no atoms.
 
 `SideRules::standard()` is ordinary chess. The six rule flags of the TypeScript engine are edits of it:
 
@@ -92,7 +94,7 @@ This example gives the rooks of White the knight jump:
 use chrogue_engine::rules::KNIGHT;
 use chrogue_engine::{Atom, Kind, Mode, Rules, SideRules};
 
-let white = SideRules::standard().with_atom(Kind::Rook, Atom::leap(&KNIGHT, Mode::MoveOrCapture));
+let white = SideRules::standard().with_atom(Kind::Rook, Atom::leap(&KNIGHT, Mode::MoveOrCapture))?;
 let rules = Rules::new(white, SideRules::standard());
 ```
 
@@ -102,7 +104,7 @@ This example makes a queen that cannot capture:
 use chrogue_engine::rules::{DIAG, ORTHO};
 
 let side = SideRules::standard()
-    .with_kind(Kind::Queen, vec![Atom::slide(&ORTHO, Mode::MoveOnly), Atom::slide(&DIAG, Mode::MoveOnly)]);
+    .with_kind(Kind::Queen, vec![Atom::slide(&ORTHO, Mode::MoveOnly), Atom::slide(&DIAG, Mode::MoveOnly)])?;
 ```
 
 If the TypeScript engine also gets the rule, add its flag name to `SideRules::with_flag` and to `FLAGS` in `difftest/run.ts`. Then the differential test includes the rule.
@@ -118,6 +120,8 @@ A rule that changes the pawn moves, en passant, or castling in a new way needs a
 - A side with no king is never in check. If a side has two kings, only the king on the lowest square can be in check.
 - A move can capture a king when the side that does not have the move is in check.
 - `outcome` does its checks in this order: bare, rout, checkmate or stalemate, clock. A side with no legal move loses.
+
+The TypeScript engine has no rule where a king move and a castle have the same squares. If the movement of the king can go to a castle square, the Rust engine gives only the castle when the castle is possible, and the king move when it is not.
 
 ## AI
 
@@ -209,8 +213,15 @@ For each sampled position, the script compares these results of the two engines:
 - `outcome`.
 - Perft at depth 1 and depth 2, and at depth 3 on one position of six.
 
-The script also sends each game to the Rust tool. The tool plays the moves and the script compares the full state after each move. Then the tool takes back each move and reports if the first state returned.
+The script also sends each game to the Rust tool. The tool plays the moves and the script compares the full state after each move. After each move, the tool compares its bitboards with its mailbox and its Zobrist key with the key from all the pieces. Then the tool takes back each move and compares the state with the state before that move.
 
-If the engines disagree, the script prints the position, the rules, and the moves that only one engine has. The exit code is 1. The exit code is also 1 if the run has fewer than 3000 positions or if a rule combination has fewer than 20 positions.
+The game starts use the ids of the game: numbers for the army of the player, `"e0"`, `"e1"`, and so on for the enemy, and `"conscript"`. The engine has `u16` ids. The Rust tool gives each id of a request its own number, and writes the ids back in its answer. Thus the script compares the ids of the game.
+
+The run also has these games and positions:
+
+- 64 short games from a start with white pawns on rank 1 and earlyPromo for Black. These games give en passant captures that promote. The script compares each position of these games.
+- Prepared endings where more than one end is true: checkmate and stalemate with 100 or more on the clock, and rout and bare kings with a high clock. These positions compare the order of the checks in `outcome`.
+
+If the engines disagree, the script prints the position, the rules, and the moves that only one engine has. The exit code is 1. The exit code is also 1 if the run has fewer than 3000 positions, if a rule combination has fewer than 20 positions, or if a kind of move or a result occurs fewer times than its minimum in `MINIMUMS`. The minimums are for en passant captures, en passant captures that promote, backward steps, checks, promotions to each kind, castles of each side to each wing, and each result.
 
 The script uses its own random numbers, thus the same seed gives the same run.

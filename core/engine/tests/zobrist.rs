@@ -2,11 +2,12 @@
 
 mod common;
 
-use chrogue_engine::fen::{KIWIPETE, START, from_fen};
+use chrogue_engine::fen::{KIWIPETE, START};
 use chrogue_engine::rng::Rng;
 use chrogue_engine::rules::FLAG_NAMES;
 use chrogue_engine::zobrist::key_from_scratch;
 use chrogue_engine::{Color, Move, Rules, SideRules, Special, State, outcome};
+use common::from_fen;
 use common::legal;
 
 fn all_flags() -> Rules {
@@ -74,12 +75,12 @@ fn the_key_is_right_with_the_rules_of_ordinary_chess() {
 #[test]
 fn the_key_has_the_side_to_move_the_en_passant_square_and_the_moved_flag() {
     let state = from_fen(START, Color::White, Rules::standard());
-    let mut black = state.clone();
-    black.turn = Color::Black;
+    let black = state.clone().with_turn(Color::Black);
     assert_ne!(state.key(), black.key());
 
-    let mut with_ep = state.clone();
-    with_ep.ep = Some(20);
+    // After e2-e4 with no en passant square, and with the en passant square e3.
+    let state = from_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR", Color::Black, Rules::standard());
+    let with_ep = state.clone().with_en_passant(Some(20)).unwrap();
     assert_ne!(state.key(), with_ep.key());
     assert_eq!(with_ep.key(), key_from_scratch(&with_ep));
 
@@ -90,7 +91,7 @@ fn the_key_has_the_side_to_move_the_en_passant_square_and_the_moved_flag() {
     for (from, to) in [(0, 8), (60, 61), (8, 0), (61, 60)] {
         state.make(Move::new(from, to));
     }
-    assert_eq!(state.turn, Color::White);
+    assert_eq!(state.turn(), Color::White);
     assert_ne!(state.key(), first);
 }
 

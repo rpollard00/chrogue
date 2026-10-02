@@ -32,3 +32,8 @@ pub fn squares(names: &[&str]) -> Vec<Square> {
     list.sort_unstable();
     list
 }
+
+/// A state from the piece field of a FEN string. Panics if the text or the rules are not valid.
+pub fn from_fen(fen: &str, turn: chrogue_engine::Color, rules: chrogue_engine::Rules) -> State {
+    chrogue_engine::fen::from_fen(fen, turn, rules).expect("the test position is valid")
+}

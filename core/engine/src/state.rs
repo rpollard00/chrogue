@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::rules::Rules;
+use crate::rules::{Rules, RulesError};
 use crate::tables::Tables;
 use crate::types::{Bitboard, Color, Kind, Move, Piece, Placement, Special, Square, bit};
 use crate::zobrist;
@@ -19,9 +19,10 @@ pub struct State {
     /// The Zobrist key of the pieces. `put` and `remove` keep it up to date.
     piece_key: u64,
     /// The side that has the move.
-    pub turn: Color,
-    /// The square that a pawn crossed with a double step on the last move.
-    pub ep: Option<Square>,
+    turn: Color,
+    /// The square that a pawn crossed with a double step on the last move. Only `make`,
+    /// `unmake`, the null move, and `with_en_passant` set it.
+    ep: Option<Square>,
     /// The number of half moves with no capture and no pawn advance.
     pub clock: u32,
     tables: Arc<Tables>,
@@ -39,16 +40,53 @@ pub struct Undo {
     kind: Kind,
 }
 
+/// The data that `State::unmake_null` needs to take back a null move.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct NullUndo {
+    ep: Option<Square>,
+}
+
+/// The reason why the engine cannot make a state from the data of a caller.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum StateError {
+    Rules(RulesError),
+    /// A placement has a square that is more than 63.
+    BadSquare(Square),
+    /// The en passant square is not on the board, is not empty, or has no pawn of the side
+    /// that does not have the move in front of it.
+    BadEnPassant(Square),
+    /// The text is not a piece field of a FEN string.
+    BadFen(String),
+}
+
+impl std::fmt::Display for StateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StateError::Rules(error) => error.fmt(f),
+            StateError::BadSquare(s) => write!(f, "Square {s} is not on the board"),
+            StateError::BadEnPassant(s) => write!(f, "Square {s} cannot be the en passant square"),
+            StateError::BadFen(text) => write!(f, "\"{text}\" is not a piece field of a FEN string"),
+        }
+    }
+}
+
+impl std::error::Error for StateError {}
+
+impl From<RulesError> for StateError {
+    fn from(error: RulesError) -> StateError {
+        StateError::Rules(error)
+    }
+}
+
 impl State {
-    /// Makes a state with White to move. If two pieces have the same square, the last one stays.
-    ///
-    /// Panics if the rules are not valid or if a square is more than 63.
-    pub fn new(pieces: &[Placement], rules: Rules) -> State {
-        State::with_tables(pieces, Arc::new(Tables::new(rules)))
+    /// Makes a state with White to move and no en passant square. If two pieces have the same
+    /// square, the last one stays.
+    pub fn new(pieces: &[Placement], rules: Rules) -> Result<State, StateError> {
+        State::with_tables(pieces, Arc::new(Tables::new(rules)?))
     }
 
     /// Makes a state that shares the tables of a battle.
-    pub fn with_tables(pieces: &[Placement], tables: Arc<Tables>) -> State {
+    pub fn with_tables(pieces: &[Placement], tables: Arc<Tables>) -> Result<State, StateError> {
         let mut state = State {
             board: [None; 64],
             by_color: [0; 2],
@@ -60,11 +98,51 @@ impl State {
             tables,
         };
         for placement in pieces {
-            assert!(placement.square < 64, "Square {} is not on the board", placement.square);
+            if placement.square >= 64 {
+                return Err(StateError::BadSquare(placement.square));
+            }
             state.remove(placement.square);
             state.put(placement.square, placement.piece);
         }
-        state
+        Ok(state)
+    }
+
+    /// The same state with another side to move and no en passant square.
+    pub fn with_turn(mut self, turn: Color) -> State {
+        self.turn = turn;
+        self.ep = None;
+        self
+    }
+
+    /// The same state with an en passant square. The square must be empty, and a pawn of the
+    /// side that does not have the move must stand on the next square in its direction of
+    /// movement.
+    pub fn with_en_passant(mut self, ep: Option<Square>) -> Result<State, StateError> {
+        if let Some(s) = ep {
+            let mover = self.turn.other();
+            let victim = s as i8 + 8 * mover.forward();
+            let valid = s < 64
+                && self.board[s as usize].is_none()
+                && (0..64).contains(&victim)
+                && self.pieces(mover, Kind::Pawn) & bit(victim as Square) != 0;
+            if !valid {
+                return Err(StateError::BadEnPassant(s));
+            }
+        }
+        self.ep = ep;
+        Ok(self)
+    }
+
+    /// The side that has the move.
+    #[inline(always)]
+    pub fn turn(&self) -> Color {
+        self.turn
+    }
+
+    /// The square that a pawn crossed with a double step on the last move.
+    #[inline(always)]
+    pub fn ep(&self) -> Option<Square> {
+        self.ep
     }
 
     #[inline(always)]
@@ -205,19 +283,19 @@ impl State {
     }
 
     /// Passes the move to the other side: no piece moves. The search uses it for null-move
-    /// pruning. Returns the en passant square for `unmake_null`. The clock stays the same.
+    /// pruning. The clock stays the same.
     #[inline]
-    pub fn make_null(&mut self) -> Option<Square> {
-        let ep = self.ep.take();
+    pub fn make_null(&mut self) -> NullUndo {
+        let undo = NullUndo { ep: self.ep.take() };
         self.turn = self.turn.other();
-        ep
+        undo
     }
 
-    /// Takes back `make_null`. `ep` is the value that `make_null` returned.
+    /// Takes back `make_null`. `undo` is the value that `make_null` returned.
     #[inline]
-    pub fn unmake_null(&mut self, ep: Option<Square>) {
+    pub fn unmake_null(&mut self, undo: NullUndo) {
         self.turn = self.turn.other();
-        self.ep = ep;
+        self.ep = undo.ep;
     }
 
     /// True if the bitboards agree with the mailbox. The tests use this function.

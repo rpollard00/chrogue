@@ -2,8 +2,9 @@
 
 mod common;
 
-use chrogue_engine::fen::{START, from_fen, square};
+use chrogue_engine::fen::{START, square};
 use chrogue_engine::{Color, Outcome, Rules, SideRules, Special, in_check, outcome};
+use common::from_fen;
 use common::{legal, squares, targets, targets_from};
 
 fn white(rules: SideRules) -> Rules {
@@ -69,11 +70,11 @@ fn moves_from_gives_the_moves_of_a_piece_of_the_side_that_does_not_have_the_move
     let pin = from_fen("4k3/4r3/8/8/8/8/8/4RK2", Color::White, Rules::standard());
     assert_eq!(targets_from(&pin, "e7"), squares(&["e6", "e5", "e4", "e3", "e2", "e1"]));
 
-    let mut state = from_fen("4k3/8/8/3pP3/8/8/8/4K3", Color::White, Rules::standard());
-    state.ep = Some(square("d6"));
+    let state = from_fen("4k3/8/8/3pP3/8/8/8/4K3", Color::White, Rules::standard());
+    let state = state.with_en_passant(Some(square("d6"))).unwrap();
     assert_eq!(targets_from(&state, "d5"), squares(&["d4"]));
-    assert_eq!(state.turn, Color::White);
-    assert_eq!(state.ep, Some(square("d6")));
+    assert_eq!(state.turn(), Color::White);
+    assert_eq!(state.ep(), Some(square("d6")));
     assert_eq!(targets_from(&state, "e5"), squares(&["d6", "e6"]));
 }
 
@@ -123,7 +124,7 @@ fn a_double_step_into_the_promotion_zone_promotes_and_makes_no_en_passant_square
     assert_eq!(moves.len(), 4);
     assert!(moves.iter().all(|m| m.promo.is_some() && m.special == Special::None));
     state.make(moves[0]);
-    assert_eq!(state.ep, None);
+    assert_eq!(state.ep(), None);
 }
 
 #[test]

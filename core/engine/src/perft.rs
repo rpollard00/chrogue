@@ -1,4 +1,5 @@
-//! Perft: the number of move sequences of a given length. It proves the move generation.
+//! Perft: the number of move sequences of a given length. The tests compare it with the known
+//! counts of chess positions, and the differential test compares it with the TypeScript engine.
 
 use crate::movegen::{in_check, pseudo_moves};
 use crate::state::State;
@@ -9,7 +10,7 @@ pub fn perft(state: &mut State, depth: u32) -> u64 {
     if depth == 0 {
         return 1;
     }
-    let color = state.turn;
+    let color = state.turn();
     let mut list = MoveList::new();
     pseudo_moves(state, color, false, &mut list);
     let mut nodes = 0;

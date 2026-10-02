@@ -118,7 +118,7 @@ pub fn officer_reach(side: &SideTables, kind: Kind, from: Square, occupied: Bitb
 #[inline(always)]
 fn push_pawn_move(side: &SideTables, list: &mut MoveList, from: Square, to: Square, promo: bool, special: Special) {
     if promo {
-        for kind in side.promotions {
+        for &kind in side.promotions.as_slice() {
             list.push(Move { from, to, promo: Some(kind), special });
         }
     } else {
@@ -165,7 +165,7 @@ fn add_pawn_moves(
             let to = pop_square(&mut captures);
             push_pawn_move(side, list, from, to, is_promo(to), Special::None);
         }
-        if let Some(ep) = state.ep
+        if let Some(ep) = state.ep()
             && attacks & bit(ep) & !occupied != 0
         {
             let victim = (ep as i8 - step) as Square;
@@ -180,27 +180,41 @@ fn add_pawn_moves(
     }
 }
 
-/// Adds the castles of a king. The checks are the same as in `addCastles` of the TypeScript engine:
-/// the king square and the square that the king crosses must not be attacked. The legality filter
-/// rejects a castle that puts the king on an attacked square.
-fn add_castles(state: &State, color: Color, from: Square, list: &mut MoveList) {
+/// The `to` squares of the castles of a king. The checks are the same as in `addCastles` of the
+/// TypeScript engine: the king square and the square that the king crosses must not be attacked.
+/// The legality filter rejects a castle that puts the king on an attacked square.
+fn castle_targets(state: &State, color: Color, from: Square) -> Bitboard {
     let foe = color.other();
     let home: Square = if color == Color::White { 4 } else { 60 };
     let unmoved = state.piece_at(from).is_some_and(|king| !king.moved);
     if !unmoved || from != home || is_attacked(state, from, foe) {
-        return;
+        return 0;
     }
     let occupied = state.occupied();
     let rook_ready =
         |s: Square| state.piece_at(s).is_some_and(|rook| rook.kind == Kind::Rook && rook.color == color && !rook.moved);
+    let mut targets = 0;
     if rook_ready(from + 3) && occupied & (bit(from + 1) | bit(from + 2)) == 0 && !is_attacked(state, from + 1, foe) {
-        list.push(Move { from, to: from + 2, promo: None, special: Special::Castle });
+        targets |= bit(from + 2);
     }
     if rook_ready(from - 4)
         && occupied & (bit(from - 1) | bit(from - 2) | bit(from - 3)) == 0
         && !is_attacked(state, from - 1, foe)
     {
-        list.push(Move { from, to: from - 2, promo: None, special: Special::Castle });
+        targets |= bit(from - 2);
+    }
+    targets
+}
+
+/// Adds the castles of a king. The moves at and after `start` are the moves of this side.
+/// A king whose own movement also goes to a castle square gets only the castle there.
+fn add_castles(state: &State, side: &SideTables, color: Color, from: Square, start: usize, list: &mut MoveList) {
+    let mut castles = castle_targets(state, color, from);
+    if castles != 0 && side.king_move_to_castle_square {
+        retain_from(list, start, |m| m.from != from || castles & bit(m.to) == 0);
+    }
+    while castles != 0 {
+        list.push(Move { from, to: pop_square(&mut castles), promo: None, special: Special::Castle });
     }
 }
 
@@ -212,13 +226,14 @@ fn add_piece_moves(state: &State, from: Square, captures_only: bool, list: &mut 
         add_pawn_moves(state, side, piece.color, from, captures_only, list);
         return;
     }
+    let start = list.len();
     let foes = state.color_set(piece.color.other());
     let mut targets = officer_targets(side, piece.kind, from, state.occupied(), foes, captures_only);
     while targets != 0 {
         list.push(Move::new(from, pop_square(&mut targets)));
     }
     if piece.kind == Kind::King && side.castling && !captures_only {
-        add_castles(state, piece.color, from, list);
+        add_castles(state, side, piece.color, from, start, list);
     }
 }
 
@@ -230,6 +245,7 @@ pub fn pseudo_moves(state: &State, color: Color, captures_only: bool, list: &mut
     let own = state.color_set(color);
     let foes = state.color_set(color.other());
     let occupied = own | foes;
+    let start = list.len();
 
     let mut pawns = state.kind_set(Kind::Pawn) & own;
     while pawns != 0 {
@@ -248,7 +264,7 @@ pub fn pseudo_moves(state: &State, color: Color, captures_only: bool, list: &mut
     if side.castling && !captures_only {
         let mut kings = state.kind_set(Kind::King) & own;
         while kings != 0 {
-            add_castles(state, color, pop_square(&mut kings), list);
+            add_castles(state, side, color, pop_square(&mut kings), start, list);
         }
     }
 }
@@ -264,7 +280,7 @@ pub fn is_legal(state: &mut State, m: Move, mover: Color) -> bool {
 
 /// Adds the legal moves of the side that has the move. The state is the same after the call.
 pub fn legal_moves(state: &mut State, list: &mut MoveList) {
-    let color = state.turn;
+    let color = state.turn();
     let start = list.len();
     pseudo_moves(state, color, false, list);
     retain_from(list, start, |m| is_legal(state, m, color));
@@ -275,9 +291,8 @@ pub fn legal_moves(state: &mut State, list: &mut MoveList) {
 pub fn moves_from(state: &State, from: Square, list: &mut MoveList) {
     let Some(piece) = state.piece_at(from) else { return };
     let mut state = state.clone();
-    if piece.color != state.turn {
-        state.turn = piece.color;
-        state.ep = None;
+    if piece.color != state.turn() {
+        state = state.with_turn(piece.color);
     }
     let start = list.len();
     add_piece_moves(&state, from, false, list);

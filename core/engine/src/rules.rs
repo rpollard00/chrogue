@@ -67,6 +67,40 @@ pub enum DoubleStep {
     Always,
 }
 
+/// The kinds that a pawn can become: one to four different kinds. A pawn cannot become a
+/// pawn or a king.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Promotions {
+    kinds: [Kind; 4],
+    len: u8,
+}
+
+impl Promotions {
+    /// Ordinary chess: queen, knight, rook, bishop.
+    pub const STANDARD: Promotions =
+        Promotions { kinds: [Kind::Queen, Kind::Knight, Kind::Rook, Kind::Bishop], len: 4 };
+
+    /// The kinds in the order of the generated moves. Gives an error for an empty list, for the
+    /// pawn or the king, and for a kind that is in the list two times. Thus a list has four
+    /// kinds or fewer.
+    pub fn new(kinds: &[Kind]) -> Result<Promotions, RulesError> {
+        let mut list = Promotions { kinds: [Kind::Queen; 4], len: 0 };
+        for &kind in kinds {
+            if matches!(kind, Kind::Pawn | Kind::King) || list.as_slice().contains(&kind) {
+                return Err(RulesError::BadPromotion(kind));
+            }
+            list.kinds[list.len as usize] = kind;
+            list.len += 1;
+        }
+        if list.len == 0 { Err(RulesError::NoPromotion) } else { Ok(list) }
+    }
+
+    #[inline(always)]
+    pub fn as_slice(&self) -> &[Kind] {
+        &self.kinds[..self.len as usize]
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PawnRules {
     pub double_step: DoubleStep,
@@ -75,7 +109,7 @@ pub struct PawnRules {
     /// A pawn can move one square backward to an empty square.
     pub backward_step: bool,
     /// The kinds that a pawn can become, in the order of the generated moves.
-    pub promotions: [Kind; 4],
+    pub promotions: Promotions,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -96,6 +130,12 @@ pub enum RulesError {
     BadOffset(Kind, Offset),
     /// The promotion zone must leave one rank or more for the pawns.
     BadPromoDistance(u8),
+    /// A pawn cannot become a pawn or a king, and the list cannot have a kind two times.
+    BadPromotion(Kind),
+    /// The list of promotion kinds is empty.
+    NoPromotion,
+    /// The pawn has `PawnRules`. It has no atoms.
+    PawnAtoms,
 }
 
 impl std::fmt::Display for RulesError {
@@ -106,6 +146,11 @@ impl std::fmt::Display for RulesError {
                 write!(f, "The offset ({df}, {dr}) of kind {} is not permitted", kind.letter())
             }
             RulesError::BadPromoDistance(d) => write!(f, "The promotion distance {d} is more than 6"),
+            RulesError::BadPromotion(kind) => {
+                write!(f, "The promotion kind {} is a pawn, a king, or in the list two times", kind.letter())
+            }
+            RulesError::NoPromotion => write!(f, "The list of promotion kinds is empty"),
+            RulesError::PawnAtoms => write!(f, "The pawn has PawnRules and cannot have atoms"),
         }
     }
 }
@@ -128,31 +173,35 @@ impl SideRules {
                 double_step: DoubleStep::FirstMove,
                 promo_distance: 0,
                 backward_step: false,
-                promotions: [Kind::Queen, Kind::Knight, Kind::Rook, Kind::Bishop],
+                promotions: Promotions::STANDARD,
             },
             castling: true,
         }
     }
 
-    /// The rules of a kind. Panics for `Kind::Pawn`, because the pawn has `PawnRules`.
-    pub fn kind(&self, kind: Kind) -> &KindRules {
-        &self.kinds[officer_index(kind)]
+    /// The atoms of a kind. The pawn has `PawnRules`, thus the list of the pawn is empty.
+    pub fn atoms(&self, kind: Kind) -> &[Atom] {
+        match officer_index(kind) {
+            Ok(index) => &self.kinds[index].atoms,
+            Err(_) => &[],
+        }
     }
 
-    /// See `kind`.
-    pub fn kind_mut(&mut self, kind: Kind) -> &mut KindRules {
-        &mut self.kinds[officer_index(kind)]
+    /// Adds an atom to the movement of a kind. Gives an error for `Kind::Pawn`.
+    pub fn with_atom(mut self, kind: Kind, atom: Atom) -> Result<SideRules, RulesError> {
+        self.kinds[officer_index(kind)?].atoms.push(atom);
+        Ok(self)
     }
 
-    /// Adds an atom to the movement of a kind.
-    pub fn with_atom(mut self, kind: Kind, atom: Atom) -> SideRules {
-        self.kind_mut(kind).atoms.push(atom);
-        self
+    /// Replaces the movement of a kind. Gives an error for `Kind::Pawn`.
+    pub fn with_kind(mut self, kind: Kind, atoms: Vec<Atom>) -> Result<SideRules, RulesError> {
+        self.kinds[officer_index(kind)?].atoms = atoms;
+        Ok(self)
     }
 
-    /// Replaces the movement of a kind.
-    pub fn with_kind(mut self, kind: Kind, atoms: Vec<Atom>) -> SideRules {
-        self.kind_mut(kind).atoms = atoms;
+    /// Adds an atom to a kind that is not the pawn.
+    fn with_officer_atom(mut self, kind: Kind, atom: Atom) -> SideRules {
+        self.kinds[kind.index() - 1].atoms.push(atom);
         self
     }
 
@@ -183,17 +232,17 @@ impl SideRules {
 
     /// The king can also move as a knight.
     pub fn king_knight(self) -> SideRules {
-        self.with_atom(Kind::King, Atom::leap(&KNIGHT, Mode::MoveOrCapture))
+        self.with_officer_atom(Kind::King, Atom::leap(&KNIGHT, Mode::MoveOrCapture))
     }
 
     /// Knights can also jump three squares in one direction and one square to the side.
     pub fn long_leap(self) -> SideRules {
-        self.with_atom(Kind::Knight, Atom::leap(&CAMEL, Mode::MoveOrCapture))
+        self.with_officer_atom(Kind::Knight, Atom::leap(&CAMEL, Mode::MoveOrCapture))
     }
 
     /// Bishops can move one square orthogonally to an empty square.
     pub fn sidestep(self) -> SideRules {
-        self.with_atom(Kind::Bishop, Atom::leap(&ORTHO, Mode::MoveOnly))
+        self.with_officer_atom(Kind::Bishop, Atom::leap(&ORTHO, Mode::MoveOnly))
     }
 
     /// Applies one rule flag of the TypeScript engine by its name.
@@ -219,7 +268,7 @@ impl SideRules {
             return Err(RulesError::BadPromoDistance(self.pawn.promo_distance));
         }
         for kind in Kind::OFFICERS {
-            for atom in &self.kind(kind).atoms {
+            for atom in self.atoms(kind) {
                 let (Atom::Leap { offsets, .. } | Atom::Slide { dirs: offsets, .. }) = atom;
                 for &(df, dr) in offsets {
                     if (df, dr) == (0, 0) || df.abs() > 7 || dr.abs() > 7 {
@@ -232,9 +281,9 @@ impl SideRules {
     }
 }
 
-fn officer_index(kind: Kind) -> usize {
-    assert!(kind != Kind::Pawn, "The pawn has PawnRules, not KindRules");
-    kind.index() - 1
+/// The index of a kind in `SideRules::kinds`.
+fn officer_index(kind: Kind) -> Result<usize, RulesError> {
+    if kind == Kind::Pawn { Err(RulesError::PawnAtoms) } else { Ok(kind.index() - 1) }
 }
 
 /// The rules of the two sides: `[White, Black]`.

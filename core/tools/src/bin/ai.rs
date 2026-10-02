@@ -51,7 +51,7 @@ fn values() {
         let pawn = pawn_profile(&rules.pawn);
         println!("{name:<12} {:<8} {:>8.3} {:>9.3}", "p", pawn.reach, pawn.coverage);
         for kind in Kind::OFFICERS {
-            let profile = officer_profile(&rules.kind(kind).atoms);
+            let profile = officer_profile(rules.atoms(kind));
             println!("{name:<12} {:<8} {:>8.3} {:>9.3}", kind.letter(), profile.reach, profile.coverage);
         }
     }
@@ -60,7 +60,7 @@ fn values() {
 fn speed(args: &[String]) {
     let pieces = args.first().map_or(MIDDLEGAME, String::as_str);
     let turn = if args.get(1).is_some_and(|text| text == "b") { Color::Black } else { Color::White };
-    let mut state = fen::from_fen(pieces, turn, Rules::standard());
+    let mut state = fen::from_fen(pieces, turn, Rules::standard()).unwrap_or_else(|error| panic!("{error}"));
     println!(
         "{:<16} {:>9} {:>6} {:>9} {:>6} {:>9} {:>12}",
         "level", "max nodes", "noise", "nodes", "depth", "ms", "nodes/s"
@@ -100,7 +100,8 @@ fn best_move(args: &[String]) {
     };
     let turn = if turn == "b" { Color::Black } else { Color::White };
     let nodes = rest.first().map_or(250_000, |text| text.parse().expect("NODES must be a number"));
-    let mut state = fen::from_fen(pieces, turn, Rules::new(side(white), side(black)));
+    let mut state =
+        fen::from_fen(pieces, turn, Rules::new(side(white), side(black))).unwrap_or_else(|error| panic!("{error}"));
     let level = Level::nodes("move", nodes);
     match choose_move(&mut state, &level, 1) {
         Some(result) => {
