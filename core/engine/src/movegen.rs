@@ -1,11 +1,19 @@
 //! Move generation and attack detection.
 //!
-//! The officers (knight, bishop, rook, queen, king) move by the tables that come from the
-//! rules data. The pawn moves, en passant, and castling are code that reads `PawnRules`
-//! and `SideRules::castling`.
+//! Each kind, the pawn too, moves by the tables that come from the rules data. There are three
+//! paths, and they give the same moves:
+//!
+//! - A kind with one group of atoms with no condition and no special property, and no
+//!   promotion (`KindTables::simple`), takes the bitboards of its leaps and slides.
+//! - The other kinds test the probes of the square of the piece (`Probe`).
+//! - A piece that can capture en passant goes group by group: see `add_group_moves`. Its
+//!   documentation has the rules of the order and of the properties of the moves.
+//!
+//! The castles come from the rows of `SideRules::castles`.
 
+use crate::rules::{Condition, Promotions};
 use crate::state::State;
-use crate::tables::SideTables;
+use crate::tables::{Group, KindTables, LeapSet, SideTables, Slide, Steps};
 use crate::types::{Bitboard, Color, Kind, Move, MoveList, Special, Square, bit, pop_square};
 
 /// The first piece on a line, or None if the line has no piece.
@@ -20,17 +28,46 @@ fn first_blocker(blockers: Bitboard, ascending: bool) -> Option<Square> {
     }
 }
 
+/// The empty squares of a slide from `from` before the first piece, and the square of that piece.
+#[inline(always)]
+fn slide_parts(slide: &Slide, from: Square, occupied: Bitboard) -> (Bitboard, Bitboard) {
+    let ray = slide.rays[from as usize];
+    match first_blocker(ray & occupied, slide.ascending) {
+        Some(blocker) => (ray & !slide.rays[blocker as usize] & !bit(blocker), bit(blocker)),
+        None => (ray, 0),
+    }
+}
+
+/// The first square of a line.
+#[inline(always)]
+fn first_square(ray: Bitboard, ascending: bool) -> Bitboard {
+    match first_blocker(ray, ascending) {
+        Some(s) => bit(s),
+        None => 0,
+    }
+}
+
+#[inline(always)]
+fn has_moved(state: &State, s: Square) -> bool {
+    state.piece_at(s).is_some_and(|piece| piece.moved)
+}
+
 /// True if a piece of side `by` attacks the square. An attack is a move that can capture there.
 pub fn is_attacked(state: &State, s: Square, by: Color) -> bool {
     let side = state.tables().side(by);
     let theirs = state.color_set(by);
     let target = s as usize;
-    if side.pawn_attackers[target] & state.kind_set(Kind::Pawn) & theirs != 0 {
-        return true;
-    }
     for &kind in &side.leap_attacker_kinds {
         if side.leap_attackers[kind.index()][target] & state.kind_set(kind) & theirs != 0 {
             return true;
+        }
+    }
+    for &kind in &side.unmoved_leap_attacker_kinds {
+        let mut attackers = side.unmoved_leap_attackers[kind.index()][target] & state.kind_set(kind) & theirs;
+        while attackers != 0 {
+            if !has_moved(state, pop_square(&mut attackers)) {
+                return true;
+            }
         }
     }
     let occupied = state.occupied();
@@ -46,6 +83,7 @@ pub fn is_attacked(state: &State, s: Square, by: Color) -> bool {
             }
             if let Some(blocker) = first_blocker(ray & occupied, line.ascending)
                 && sliders & bit(blocker) != 0
+                && !(group.unmoved_only && has_moved(state, blocker))
             {
                 return true;
             }
@@ -63,25 +101,14 @@ pub fn in_check(state: &State, color: Color) -> bool {
     }
 }
 
-/// The squares where an officer on `from` can go.
+/// The squares where some steps from `from` can go: (empty squares, squares with an enemy).
 #[inline(always)]
-fn officer_targets(
-    side: &SideTables,
-    kind: Kind,
-    from: Square,
-    occupied: Bitboard,
-    foes: Bitboard,
-    captures_only: bool,
-) -> Bitboard {
-    let leaps = &side.leaps[kind.index()][from as usize];
+fn step_targets(steps: &Steps, from: Square, occupied: Bitboard, foes: Bitboard) -> (Bitboard, Bitboard) {
+    let leaps = &steps.leaps[from as usize];
     let mut captures = (leaps.both | leaps.capture) & foes;
     let mut quiets = (leaps.both | leaps.quiet) & !occupied;
-    for slide in &side.slides[kind.index()] {
-        let ray = slide.rays[from as usize];
-        let (empty, hit) = match first_blocker(ray & occupied, slide.ascending) {
-            Some(blocker) => (ray & !slide.rays[blocker as usize] & !bit(blocker), bit(blocker)),
-            None => (ray, 0),
-        };
+    for slide in &steps.slides {
+        let (empty, hit) = slide_parts(slide, from, occupied);
         if slide.quiet {
             quiets |= empty;
         }
@@ -89,22 +116,18 @@ fn officer_targets(
             captures |= hit & foes;
         }
     }
-    if captures_only { captures } else { captures | quiets }
+    (quiets, captures)
 }
 
-/// The reach of an officer on `from`: the empty squares where it can move, and the squares
-/// that it attacks. An attacked square can be empty or can have a piece of either color.
-#[inline]
-pub fn officer_reach(side: &SideTables, kind: Kind, from: Square, occupied: Bitboard) -> (Bitboard, Bitboard) {
-    let leaps = &side.leaps[kind.index()][from as usize];
+/// The reach of some steps from `from`: the empty squares where the piece can move, and the
+/// squares that it attacks. An attacked square can be empty or can have a piece of either color.
+#[inline(always)]
+fn step_reach(steps: &Steps, from: Square, occupied: Bitboard) -> (Bitboard, Bitboard) {
+    let leaps = &steps.leaps[from as usize];
     let mut quiets = (leaps.both | leaps.quiet) & !occupied;
     let mut attacks = leaps.both | leaps.capture;
-    for slide in &side.slides[kind.index()] {
-        let ray = slide.rays[from as usize];
-        let (empty, hit) = match first_blocker(ray & occupied, slide.ascending) {
-            Some(blocker) => (ray & !slide.rays[blocker as usize] & !bit(blocker), bit(blocker)),
-            None => (ray, 0),
-        };
+    for slide in &steps.slides {
+        let (empty, hit) = slide_parts(slide, from, occupied);
         if slide.quiet {
             quiets |= empty;
         }
@@ -115,106 +138,305 @@ pub fn officer_reach(side: &SideTables, kind: Kind, from: Square, occupied: Bitb
     (quiets, attacks)
 }
 
+/// The reach of a piece on `from`: the empty squares where it can move, and the squares that
+/// it attacks. `moved` is the flag of the piece; it selects the atoms with a condition.
+#[inline]
+pub fn piece_reach(
+    side: &SideTables,
+    kind: Kind,
+    from: Square,
+    occupied: Bitboard,
+    moved: bool,
+) -> (Bitboard, Bitboard) {
+    let tables = &side.kinds[kind.index()];
+    let (mut quiets, mut attacks) = step_reach(&side.always[kind.index()], from, occupied);
+    if tables.has_unmoved && !moved {
+        let (more_quiets, more_attacks) = step_reach(&tables.unmoved, from, occupied);
+        quiets |= more_quiets;
+        attacks |= more_attacks;
+    }
+    (quiets, attacks)
+}
+
+/// The squares that a piece on `from` attacks. `moved` gives the flag of the piece; it is
+/// called only for a kind with an atom with a condition.
 #[inline(always)]
-fn push_pawn_move(side: &SideTables, list: &mut MoveList, from: Square, to: Square, promo: bool, special: Special) {
-    if promo {
-        for &kind in side.promotions.as_slice() {
-            list.push(Move { from, to, promo: Some(kind), special });
-        }
+pub fn piece_attacks(
+    side: &SideTables,
+    kind: Kind,
+    from: Square,
+    occupied: Bitboard,
+    moved: impl FnOnce() -> bool,
+) -> Bitboard {
+    let tables = &side.kinds[kind.index()];
+    if tables.leap_attacks_only {
+        let leaps = &side.always[kind.index()].leaps[from as usize];
+        leaps.both | leaps.capture
     } else {
-        list.push(Move { from, to, promo: None, special });
+        piece_reach(side, kind, from, occupied, tables.has_unmoved && moved()).1
     }
 }
 
-fn add_pawn_moves(
+#[inline(always)]
+fn push_promotions(list: &mut MoveList, from: Square, to: Square, promotions: &Option<Promotions>, special: Special) {
+    if let Some(promotions) = promotions {
+        for &kind in promotions.as_slice() {
+            list.push(Move { from, to, promo: Some(kind), special });
+        }
+    }
+}
+
+/// The targets of one group: (empty squares, squares with an enemy, targets that pass squares
+/// on a slide of a group that makes en passant squares).
+#[inline(never)]
+fn group_targets(
+    tables: &KindTables,
+    group: &Group,
+    leaps: &LeapSet,
+    from: Square,
+    occupied: Bitboard,
+    foes: Bitboard,
+) -> (Bitboard, Bitboard, Bitboard) {
+    let mut captures = (leaps.both | leaps.capture) & foes;
+    let mut quiets = (leaps.both | leaps.quiet) & !occupied;
+    let mut trail = 0;
+    for slide in &tables.group_slides[group.slides.0 as usize..group.slides.1 as usize] {
+        let (empty, hit) = slide_parts(slide, from, occupied);
+        let mut given = 0;
+        if slide.quiet {
+            given |= empty;
+        }
+        if slide.capture {
+            given |= hit & foes;
+        }
+        quiets |= given & !occupied;
+        captures |= given & foes;
+        if group.makes_en_passant {
+            trail |= given & !first_square(slide.rays[from as usize], slide.ascending);
+        }
+    }
+    (quiets, captures, trail)
+}
+
+/// The empty squares where a capture of a group can go if the square has an enemy.
+#[inline(always)]
+fn capture_reach(tables: &KindTables, group: &Group, leaps: &LeapSet, from: Square, occupied: Bitboard) -> Bitboard {
+    let mut reach = (leaps.both | leaps.capture) & !occupied;
+    for slide in &tables.group_slides[group.slides.0 as usize..group.slides.1 as usize] {
+        if slide.capture {
+            reach |= slide_parts(slide, from, occupied).0;
+        }
+    }
+    reach
+}
+
+/// Adds the moves of a piece of a kind that is not simple, group by group. This is the
+/// definition of the moves of such a piece; the probes give the same moves.
+///
+/// - The groups come in the order of their first atom. A group gives its targets in ascending
+///   order, then its en passant captures.
+/// - A target that an earlier group gave is not given again.
+/// - An en passant capture takes the place of a quiet move to the same square.
+/// - A target in the promotion zone that is not behind the piece gives one move for each
+///   promotion kind. A promotion makes no en passant squares.
+/// - A target is a `DoubleStep` move if a slide of a group with `makes_en_passant` gives it
+///   after one square or more. A quiet move of a group with `keeps_clock` is a `Backward` move.
+#[allow(clippy::too_many_arguments)]
+#[inline(never)]
+fn add_group_moves(
+    state: &State,
+    tables: &KindTables,
+    from: Square,
+    moved: bool,
+    occupied: Bitboard,
+    foes: Bitboard,
+    captures_only: bool,
+    list: &mut MoveList,
+) {
+    let promo = tables.promo_targets[from as usize];
+    let count = tables.groups.len();
+    let leaps = &tables.group_leaps[from as usize * count..from as usize * count + count];
+    let mut en_passant = 0;
+    let ep = state.ep_squares();
+    if ep != 0 && tables.captures_en_passant && foes & bit(state.ep_victim()) != 0 {
+        for (group, leaps) in tables.groups.iter().zip(leaps) {
+            if group.captures_en_passant && (group.condition == Condition::Always || !moved) {
+                en_passant |= capture_reach(tables, group, leaps, from, occupied) & ep;
+            }
+        }
+    }
+    let mut en_passant_left = en_passant;
+    let mut given = 0;
+    for (group, leaps) in tables.groups.iter().zip(leaps) {
+        if moved && group.condition == Condition::Unmoved {
+            continue;
+        }
+        let (quiets, captures, trail) = group_targets(tables, group, leaps, from, occupied, foes);
+        let mut targets = (quiets | captures) & !given & !en_passant;
+        given |= quiets | captures;
+        if captures_only {
+            targets &= captures | promo;
+        }
+        let quiet = if group.keeps_clock { Special::Backward } else { Special::None };
+        while targets != 0 {
+            let to = pop_square(&mut targets);
+            let special = if quiets & bit(to) == 0 { Special::None } else { quiet };
+            if promo & bit(to) != 0 {
+                push_promotions(list, from, to, &tables.promotions, special);
+            } else {
+                let special = if trail & bit(to) != 0 { Special::DoubleStep } else { special };
+                list.push(Move { from, to, promo: None, special });
+            }
+        }
+        if en_passant_left != 0 && group.captures_en_passant {
+            let mut targets = capture_reach(tables, group, leaps, from, occupied) & en_passant_left;
+            en_passant_left &= !targets;
+            while targets != 0 {
+                let to = pop_square(&mut targets);
+                if promo & bit(to) != 0 {
+                    push_promotions(list, from, to, &tables.promotions, Special::EnPassant);
+                } else {
+                    list.push(Move { from, to, promo: None, special: Special::EnPassant });
+                }
+            }
+        }
+    }
+}
+
+/// Adds the moves of the pieces of one kind, or of one piece if `pieces` has one square.
+#[inline(always)]
+fn add_kind_moves(
     state: &State,
     side: &SideTables,
+    kind: Kind,
     color: Color,
-    from: Square,
+    mut pieces: Bitboard,
+    captures_only: bool,
+    list: &mut MoveList,
+) {
+    let tables = &side.kinds[kind.index()];
+    if !tables.simple {
+        add_group_kind_moves(state, tables, color, pieces, captures_only, list);
+        return;
+    }
+    let steps = &side.always[kind.index()];
+    let occupied = state.occupied();
+    let foes = state.color_set(color.other());
+    while pieces != 0 {
+        let from = pop_square(&mut pieces);
+        let (quiets, captures) = step_targets(steps, from, occupied, foes);
+        let mut targets = if captures_only { captures } else { captures | quiets };
+        while targets != 0 {
+            list.push(Move::new(from, pop_square(&mut targets)));
+        }
+    }
+}
+
+/// `add_kind_moves` for a kind that is not simple. The usual case (no en passant capture is
+/// possible) tests the probes of the square (see `Probe`); they give the same moves as
+/// `add_group_moves`.
+#[inline(never)]
+fn add_group_kind_moves(
+    state: &State,
+    tables: &KindTables,
+    color: Color,
+    mut pieces: Bitboard,
     captures_only: bool,
     list: &mut MoveList,
 ) {
     let occupied = state.occupied();
     let foes = state.color_set(color.other());
-    let is_promo = |s: Square| side.promo_zone & bit(s) != 0;
-    let step = 8 * color.forward();
-    let on_board = |s: i8| (0..64).contains(&s);
-
-    let one = from as i8 + step;
-    if on_board(one) {
-        let one = one as Square;
-        if occupied & bit(one) == 0 {
-            if !captures_only || is_promo(one) {
-                push_pawn_move(side, list, from, one, is_promo(one), Special::None);
+    let ep = state.ep_squares();
+    let en_passant = ep != 0 && tables.captures_en_passant && foes & bit(state.ep_victim()) != 0;
+    while pieces != 0 {
+        let from = pop_square(&mut pieces);
+        if en_passant && tables.en_passant_reach[from as usize] & ep != 0 {
+            let moved = tables.has_unmoved && has_moved(state, from);
+            add_group_moves(state, tables, from, moved, occupied, foes, captures_only, list);
+            continue;
+        }
+        let (start, end) = tables.probe_ranges[from as usize][captures_only as usize];
+        let mut given = 0;
+        // The flag of the piece is read only for a probe with `Condition::Unmoved`.
+        let mut moved = None;
+        for probe in &tables.probes[start as usize..end as usize] {
+            if occupied & probe.path != 0 || (probe.unmoved && *moved.get_or_insert_with(|| has_moved(state, from))) {
+                continue;
             }
-            let two = one as i8 + step;
-            let moved = state.piece_at(from).is_some_and(|pawn| pawn.moved);
-            if (!moved || side.double_step_always) && on_board(two) && occupied & bit(two as Square) == 0 {
-                let two = two as Square;
-                // A double step into the promotion zone promotes and makes no en passant square.
-                let promo = is_promo(two);
-                if !captures_only || promo {
-                    let special = if promo { Special::None } else { Special::DoubleStep };
-                    push_pawn_move(side, list, from, two, promo, special);
+            let quiets = probe.quiet_targets & !occupied;
+            let captures = probe.capture_targets & foes;
+            let mut targets = (quiets | captures) & !given;
+            given |= targets;
+            if captures_only && !probe.promo {
+                targets &= captures;
+            }
+            if targets == 0 {
+                continue;
+            }
+            if probe.plain {
+                while targets != 0 {
+                    list.push(Move::new(from, pop_square(&mut targets)));
+                }
+            } else if probe.path != 0 && !probe.promo {
+                // A probe with a path has one target.
+                let to = targets.trailing_zeros() as Square;
+                let special = if quiets != 0 { probe.quiet_special } else { probe.capture_special };
+                list.push(Move { from, to, promo: None, special });
+            } else {
+                while targets != 0 {
+                    let to = pop_square(&mut targets);
+                    let special = if quiets & bit(to) != 0 { probe.quiet_special } else { probe.capture_special };
+                    if probe.promo {
+                        push_promotions(list, from, to, &tables.promotions, special);
+                    } else {
+                        list.push(Move { from, to, promo: None, special });
+                    }
                 }
             }
         }
-        let attacks = side.pawn_captures[from as usize];
-        let mut captures = attacks & foes;
-        while captures != 0 {
-            let to = pop_square(&mut captures);
-            push_pawn_move(side, list, from, to, is_promo(to), Special::None);
-        }
-        if let Some(ep) = state.ep()
-            && attacks & bit(ep) & !occupied != 0
-        {
-            let victim = (ep as i8 - step) as Square;
-            if state.pieces(color.other(), Kind::Pawn) & bit(victim) != 0 {
-                push_pawn_move(side, list, from, ep, is_promo(ep), Special::EnPassant);
-            }
-        }
     }
-    let back = from as i8 - step;
-    if side.backward_step && !captures_only && on_board(back) && occupied & bit(back as Square) == 0 {
-        list.push(Move { from, to: back as Square, promo: None, special: Special::Backward });
-    }
-}
-
-/// The `to` squares of the castles of a king. The checks are the same as in `addCastles` of the
-/// TypeScript engine: the king square and the square that the king crosses must not be attacked.
-/// The legality filter rejects a castle that puts the king on an attacked square.
-fn castle_targets(state: &State, color: Color, from: Square) -> Bitboard {
-    let foe = color.other();
-    let home: Square = if color == Color::White { 4 } else { 60 };
-    let unmoved = state.piece_at(from).is_some_and(|king| !king.moved);
-    if !unmoved || from != home || is_attacked(state, from, foe) {
-        return 0;
-    }
-    let occupied = state.occupied();
-    let rook_ready =
-        |s: Square| state.piece_at(s).is_some_and(|rook| rook.kind == Kind::Rook && rook.color == color && !rook.moved);
-    let mut targets = 0;
-    if rook_ready(from + 3) && occupied & (bit(from + 1) | bit(from + 2)) == 0 && !is_attacked(state, from + 1, foe) {
-        targets |= bit(from + 2);
-    }
-    if rook_ready(from - 4)
-        && occupied & (bit(from - 1) | bit(from - 2) | bit(from - 3)) == 0
-        && !is_attacked(state, from - 1, foe)
-    {
-        targets |= bit(from - 2);
-    }
-    targets
 }
 
 /// Adds the castles of a king. The moves at and after `start` are the moves of this side.
 /// A king whose own movement also goes to a castle square gets only the castle there.
+///
+/// The legality filter checks the `to` square of the king, as for each move.
 fn add_castles(state: &State, side: &SideTables, color: Color, from: Square, start: usize, list: &mut MoveList) {
-    let mut castles = castle_targets(state, color, from);
-    if castles != 0 && side.king_move_to_castle_square {
-        retain_from(list, start, |m| m.from != from || castles & bit(m.to) == 0);
+    if state.piece_at(from).is_none_or(|king| king.moved) {
+        return;
     }
-    while castles != 0 {
-        list.push(Move { from, to: pop_square(&mut castles), promo: None, special: Special::Castle });
+    let occupied = state.occupied();
+    // Each square of `safe` is tested one time for all the castles of the king.
+    let (mut safe, mut attacked) = (0, 0);
+    let mut targets = 0;
+    for castle in side.castles.iter().filter(|castle| castle.king_from == from) {
+        let partner_ready = state
+            .piece_at(castle.partner_from)
+            .is_some_and(|piece| piece.kind == castle.partner && piece.color == color && !piece.moved);
+        if !partner_ready || occupied & castle.required_empty() != 0 || castle.safe & attacked != 0 {
+            continue;
+        }
+        let mut unknown = castle.safe & !safe;
+        while unknown != 0 {
+            let s = pop_square(&mut unknown);
+            if is_attacked(state, s, color.other()) {
+                attacked |= bit(s);
+                break;
+            }
+            safe |= bit(s);
+        }
+        if castle.safe & attacked == 0 {
+            targets |= bit(castle.king_to);
+        }
+    }
+    if targets == 0 {
+        return;
+    }
+    if side.king_move_to_castle_square {
+        retain_from(list, start, |m| m.from != from || targets & bit(m.to) == 0);
+    }
+    for castle in side.castles.iter().filter(|castle| castle.king_from == from && targets & bit(castle.king_to) != 0) {
+        list.push(Move { from, to: castle.king_to, promo: None, special: Special::Castle });
     }
 }
 
@@ -222,17 +444,9 @@ fn add_castles(state: &State, side: &SideTables, color: Color, from: Square, sta
 fn add_piece_moves(state: &State, from: Square, captures_only: bool, list: &mut MoveList) {
     let Some(piece) = state.piece_at(from) else { return };
     let side = state.tables().side(piece.color);
-    if piece.kind == Kind::Pawn {
-        add_pawn_moves(state, side, piece.color, from, captures_only, list);
-        return;
-    }
     let start = list.len();
-    let foes = state.color_set(piece.color.other());
-    let mut targets = officer_targets(side, piece.kind, from, state.occupied(), foes, captures_only);
-    while targets != 0 {
-        list.push(Move::new(from, pop_square(&mut targets)));
-    }
-    if piece.kind == Kind::King && side.castling && !captures_only {
+    add_kind_moves(state, side, piece.kind, piece.color, bit(from), captures_only, list);
+    if piece.kind == Kind::King && !side.castles.is_empty() && !captures_only {
         add_castles(state, side, piece.color, from, start, list);
     }
 }
@@ -243,25 +457,11 @@ fn add_piece_moves(state: &State, from: Square, captures_only: bool, list: &mut 
 pub fn pseudo_moves(state: &State, color: Color, captures_only: bool, list: &mut MoveList) {
     let side = state.tables().side(color);
     let own = state.color_set(color);
-    let foes = state.color_set(color.other());
-    let occupied = own | foes;
     let start = list.len();
-
-    let mut pawns = state.kind_set(Kind::Pawn) & own;
-    while pawns != 0 {
-        add_pawn_moves(state, side, color, pop_square(&mut pawns), captures_only, list);
+    for kind in Kind::ALL {
+        add_kind_moves(state, side, kind, color, state.kind_set(kind) & own, captures_only, list);
     }
-    for kind in Kind::OFFICERS {
-        let mut pieces = state.kind_set(kind) & own;
-        while pieces != 0 {
-            let from = pop_square(&mut pieces);
-            let mut targets = officer_targets(side, kind, from, occupied, foes, captures_only);
-            while targets != 0 {
-                list.push(Move::new(from, pop_square(&mut targets)));
-            }
-        }
-    }
-    if side.castling && !captures_only {
+    if !side.castles.is_empty() && !captures_only {
         let mut kings = state.kind_set(Kind::King) & own;
         while kings != 0 {
             add_castles(state, side, color, pop_square(&mut kings), start, list);

@@ -366,8 +366,7 @@ fn a_castle_and_a_king_leap_to_the_same_square_are_one_move() {
     use chrogue_engine::{Atom, Mode};
     // The king has a leap of two squares to the side, thus e1-g1 is a castle and also a leap.
     // The engine gives only the castle.
-    let leap =
-        SideRules::standard().with_atom(Kind::King, Atom::leap(&[(2, 0), (-2, 0)], Mode::MoveOrCapture)).unwrap();
+    let leap = SideRules::standard().with_atom(Kind::King, Atom::leap(&[(2, 0), (-2, 0)], Mode::MoveOrCapture));
     let mut state = from_fen("4k3/7p/8/8/8/8/7P/4K2R", WHITE, Rules::new(leap, SideRules::standard()));
     let mut list = MoveList::new();
     legal_moves(&mut state, &mut list);

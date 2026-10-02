@@ -7,7 +7,7 @@ This directory has the Rust core of Chrogue. At this time it has two parts:
 
 The TypeScript engine in `src/engine/` is the reference. The Rust engine gives the same moves and the same results for the rules that the game has today. A differential test compares the two engines on random games and on prepared positions.
 
-The Rust engine is not a copy of the TypeScript engine. The movement of the knight, bishop, rook, queen, and king is data, thus a new movement rule for these kinds needs no new engine code. The pawn moves, en passant, and castling are code that reads options. A new rule of that type needs a new option and new engine code.
+The Rust engine is not a copy of the TypeScript engine. The movement of each kind is data: the steps and slides of the officers, the pawn moves, the first-move atoms, en passant, the promotion, the 50-move clock, and the castles. Thus a new movement rule needs no new engine code.
 
 ## Commands
 
@@ -33,7 +33,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
   - `src/types.rs`: Squares, colors, kinds, pieces, moves, and the move list. The move list holds 384 moves without the heap. A list with more moves puts its moves on the heap.
   - `src/rules.rs`: The movement rules as data.
   - `src/tables.rs`: The lookup tables that come from the rules. The engine builds them one time for each battle.
-  - `src/movegen.rs`: The move generation and the attack detection.
+  - `src/movegen.rs`: The move generation and the attack detection. A kind with one plain group of atoms (see below) takes its leaps and slides as bitboards. Another kind (the pawn) takes a list of probes for each square that the tables compute from its atoms. A piece that can capture en passant goes group by group. The three paths give the same moves.
   - `src/state.rs`: The state of a battle, `make`, and `unmake`. Only `make`, `unmake`, and the null move change the side to move and the en passant square after construction.
   - `src/outcome.rs`: The result of a battle.
   - `src/perft.rs`: The count of move sequences. The tests compare it with the known counts of chess positions.
@@ -44,84 +44,178 @@ Run the commands from the `core/` directory, unless the command shows a differen
   - `src/reference.rs`: The algorithm of the old TypeScript AI. It is a baseline opponent only.
   - `src/rng.rs`: A small seeded random number generator.
   - `src/fen.rs`: A reader for the piece field of a FEN string. The tests and the tools use it.
-  - `tests/`: Perft counts, the cases of `test/engine.test.ts`, rules that the TypeScript engine does not have, the Zobrist key, the derived values, and the tactics of the AI. `tests/property.rs` compares the engine with a naive move generator on 6000 random rule sets, and walks the move tree of 1500 more rule sets to make sure that `unmake` gives back the state.
+  - `tests/`: Perft counts, the cases of `test/engine.test.ts`, rules that the TypeScript engine does not have (`data_rules.rs` for the officers, `data_moves.rs` for pawns, en passant, castles, ranges, and first-move atoms), the Zobrist key, the derived values, and the tactics of the AI. `tests/property.rs` compares the engine with a naive move generator on 6000 random rule sets: random atoms for each kind (the pawn too) with random ranges, conditions, en passant properties, clock properties, promotions, and castle rows. It also walks the move tree of 1500 more rule sets, compares each `make` with a naive `make`, and makes sure that `unmake` gives back the state and the key.
 - `tools/`: The crate `chrogue-tools`. It has the binaries `difftest` (the Rust side of the differential test), `perft` (a timer), `arena` (self-play matches), and `ai` (values, speed, and the move for one position). Only `difftest` uses `serde_json`.
 - `difftest/`: The Bun scripts. `run.ts` is the differential test. `bench.ts` measures the TypeScript engine.
 
 ## Movement rules
 
-Each side of a battle has its own `SideRules`. `Rules` holds the rules of White and of Black.
+Each side of a battle has its own `SideRules`. `Rules` holds the rules of White and of Black. A `SideRules` has a `KindRules` for each kind (pawn, knight, bishop, rook, queen, king), and a list of castles.
 
-A knight, bishop, rook, queen, or king moves by a list of atoms:
+### Atoms
 
-- `Atom::Leap { offsets, mode }`: The piece jumps to each offset. Pieces between the two squares do not block the jump.
-- `Atom::Slide { dirs, mode }`: The piece moves in each direction until a piece blocks the line.
+Each kind, the pawn too, moves by a list of atoms. An `Atom` has these fields:
 
-An offset is a step of (file, rank) from the view of White. For Black, the engine mirrors the rank step. Thus (0, 1) is one square forward for each side.
+- `offsets`: Steps of (file, rank) from the view of White. For Black, the engine mirrors the rank step. Thus (0, 1) is one square forward for each side.
+- `max_steps`: The piece goes 1 to `max_steps` steps along an offset. Each step must end on an empty square, except the last step, which can capture. 1 is a leap: pieces inside one step do not block it. `Atom::MAX_STEPS` (7) is a slide that stops only at a piece or at the edge. A number between them is a slide with a range.
+- `mode`: What the atom can do on its target square. `Mode::MoveOrCapture`, `Mode::MoveOnly` (the atom attacks no square, thus it does not give check), or `Mode::CaptureOnly` (the atom attacks its squares, thus it gives check).
+- `condition`: `Condition::Always`, or `Condition::Unmoved`: only while the piece has not moved. Such an atom also attacks only while the piece has not moved.
+- `makes_en_passant`: The squares that a move of the atom passes become the en passant squares of the next half move, and the piece that moved is the victim of an en passant capture there. A move of one step passes no square.
+- `captures_en_passant`: The atom can go to an en passant square as if the square has the victim, and the victim is captured. The atom must be able to capture.
+- `resets_clock`: A move of the atom that is not a capture resets the 50-move clock. A capture always resets it.
 
-The mode tells what the atom can do on its target square:
+`Atom::leap(offsets, mode)` and `Atom::slide(dirs, mode)` make an atom with no condition and no property. The methods `max_steps(n)`, `if_unmoved()`, `makes_en_passant()`, `captures_en_passant()`, and `resets_clock()` add the others.
 
-- `Mode::MoveOrCapture`: Move to an empty square or capture an enemy piece.
-- `Mode::MoveOnly`: Move to an empty square only. This atom attacks no square, thus it does not give check.
-- `Mode::CaptureOnly`: Capture an enemy piece only. This atom attacks its squares, thus it gives check.
+### The moves of a piece
 
-`PawnRules` has the options of the pawn: the double step, the start of the promotion zone, the backward step, and the promotion kinds. `Promotions::new` accepts one to four different kinds, and not the pawn or the king. `SideRules::castling` permits or prevents castling. The pawn moves, en passant, and castling are code in `movegen.rs` that reads these options.
+The atoms of a kind with the same condition and the same three properties form one group. The groups come in the order of their first atom. The engine gives the moves of a piece group by group:
 
-`Tables::new`, `State::new`, and `fen::from_fen` give an error for rules or pieces that are not valid. `SideRules::with_atom` and `SideRules::with_kind` give an error for the pawn, because the pawn has no atoms.
+- A group gives its targets in ascending order, then its en passant captures.
+- A target that an earlier group gave is not given again. Thus the first group decides the properties of a move.
+- An en passant capture takes the place of a quiet move to the same square.
+- A target is a `Special::DoubleStep` move if a slide of a group with `makes_en_passant` gives it after one square or more. Its en passant squares are the squares that it passes on each such slide of the kind that can be used.
+- If a kind has an atom with `resets_clock`, a quiet move of a group without it is a `Special::Backward` move: it keeps the clock. The other quiet moves of the kind reset the clock. An atom with `makes_en_passant` in such a kind must also have `resets_clock` (`RulesError::EnPassantKeepsClock`), because a move has one special property only.
 
-`SideRules::standard()` is ordinary chess. The six rule flags of the TypeScript engine are edits of it:
+### Promotion
+
+`KindRules::promotion` is `None` or a `Promotion`: the distance of the zone from the last rank (0 is ordinary chess, at most 6) and the `Promotions` (one to four different kinds, not the pawn or the king). A move that ends in the zone gives one move for each promotion kind, in the order of the list. A move that goes backward never promotes. A move that promotes makes no en passant squares.
+
+### Castles
+
+`SideRules::castles` is a list of `Castle` rows, written from the view of White and mirrored for Black. A row has the `from` and `to` squares of the king, the kind and the `from` and `to` squares of the partner, the squares that must be empty, and the squares that the enemy must not attack. The castle is possible when the king and the partner are on their squares and have not moved, the squares of `empty` and the two `to` squares are empty (a square of the king or the partner can be a `to` square), and the enemy attacks no square of `safe`. The legality filter checks the `to` square of the king, as for each move. `Castle::STANDARD` is the two castles of ordinary chess. `Rules::castle_partner` gives the partner move of a castle.
+
+If the movement of the king can go to the `to` square of a castle, the engine gives only the castle when the castle is possible, and the king move when it is not. Two rows of a side cannot have the same king squares, and the king of a row must move.
+
+### The rules of ordinary chess and the six flags
+
+`SideRules::standard()` is ordinary chess:
+
+- The pawn: `leap([(0, 1)], MoveOnly).resets_clock()`, `slide([(0, 1)], MoveOnly).max_steps(2).if_unmoved().makes_en_passant().resets_clock()`, and `leap([(-1, 1), (1, 1)], CaptureOnly).captures_en_passant().resets_clock()`, with `Promotion::STANDARD`.
+- The officers: the knight leaps, the bishop, rook, and queen slides, and the king steps.
+- `Castle::STANDARD`.
+
+The six rule flags of the TypeScript engine are edits of it:
 
 | Flag | Method | Edit |
 | --- | --- | --- |
-| `forcedMarch` | `forced_march()` | `pawn.double_step = DoubleStep::Always` |
-| `earlyPromo` | `early_promo()` | `pawn.promo_distance = 1` |
-| `backpedal` | `backpedal()` | `pawn.backward_step = true` |
-| `kingKnight` | `king_knight()` | The king gets `Leap { KNIGHT, MoveOrCapture }`. |
-| `longLeap` | `long_leap()` | The knight gets `Leap { CAMEL, MoveOrCapture }`. |
-| `sidestep` | `sidestep()` | The bishop gets `Leap { ORTHO, MoveOnly }`. |
+| `forcedMarch` | `forced_march()` | The pawn atoms with `makes_en_passant` lose their condition. |
+| `backpedal` | `backpedal()` | The pawn gets `leap([(0, -1)], MoveOnly)`. It has no `resets_clock`, thus its moves are `Backward` moves. |
+| `earlyPromo` | `early_promo()` | The promotion distance of the pawn becomes 1. |
+| `kingKnight` | `king_knight()` | The king gets `leap(KNIGHT, MoveOrCapture)`. |
+| `longLeap` | `long_leap()` | The knight gets `leap(CAMEL, MoveOrCapture)`. |
+| `sidestep` | `sidestep()` | The bishop gets `leap(ORTHO, MoveOnly)`. |
 
 `SideRules::from_flags(["kingKnight", "sidestep"])` makes the rules from the flag names.
+
+`Tables::new`, `State::new`, and `fen::from_fen` give an error for rules or pieces that are not valid.
 
 ### Add a movement rule
 
 1. Write the rule as an edit of `SideRules`. Do not change `tables.rs` or `movegen.rs`.
 2. If the game needs a name for the rule, add a method to `SideRules` in `engine/src/rules.rs`.
-3. Add a test to `engine/tests/data_rules.rs` for the moves and for the check that the rule gives.
+3. Add a test to `engine/tests/data_rules.rs` or `engine/tests/data_moves.rs` for the moves and for the check that the rule gives.
 
-This example gives the rooks of White the knight jump:
+The examples use these imports:
 
 ```rust
-use chrogue_engine::rules::KNIGHT;
-use chrogue_engine::{Atom, Kind, Mode, Rules, SideRules};
+use chrogue_engine::fen::square;
+use chrogue_engine::rules::{BACKWARD, CAMEL, DIAG, FORWARD, KNIGHT, ORTHO};
+use chrogue_engine::{Atom, Castle, Kind, Mode, Promotion, Promotions, Rules, SideRules};
+```
 
-let white = SideRules::standard().with_atom(Kind::Rook, Atom::leap(&KNIGHT, Mode::MoveOrCapture))?;
+A new leap or slide. The rooks of White also jump as knights:
+
+```rust
+let white = SideRules::standard().with_atom(Kind::Rook, Atom::leap(&KNIGHT, Mode::MoveOrCapture));
 let rules = Rules::new(white, SideRules::standard());
 ```
 
-This example makes a queen that cannot capture:
+A mode. A queen that cannot capture:
 
 ```rust
-use chrogue_engine::rules::{DIAG, ORTHO};
-
 let side = SideRules::standard()
-    .with_kind(Kind::Queen, vec![Atom::slide(&ORTHO, Mode::MoveOnly), Atom::slide(&DIAG, Mode::MoveOnly)])?;
+    .with_kind(Kind::Queen, vec![Atom::slide(&ORTHO, Mode::MoveOnly), Atom::slide(&DIAG, Mode::MoveOnly)]);
+```
+
+A range. A king that also slides two squares on files and ranks:
+
+```rust
+let side = SideRules::standard().with_atom(Kind::King, Atom::slide(&ORTHO, Mode::MoveOrCapture).max_steps(2));
+```
+
+A condition. A knight that also jumps as a camel on its first move:
+
+```rust
+let side = SideRules::standard().with_atom(Kind::Knight, Atom::leap(&CAMEL, Mode::MoveOrCapture).if_unmoved());
+```
+
+Pawn moves. Pawns that capture straight ahead and not diagonally: replace the pawn atoms.
+
+```rust
+let side = SideRules::standard().with_kind(Kind::Pawn, vec![
+    Atom::leap(&FORWARD, Mode::MoveOrCapture).resets_clock(),
+    Atom::slide(&FORWARD, Mode::MoveOnly).max_steps(2).if_unmoved().makes_en_passant().resets_clock(),
+]);
+```
+
+A sideways step that only moves, a backward capture, and a diagonal move are added the same way:
+
+```rust
+let side = SideRules::standard()
+    .with_atom(Kind::Pawn, Atom::leap(&[(-1, 0), (1, 0)], Mode::MoveOnly).resets_clock())
+    .with_atom(Kind::Pawn, Atom::leap(&[(-1, -1), (1, -1)], Mode::CaptureOnly).resets_clock())
+    .with_atom(Kind::Pawn, Atom::leap(&[(-1, 1), (1, 1)], Mode::MoveOnly).resets_clock());
+```
+
+En passant. A first step of up to three squares. A step of three squares makes two en passant squares, and an enemy pawn can capture on each of them:
+
+```rust
+let mut side = SideRules::standard();
+side.kinds[Kind::Pawn.index()].atoms[1].max_steps = 3;
+```
+
+The clock. A move of an atom without `resets_clock` keeps the clock if another atom of the kind resets it, as the backward step does:
+
+```rust
+let side = SideRules::standard().with_atom(Kind::Pawn, Atom::leap(&BACKWARD, Mode::MoveOnly));
+```
+
+A promotion. Pawns of one side promote one rank earlier, and only to a knight:
+
+```rust
+let promotion = Promotion { distance: 1, kinds: Promotions::new(&[Kind::Knight])? };
+let white = SideRules::standard().with_promotion(Kind::Pawn, Some(promotion));
+```
+
+A castle. A queen in the corner of the rook castles to the queen side. With `with_castling(false)` or an empty list, the side has no castle:
+
+```rust
+let queen_castle = Castle { partner: Kind::Queen, ..Castle::QUEEN_SIDE };
+let side = SideRules::standard().with_castles(vec![queen_castle, Castle::KING_SIDE]);
+let custom = Castle {
+    king_from: square("e1"), king_to: square("b1"), partner: Kind::Rook,
+    partner_from: square("a1"), partner_to: square("c1"),
+    empty: 1 << square("b1") | 1 << square("c1") | 1 << square("d1"),
+    safe: 1 << square("e1") | 1 << square("d1") | 1 << square("c1"),
+};
 ```
 
 If the TypeScript engine also gets the rule, add its flag name to `SideRules::with_flag` and to `FLAGS` in `difftest/run.ts`. Then the differential test includes the rule.
 
-A rule that changes the pawn moves, en passant, or castling in a new way needs a new option in `PawnRules` or `SideRules`, and code in `movegen.rs`.
-
 ## Behavior that the engine keeps from the TypeScript engine
 
-- A piece has its own `moved` flag. Castling and the pawn double step read this flag. The state has no castling rights.
-- With `DoubleStep::Always`, a pawn can do a double step from each rank, and the step makes an en passant square.
-- A double step into the promotion zone promotes and makes no en passant square.
-- A backward step is never a capture and does not reset the clock.
+- A piece has its own `moved` flag. Castles and atoms with `Condition::Unmoved` read this flag. The state has no castling rights.
+- With `forcedMarch`, a pawn can do a double step from each rank, and the step makes an en passant square.
+- A double step into the promotion zone promotes and makes no en passant square. In general: a move that promotes makes no en passant squares.
+- A backward step is never a capture, never promotes, and does not reset the clock. In general: a move that goes backward never promotes.
+- An en passant capture removes the piece that made the en passant squares. With the six flags, only a pawn double step makes them. `State::with_en_passant` takes the square of a double step, and its pawn is the victim.
 - A side with no king is never in check. If a side has two kings, only the king on the lowest square can be in check.
 - A move can capture a king when the side that does not have the move is in check.
 - `outcome` does its checks in this order: bare, rout, checkmate or stalemate, clock. A side with no legal move loses.
 
 The TypeScript engine has no rule where a king move and a castle have the same squares. If the movement of the king can go to a castle square, the Rust engine gives only the castle when the castle is possible, and the king move when it is not.
+
+The order of the moves is the same as before the rules became data, thus the search gives the same results. The Zobrist key has the `moved` flag of the pawn, the rook, and the king, as in ordinary chess. If the rules read the flag of another kind, the key has the flag of each kind (`zobrist.rs`).
 
 ## AI
 
@@ -131,10 +225,10 @@ The TypeScript engine has no rule where a king move and a castle have the same s
 
 The engine has no table of piece values and no code for a specific relic. `Tables::new` computes the value of each kind for each side from the rules data. `engine/src/eval.rs` has the formula:
 
-- The *reach* of an officer is the mean, over all squares, of `W_MOVE * (empty squares where it can move) + W_ATTACK * (attacked squares with no friend)` on a board where a square is empty with the probability `P_EMPTY`. A square of a slide counts only if the squares before it are empty.
+- The *reach* of a kind is the mean, over its squares, of `W_MOVE * (empty squares where it can move) + W_ATTACK * (attacked squares with no friend)` on a board where a square is empty with the probability `P_EMPTY`. A square of a slide counts only if the squares before it are empty, and a slide stops after `max_steps`. An atom with `Condition::Unmoved` counts only on the first two ranks.
 - The *coverage* is the part of the board that the piece can get to in any number of moves.
 - `value = (VALUE_PER_REACH * reach + VALUE_PER_REACH_SQUARED * reach^2) * (1 - BOUND * (1 - coverage))`
-- A pawn has the first factor for its steps and captures, plus `PROMO_SHARE * (value of the best promotion kind) * PROMO_DECAY^(moves to the promotion zone)`.
+- A kind with a promotion (the pawn) has the same reach from its atoms, over the squares from rank 2 to the last rank before its zone. It has no coverage factor, because it leaves the board as itself when it promotes; with the factor, the pawn of ordinary chess would be worth 90 and the pawn of `backpedal` (which can get to each square) 115. It gets `PROMO_SHARE * (value of the best promotion kind) * PROMO_DECAY^(moves to the promotion zone)`, with the moves on an empty board from rank 2 by the atoms that can move.
 
 The constants are `W_MOVE = 1`, `W_ATTACK = 3`, `P_EMPTY = 0.7`, `VALUE_PER_REACH = 18.157`, `VALUE_PER_REACH_SQUARED = 0.03456`, `BOUND = 0.178`, `PROMO_SHARE = 0.2`, `PROMO_DECAY = 0.5`. They were set one time so that ordinary chess gives values near 100, 320, 330, 500, and 900. The evaluation of the game does not read those five numbers.
 

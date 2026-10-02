@@ -18,27 +18,30 @@
 //! W_MOVE * (empty squares where the piece can move) + W_ATTACK * (attacked squares with no friend)
 //! ```
 //!
-//! A square of a slide counts only if the squares before it are empty. `reach` is the mean
-//! over all squares. `coverage` is the part of the board that the piece can get to in any
-//! number of moves on an empty board, as a mean over all squares. Then:
+//! A square of a slide counts only if the squares before it are empty. An atom with
+//! `Condition::Unmoved` counts only on the first two ranks, where the pieces start. `reach` is
+//! the mean over the squares of the kind. `coverage` is the part of the board that the piece
+//! can get to in any number of moves on an empty board, as a mean over the same squares. Then:
 //!
 //! ```text
 //! value = (VALUE_PER_REACH * reach + VALUE_PER_REACH_SQUARED * reach * reach) * (1 - BOUND * (1 - coverage))
 //! ```
 //!
-//! A pawn has the same formula for its steps and captures, without the coverage factor, plus a
-//! term for its promotion:
+//! A kind with a promotion (the pawn) goes through the same steps from its atoms, with three
+//! changes. Its squares are those from the second rank to the last rank before the promotion
+//! zone. It has no coverage factor, because it leaves the board as itself when it promotes.
+//! It gets a term for its promotion:
 //! `PROMO_SHARE * (value of the best promotion kind) * PROMO_DECAY^(moves to the promotion zone)`.
-//! The number of moves is for an empty board, thus the double step and the start of the
-//! promotion zone change it.
+//! The number of moves is for an empty board from the second rank, thus the double step and
+//! the start of the promotion zone change it.
 //!
 //! A new atom can only add reach and coverage, thus it never makes a value lower.
 
 use std::sync::Arc;
 
-use crate::movegen::officer_reach;
+use crate::movegen::{piece_attacks, piece_reach};
 use crate::outcome::CLOCK_LIMIT;
-use crate::rules::{Atom, DoubleStep, PawnRules, Rules, SideRules};
+use crate::rules::{Atom, Condition, KindRules, Rules, SideRules};
 use crate::state::State;
 use crate::tables::{Tables, offset_square};
 use crate::types::{Bitboard, Color, Kind, Square, bit, pop_square};
@@ -136,85 +139,97 @@ fn profile(reaches: &[SquareReach; 64], squares: Bitboard) -> Profile {
     Profile { reach: reach / count, coverage: coverage / count }
 }
 
-/// The profile of a knight, bishop, rook, queen, or king with these atoms.
-pub fn officer_profile(atoms: &[Atom]) -> Profile {
+/// The first two ranks, where an atom with `Condition::Unmoved` counts.
+const HOME_RANKS: Bitboard = 0xFFFF;
+/// The second rank: the start of the pawns.
+const SECOND_RANK: Bitboard = 0xFF00;
+
+/// The squares that an atom can use from `from`: the atom has no condition, or `from` is on a
+/// home rank.
+fn atom_counts(atom: &Atom, from: Square) -> bool {
+    atom.condition == Condition::Always || HOME_RANKS & bit(from) != 0
+}
+
+/// The promotion zone of White, or no square.
+fn zone(rules: &KindRules) -> Bitboard {
+    rules.promotion.map_or(0, |promotion| promotion.zone())
+}
+
+/// The profile of a kind with these rules, for White. See the module text.
+pub fn kind_profile(rules: &KindRules) -> Profile {
+    let zone = zone(rules);
     let reaches: [SquareReach; 64] = std::array::from_fn(|from| {
         let from = from as Square;
         let mut reach = SquareReach::new();
-        for atom in atoms {
-            match atom {
-                Atom::Leap { offsets, mode } => {
-                    for &offset in offsets {
-                        if let Some(to) = offset_square(from, offset) {
-                            reach.add(to, 1.0, mode.can_move(), mode.can_capture());
-                        }
-                    }
-                }
-                Atom::Slide { dirs, mode } => {
-                    for &dir in dirs {
-                        let mut clear = 1.0;
-                        let mut s = from;
-                        while let Some(to) = offset_square(s, dir) {
-                            reach.add(to, clear, mode.can_move(), mode.can_capture());
-                            clear *= P_EMPTY;
-                            s = to;
-                        }
-                    }
-                }
-            }
-        }
-        reach
-    });
-    profile(&reaches, !0)
-}
-
-/// The first rank of the promotion zone of White, as a rank index from 0.
-fn zone_rank(pawn: &PawnRules) -> u8 {
-    7 - pawn.promo_distance
-}
-
-/// The profile of a white pawn. The start squares are those from rank 2 to the last rank
-/// before the promotion zone.
-pub fn pawn_profile(pawn: &PawnRules) -> Profile {
-    let zone = zone_rank(pawn);
-    let mut squares = 0;
-    let reaches: [SquareReach; 64] = std::array::from_fn(|from| {
-        let from = from as Square;
-        let rank = from >> 3;
-        let mut reach = SquareReach::new();
-        if rank >= zone {
+        // A piece in its promotion zone has promoted.
+        if zone & bit(from) != 0 {
             return reach;
         }
-        if rank >= 1 {
-            squares |= bit(from);
-        }
-        reach.add(from + 8, 1.0, true, false);
-        if rank + 2 <= 7 && (rank <= 1 || pawn.double_step == DoubleStep::Always) {
-            reach.add(from + 16, P_EMPTY, true, false);
-        }
-        for df in [-1, 1] {
-            if let Some(to) = offset_square(from, (df, 1)) {
-                reach.add(to, 1.0, false, true);
+        for atom in rules.atoms.iter().filter(|atom| atom_counts(atom, from)) {
+            for &offset in &atom.offsets {
+                let mut clear = 1.0;
+                let mut s = from;
+                for _ in 0..atom.max_steps {
+                    let Some(to) = offset_square(s, offset) else { break };
+                    reach.add(to, clear, atom.mode.can_move(), atom.mode.can_capture());
+                    clear *= P_EMPTY;
+                    s = to;
+                }
             }
-        }
-        if pawn.backward_step && rank >= 1 {
-            reach.add(from - 8, 1.0, true, false);
         }
         reach
     });
+    let squares = if rules.promotion.is_some() { !zone & !0xFF } else { !0 };
     profile(&reaches, squares)
 }
 
-/// The number of pawn moves from each rank to the promotion zone of White on an empty board.
-fn pawn_steps(pawn: &PawnRules) -> [u32; 8] {
-    let zone = zone_rank(pawn) as usize;
-    let mut steps = [0; 8];
-    for rank in (0..zone).rev() {
-        let one = steps[rank + 1];
-        let double = rank + 2 <= 7 && (rank <= 1 || pawn.double_step == DoubleStep::Always);
-        steps[rank] = 1 + if double { one.min(steps[rank + 2]) } else { one };
+/// The profile of a kind with these atoms and no promotion.
+pub fn officer_profile(atoms: &[Atom]) -> Profile {
+    kind_profile(&KindRules { atoms: atoms.to_vec(), promotion: None })
+}
+
+/// The number of moves from each square to the promotion zone of White on an empty board, by
+/// the atoms that can move. None if the piece cannot get to the zone.
+fn promotion_steps(rules: &KindRules) -> [Option<u32>; 64] {
+    let zone = zone(rules);
+    let targets: [Bitboard; 64] = std::array::from_fn(|from| {
+        let from = from as Square;
+        let mut set = 0;
+        for atom in rules.atoms.iter().filter(|atom| atom.mode.can_move() && atom_counts(atom, from)) {
+            for &offset in &atom.offsets {
+                let mut s = from;
+                for _ in 0..atom.max_steps {
+                    let Some(to) = offset_square(s, offset) else { break };
+                    set |= bit(to);
+                    s = to;
+                }
+            }
+        }
+        set
+    });
+    let mut steps: [Option<u32>; 64] = std::array::from_fn(|s| (zone & bit(s as Square) != 0).then_some(0));
+    loop {
+        let mut changed = false;
+        for from in 0..64 {
+            if zone & bit(from as Square) != 0 {
+                continue;
+            }
+            let mut set = targets[from];
+            let mut best = steps[from];
+            while set != 0 {
+                if let Some(next) = steps[pop_square(&mut set) as usize] {
+                    best = Some(best.map_or(next + 1, |old: u32| old.min(next + 1)));
+                }
+            }
+            if best != steps[from] {
+                steps[from] = best;
+                changed = true;
+            }
+        }
+        if !changed {
+            return steps;
+        }
     }
-    steps
 }
 
 fn reach_value(reach: f64) -> f64 {
@@ -230,23 +245,25 @@ pub fn officer_value(atoms: &[Atom]) -> i32 {
     mobility_value(officer_profile(atoms)).round() as i32
 }
 
-/// The value of the promotion of a pawn that is `steps` moves from the promotion zone.
-fn promotion_term(best_promotion: i32, steps: u32) -> f64 {
-    PROMO_SHARE * best_promotion as f64 * PROMO_DECAY.powi(steps as i32)
+/// The value of the promotion of a piece that is `steps` moves from the promotion zone.
+fn promotion_term(best_promotion: i32, steps: Option<u32>) -> f64 {
+    steps.map_or(0.0, |steps| PROMO_SHARE * best_promotion as f64 * PROMO_DECAY.powi(steps as i32))
 }
 
 /// The evaluation data of one side.
 #[derive(Clone, Debug)]
 pub struct SideEval {
-    /// `value[kind]`: the material value in centipawns. The value of the pawn is for a pawn on
-    /// its start rank. The value of the king is not part of the material; the move ordering uses it.
+    /// `value[kind]`: the material value in centipawns. The value of a kind with a promotion
+    /// is for a piece on the second rank. The value of the king is not part of the material;
+    /// the move ordering uses it.
     pub value: [i32; Kind::COUNT],
-    /// `reach[kind]`: the mean reach of an officer.
+    /// `reach[kind]`: the mean reach of the kind.
     pub reach: [f64; Kind::COUNT],
     /// `MOBILITY * 1024 / reach[kind]`
     mobility_scale: [i32; Kind::COUNT],
-    /// `pawn_advance[square]`: the bonus of a pawn on a square. It is 0 on the start rank.
-    pub pawn_advance: [i32; 64],
+    /// `advance[kind][square]`: the bonus of a piece of a kind with a promotion on a square. It
+    /// is 0 on the second rank, and 0 for a kind with no promotion.
+    pub advance: [[i32; 64]; Kind::COUNT],
 }
 
 impl SideEval {
@@ -254,29 +271,44 @@ impl SideEval {
         let mut value = [0; Kind::COUNT];
         let mut reach = [0.0; Kind::COUNT];
         let mut mobility_scale = [0; Kind::COUNT];
-        for kind in Kind::OFFICERS {
-            let profile = officer_profile(rules.atoms(kind));
-            value[kind.index()] = mobility_value(profile).round() as i32;
+        let profiles = Kind::ALL.map(|kind| kind_profile(rules.kind(kind)));
+        for kind in Kind::ALL {
+            let profile = profiles[kind.index()];
             reach[kind.index()] = profile.reach;
+            value[kind.index()] = mobility_value(profile).round() as i32;
+        }
+        for kind in Kind::OFFICERS {
+            let profile = profiles[kind.index()];
             mobility_scale[kind.index()] =
                 if profile.reach > 0.0 { (MOBILITY as f64 * 1024.0 / profile.reach).round() as i32 } else { 0 };
         }
 
-        let best_promotion = rules.pawn.promotions.as_slice().iter().map(|kind| value[kind.index()]).max().unwrap_or(0);
-        let steps = pawn_steps(&rules.pawn);
-        let start = promotion_term(best_promotion, steps[1]);
-        let profile = pawn_profile(&rules.pawn);
-        reach[Kind::Pawn.index()] = profile.reach;
-        value[Kind::Pawn.index()] = (reach_value(profile.reach) + start).round() as i32;
-
-        let mut pawn_advance = [0; 64];
-        for (s, bonus) in pawn_advance.iter_mut().enumerate() {
-            let rank = if color == Color::White { s >> 3 } else { 7 - (s >> 3) };
-            if rank < zone_rank(&rules.pawn) as usize {
-                *bonus = (promotion_term(best_promotion, steps[rank]) - start).round() as i32;
+        // The promotion kinds get the values without a promotion term.
+        let base = value;
+        let mut advance = [[0; 64]; Kind::COUNT];
+        for kind in Kind::ALL {
+            let kind_rules = rules.kind(kind);
+            let Some(promotion) = kind_rules.promotion else { continue };
+            let best = promotion.kinds.as_slice().iter().map(|kind| base[kind.index()]).max().unwrap_or(0);
+            let steps = promotion_steps(kind_rules);
+            let terms: [f64; 64] = std::array::from_fn(|s| promotion_term(best, steps[s]));
+            let mut second = SECOND_RANK;
+            let mut start = 0.0;
+            while second != 0 {
+                start += terms[pop_square(&mut second) as usize];
+            }
+            let start = start / 8.0;
+            value[kind.index()] = (reach_value(profiles[kind.index()].reach) + start).round() as i32;
+            let zone = zone(kind_rules);
+            for (s, bonus) in advance[kind.index()].iter_mut().enumerate() {
+                // The tables are for White. Black gets the mirror.
+                let white = if color == Color::White { s } else { s ^ 56 };
+                if zone & bit(white as Square) == 0 {
+                    *bonus = (terms[white] - start).round() as i32;
+                }
             }
         }
-        SideEval { value, reach, mobility_scale, pawn_advance }
+        SideEval { value, reach, mobility_scale, advance }
     }
 }
 
@@ -350,10 +382,7 @@ impl Evaluator {
     /// The squares that the king of a side can reach by a leap, and its own square.
     fn king_zone(&self, state: &State, color: Color) -> Bitboard {
         match state.king_square(color) {
-            Some(king) => {
-                let leaps = &self.tables.side(color).leaps[Kind::King.index()][king as usize];
-                bit(king) | leaps.both | leaps.quiet | leaps.capture
-            }
+            Some(king) => bit(king) | self.tables.side(color).kinds[Kind::King.index()].leap_reach[king as usize],
             None => 0,
         }
     }
@@ -377,21 +406,31 @@ impl Evaluator {
             let own = state.color_set(color);
             let enemy_zone = zones[1 - c];
 
+            // The flag `moved` of a piece matters only for a kind with an atom with a condition.
+            let moved = |kind: Kind, s: Square| {
+                side.kinds[kind.index()].has_unmoved && state.piece_at(s).is_some_and(|piece| piece.moved)
+            };
             let mut pawns = state.pieces(color, Kind::Pawn);
             let mut material = pawns.count_ones() as i32 * eval.value[Kind::Pawn.index()];
             let mut total = 0;
             while pawns != 0 {
-                let s = pop_square(&mut pawns) as usize;
-                total += eval.pawn_advance[s];
-                attacks_by[c][Kind::Pawn.index()] |= side.pawn_captures[s];
+                let s = pop_square(&mut pawns);
+                total += eval.advance[Kind::Pawn.index()][s as usize];
+                attacks_by[c][Kind::Pawn.index()] |=
+                    piece_attacks(side, Kind::Pawn, s, occupied, || moved(Kind::Pawn, s));
             }
             attacks[c] |= attacks_by[c][Kind::Pawn.index()];
             for kind in [Kind::Knight, Kind::Bishop, Kind::Rook, Kind::Queen] {
                 let k = kind.index();
                 let mut pieces = state.pieces(color, kind);
                 material += pieces.count_ones() as i32 * eval.value[k];
+                let promotes = side.kinds[k].promotions.is_some();
                 while pieces != 0 {
-                    let (quiets, attack) = officer_reach(side, kind, pop_square(&mut pieces), occupied);
+                    let s = pop_square(&mut pieces);
+                    if promotes {
+                        total += eval.advance[k][s as usize];
+                    }
+                    let (quiets, attack) = piece_reach(side, kind, s, occupied, moved(kind, s));
                     let reach = W_MOVE * quiets.count_ones() as i32 + W_ATTACK * (attack & !own).count_ones() as i32;
                     total += ((reach * eval.mobility_scale[k]) >> 10) - MOBILITY;
                     attacks[c] |= attack;
@@ -401,7 +440,8 @@ impl Evaluator {
             }
             let mut kings = state.pieces(color, Kind::King);
             while kings != 0 {
-                let (quiets, attack) = officer_reach(side, Kind::King, pop_square(&mut kings), occupied);
+                let s = pop_square(&mut kings);
+                let (quiets, attack) = piece_reach(side, Kind::King, s, occupied, moved(Kind::King, s));
                 attacks[c] |= attack;
                 king_moves[c] |= (quiets | attack) & !own;
             }

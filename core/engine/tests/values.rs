@@ -81,10 +81,10 @@ fn a_new_atom_never_makes_a_value_lower() {
     for kind in Kind::OFFICERS {
         let base = SideRules::standard();
         for first in &atoms {
-            let one = base.clone().with_atom(kind, first.clone()).unwrap();
+            let one = base.clone().with_atom(kind, first.clone());
             assert!(value(one.clone(), kind) >= value(base.clone(), kind), "{first:?} made {kind:?} less valuable");
             for second in &atoms {
-                let two = one.clone().with_atom(kind, second.clone()).unwrap();
+                let two = one.clone().with_atom(kind, second.clone());
                 assert!(value(two, kind) >= value(one.clone(), kind), "{second:?} after {first:?} for {kind:?}");
                 checks += 1;
             }
@@ -93,10 +93,10 @@ fn a_new_atom_never_makes_a_value_lower() {
     assert_eq!(checks, 5 * 24 * 24);
 
     // An atom that the kind has already adds no value.
-    let twice = SideRules::standard().with_atom(Kind::Rook, Atom::slide(&ORTHO, Mode::MoveOrCapture)).unwrap();
+    let twice = SideRules::standard().with_atom(Kind::Rook, Atom::slide(&ORTHO, Mode::MoveOrCapture));
     assert_eq!(value(twice, Kind::Rook), value(SideRules::standard(), Kind::Rook));
     // A pawn with a better promotion kind is not less valuable.
-    let strong_queen = SideRules::standard().with_atom(Kind::Queen, Atom::leap(&KNIGHT, Mode::MoveOrCapture)).unwrap();
+    let strong_queen = SideRules::standard().with_atom(Kind::Queen, Atom::leap(&KNIGHT, Mode::MoveOrCapture));
     assert!(value(strong_queen, Kind::Pawn) > value(SideRules::standard(), Kind::Pawn));
 }
 
@@ -113,10 +113,8 @@ fn reach_that_can_only_move_counts_less_than_reach_that_can_capture() {
     }
     // The sidestep of the bishop is a `MoveOnly` leap. The same leap with captures is worth more.
     let sidestep = value(SideRules::standard().sidestep(), Kind::Bishop);
-    let with_captures = value(
-        SideRules::standard().with_atom(Kind::Bishop, Atom::leap(&ORTHO, Mode::MoveOrCapture)).unwrap(),
-        Kind::Bishop,
-    );
+    let with_captures =
+        value(SideRules::standard().with_atom(Kind::Bishop, Atom::leap(&ORTHO, Mode::MoveOrCapture)), Kind::Bishop);
     assert!(sidestep < with_captures);
 }
 
@@ -131,8 +129,8 @@ fn a_bishop_that_can_get_to_each_square_is_worth_more_than_its_added_reach() {
 fn the_pawn_bonus_grows_toward_the_promotion_zone_of_each_side() {
     let rules = Rules::new(SideRules::standard().early_promo(), SideRules::standard().forced_march());
     let eval = EvalTables::new(&rules);
-    let white = &eval.sides[0].pawn_advance;
-    let black = &eval.sides[1].pawn_advance;
+    let white = &eval.sides[0].advance[Kind::Pawn.index()];
+    let black = &eval.sides[1].advance[Kind::Pawn.index()];
     // White promotes on rank 7: a pawn on rank 6 is one move from the zone.
     for rank in 2..5 {
         assert!(white[rank * 8 + 8] > white[rank * 8], "white rank {}", rank + 1);
@@ -146,5 +144,5 @@ fn the_pawn_bonus_grows_toward_the_promotion_zone_of_each_side() {
     assert!(black[2 * 8] > black[3 * 8 + 8]);
     assert_eq!(black[6 * 8], 0);
     let standard = EvalTables::new(&Rules::standard());
-    assert!(standard.sides[0].pawn_advance[6 * 8] > 60, "a pawn on rank 7 of ordinary chess");
+    assert!(standard.sides[0].advance[Kind::Pawn.index()][6 * 8] > 60, "a pawn on rank 7 of ordinary chess");
 }

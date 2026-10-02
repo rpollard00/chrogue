@@ -8,7 +8,7 @@
 
 use std::time::Instant;
 
-use chrogue_engine::eval::{officer_profile, pawn_profile};
+use chrogue_engine::eval::kind_profile;
 use chrogue_engine::rules::FLAG_NAMES;
 use chrogue_engine::{Color, EvalTables, Kind, Level, Rules, SideRules, choose_move, fen};
 
@@ -48,10 +48,8 @@ fn values() {
     println!();
     println!("{:<12} {:<8} {:>8} {:>9}", "rules", "kind", "reach", "coverage");
     for (name, rules) in &rows {
-        let pawn = pawn_profile(&rules.pawn);
-        println!("{name:<12} {:<8} {:>8.3} {:>9.3}", "p", pawn.reach, pawn.coverage);
-        for kind in Kind::OFFICERS {
-            let profile = officer_profile(rules.atoms(kind));
+        for kind in Kind::ALL {
+            let profile = kind_profile(rules.kind(kind));
             println!("{name:<12} {:<8} {:>8.3} {:>9.3}", kind.letter(), profile.reach, profile.coverage);
         }
     }

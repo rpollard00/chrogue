@@ -207,7 +207,9 @@ impl Searcher {
             } else if !is_quiet(state, m) {
                 let victim = match state.piece_at(m.to) {
                     Some(piece) => self.eval.value(them, piece.kind),
-                    None if m.special == Special::EnPassant => self.eval.value(them, Kind::Pawn),
+                    None if m.special == Special::EnPassant => {
+                        state.piece_at(state.ep_victim()).map_or(0, |piece| self.eval.value(them, piece.kind))
+                    }
                     None => 0,
                 };
                 let attacker = state.piece_at(m.from).map_or(0, |piece| self.eval.value(us, piece.kind));

@@ -68,7 +68,7 @@ pub enum Kind {
 impl Kind {
     pub const COUNT: usize = 6;
     pub const ALL: [Kind; 6] = [Kind::Pawn, Kind::Knight, Kind::Bishop, Kind::Rook, Kind::Queen, Kind::King];
-    /// The kinds that get their movement from `KindRules`. The pawn has `PawnRules`.
+    /// The kinds that are not the pawn.
     pub const OFFICERS: [Kind; 5] = [Kind::Knight, Kind::Bishop, Kind::Rook, Kind::Queen, Kind::King];
 
     #[inline(always)]
@@ -107,7 +107,7 @@ pub struct Piece {
     pub id: u16,
     pub kind: Kind,
     pub color: Color,
-    /// True after the first move of the piece. Castling and the pawn double step read this flag.
+    /// True after the first move of the piece. Castles and atoms with `Condition::Unmoved` read this flag.
     pub moved: bool,
 }
 
@@ -123,13 +123,17 @@ pub struct Placement {
 #[repr(u8)]
 pub enum Special {
     None,
-    /// A pawn moves two squares and the square that it crosses becomes the en passant square.
+    /// The move passes squares, and its atom makes en passant squares (`Atom::makes_en_passant`):
+    /// the squares that it passes become the en passant squares. The pawn double step.
     DoubleStep,
-    /// A pawn captures the pawn behind the `to` square.
+    /// The move captures en passant: the captured piece is the piece that made the en passant
+    /// squares, not a piece on the `to` square.
     EnPassant,
-    /// A pawn moves one square backward. This move does not reset the draw clock.
+    /// A move that is not a capture and does not reset the clock, of a kind that has an atom
+    /// that resets the clock. The backward step of the pawn.
     Backward,
-    /// The king moves two squares and the rook moves to the square that the king crossed.
+    /// The king and a partner piece move by a row of `SideRules::castles`. See
+    /// `Rules::castle_partner`.
     Castle,
 }
 
@@ -137,7 +141,7 @@ pub enum Special {
 pub struct Move {
     pub from: Square,
     pub to: Square,
-    /// The kind that a pawn becomes. An en passant capture can also have a promotion.
+    /// The kind that the piece becomes. An en passant capture can also have a promotion.
     pub promo: Option<Kind>,
     pub special: Special,
 }
@@ -147,27 +151,6 @@ impl Move {
 
     pub const fn new(from: Square, to: Square) -> Move {
         Move { from, to, promo: None, special: Special::None }
-    }
-
-    /// The en passant square that a double step makes.
-    #[inline(always)]
-    pub const fn crossed_square(self) -> Square {
-        (self.from + self.to) / 2
-    }
-
-    /// The square of the pawn that an en passant capture removes.
-    #[inline(always)]
-    pub const fn en_passant_victim(self, mover: Color) -> Square {
-        match mover {
-            Color::White => self.to - 8,
-            Color::Black => self.to + 8,
-        }
-    }
-
-    /// The rook move of a castle: (from, to).
-    #[inline(always)]
-    pub const fn castle_rook(self) -> (Square, Square) {
-        if self.to > self.from { (self.from + 3, self.from + 1) } else { (self.from - 4, self.from - 1) }
     }
 }
 

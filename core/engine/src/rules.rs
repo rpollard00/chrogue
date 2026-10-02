@@ -1,8 +1,13 @@
 //! The movement rules as data. Each side of a battle has its own `SideRules`.
 //!
 //! The engine has no code for a specific relic. A relic is an edit of `SideRules::standard()`.
+//!
+//! Each kind, the pawn too, moves by a list of atoms. An atom is a list of offsets, a number of
+//! steps, a mode, a condition, and three properties for en passant and the clock. A leap is an
+//! atom with one step, and a slide is an atom with `Atom::MAX_STEPS`. A kind can also have a
+//! promotion. The castles of a side are rows of `Castle`.
 
-use crate::types::{Color, Kind};
+use crate::types::{Bitboard, Color, Kind, Square, bit};
 
 /// A step of (file, rank) from the view of White. For Black, the engine mirrors the rank step.
 pub type Offset = (i8, i8);
@@ -12,9 +17,15 @@ pub const CAMEL: [Offset; 8] = [(1, 3), (3, 1), (3, -1), (1, -3), (-1, -3), (-3,
 pub const KING: [Offset; 8] = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)];
 pub const ORTHO: [Offset; 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
 pub const DIAG: [Offset; 4] = [(1, 1), (-1, 1), (-1, -1), (1, -1)];
+/// One square forward, from the view of the side.
+pub const FORWARD: [Offset; 1] = [(0, 1)];
+/// One square backward, from the view of the side.
+pub const BACKWARD: [Offset; 1] = [(0, -1)];
+/// The two squares diagonally forward, from the view of the side.
+pub const FORWARD_DIAG: [Offset; 2] = [(-1, 1), (1, 1)];
 
 /// What a movement atom can do on its target square.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum Mode {
     /// Move to an empty square or capture an enemy piece.
     MoveOrCapture,
@@ -34,42 +45,103 @@ impl Mode {
     }
 }
 
-/// One part of the movement of a kind.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Atom {
-    /// One jump to each offset. Pieces between the two squares do not block the jump.
-    Leap { offsets: Vec<Offset>, mode: Mode },
-    /// Steps in each direction until a piece blocks the line.
-    Slide { dirs: Vec<Offset>, mode: Mode },
+/// When a piece can use an atom.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum Condition {
+    Always,
+    /// Only while the piece has not moved (`Piece::moved` is false). An atom with this condition
+    /// also attacks only while the piece has not moved.
+    Unmoved,
+}
+
+/// One part of the movement of a kind: steps along each offset.
+///
+/// A piece goes one to `max_steps` steps along an offset. Each step must end on an empty
+/// square, except the last step, which can capture (see `mode`). The squares inside one step
+/// do not matter, thus an atom with one step is a leap.
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+pub struct Atom {
+    pub offsets: Vec<Offset>,
+    /// From 1 (a leap) to `Atom::MAX_STEPS` (a slide that stops only at a piece or at the edge).
+    pub max_steps: u8,
+    pub mode: Mode,
+    pub condition: Condition,
+    /// The squares that a move of this atom passes become the en passant squares of the next
+    /// half move. A move of one step passes no square. A move that promotes makes no en passant
+    /// squares.
+    pub makes_en_passant: bool,
+    /// The atom can capture en passant: it can go to an en passant square as if the square has
+    /// the piece that made it, and that piece is captured. The atom must be able to capture.
+    pub captures_en_passant: bool,
+    /// A move of this atom that is not a capture resets the clock. A capture always resets it.
+    pub resets_clock: bool,
 }
 
 impl Atom {
+    /// The number of steps of a slide. Seven steps go across the board in each direction.
+    pub const MAX_STEPS: u8 = 7;
+
+    /// One jump to each offset. Pieces between the two squares do not block the jump.
     pub fn leap(offsets: &[Offset], mode: Mode) -> Atom {
-        Atom::Leap { offsets: offsets.to_vec(), mode }
+        Atom {
+            offsets: offsets.to_vec(),
+            max_steps: 1,
+            mode,
+            condition: Condition::Always,
+            makes_en_passant: false,
+            captures_en_passant: false,
+            resets_clock: false,
+        }
     }
 
+    /// Steps in each direction until a piece blocks the line.
     pub fn slide(dirs: &[Offset], mode: Mode) -> Atom {
-        Atom::Slide { dirs: dirs.to_vec(), mode }
+        Atom { max_steps: Atom::MAX_STEPS, ..Atom::leap(dirs, mode) }
+    }
+
+    /// The same atom with at most `steps` steps.
+    pub fn max_steps(mut self, steps: u8) -> Atom {
+        self.max_steps = steps;
+        self
+    }
+
+    /// The same atom, only for a piece that has not moved.
+    pub fn if_unmoved(mut self) -> Atom {
+        self.condition = Condition::Unmoved;
+        self
+    }
+
+    /// The same atom; the squares that its moves pass become en passant squares.
+    pub fn makes_en_passant(mut self) -> Atom {
+        self.makes_en_passant = true;
+        self
+    }
+
+    /// The same atom; it can also capture en passant.
+    pub fn captures_en_passant(mut self) -> Atom {
+        self.captures_en_passant = true;
+        self
+    }
+
+    /// The same atom; its moves reset the clock.
+    pub fn resets_clock(mut self) -> Atom {
+        self.resets_clock = true;
+        self
+    }
+
+    /// True if two atoms give their moves the same properties. The move generation puts such
+    /// atoms in one group. See `core/README.md`.
+    pub fn same_group(&self, other: &Atom) -> bool {
+        self.condition == other.condition
+            && self.makes_en_passant == other.makes_en_passant
+            && self.captures_en_passant == other.captures_en_passant
+            && self.resets_clock == other.resets_clock
     }
 }
 
-/// The movement of a knight, bishop, rook, queen, or king.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-pub struct KindRules {
-    pub atoms: Vec<Atom>,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum DoubleStep {
-    /// A pawn can move two squares only on its first move.
-    FirstMove,
-    /// A pawn can always move two squares.
-    Always,
-}
-
-/// The kinds that a pawn can become: one to four different kinds. A pawn cannot become a
+/// The kinds that a piece can become: one to four different kinds. A piece cannot become a
 /// pawn or a king.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct Promotions {
     kinds: [Kind; 4],
     len: u8,
@@ -101,23 +173,106 @@ impl Promotions {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct PawnRules {
-    pub double_step: DoubleStep,
-    /// The number of ranks before the last rank where the promotion zone starts. 0 is ordinary chess.
-    pub promo_distance: u8,
-    /// A pawn can move one square backward to an empty square.
-    pub backward_step: bool,
-    /// The kinds that a pawn can become, in the order of the generated moves.
-    pub promotions: Promotions,
+/// The promotion of a kind. A move that ends in the promotion zone gives one move for each
+/// kind of the list, except a move that goes backward: it never promotes.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct Promotion {
+    /// The number of ranks before the last rank where the promotion zone starts. 0 is ordinary
+    /// chess. The largest value is 6.
+    pub distance: u8,
+    /// The kinds that the piece can become, in the order of the generated moves.
+    pub kinds: Promotions,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+impl Promotion {
+    pub const STANDARD: Promotion = Promotion { distance: 0, kinds: Promotions::STANDARD };
+
+    /// The squares of the promotion zone of White. The zone of Black is the mirror.
+    pub fn zone(self) -> Bitboard {
+        let first_rank = 7 - self.distance.min(7) as u32;
+        !0u64 << (first_rank * 8)
+    }
+}
+
+/// The movement of one kind.
+#[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]
+pub struct KindRules {
+    pub atoms: Vec<Atom>,
+    pub promotion: Option<Promotion>,
+}
+
+/// One castle: a king and a partner piece move in one move. The squares are from the view of
+/// White; for Black, the engine mirrors the ranks.
+///
+/// The castle is possible when the king is on `king_from` and has not moved, a piece of kind
+/// `partner` of the same side is on `partner_from` and has not moved, the squares of `empty`
+/// are empty, and the enemy attacks no square of `safe`. The engine also requires the two `to`
+/// squares to be empty, unless the king or the partner stands there. The legality filter
+/// rejects a castle that leaves the king in check, as for each move.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct Castle {
+    pub king_from: Square,
+    pub king_to: Square,
+    pub partner: Kind,
+    pub partner_from: Square,
+    pub partner_to: Square,
+    pub empty: Bitboard,
+    pub safe: Bitboard,
+}
+
+impl Castle {
+    /// e1-c1 with the rook a1-d1. b1, c1, and d1 are empty. e1 and d1 are not attacked.
+    pub const QUEEN_SIDE: Castle = Castle {
+        king_from: 4,
+        king_to: 2,
+        partner: Kind::Rook,
+        partner_from: 0,
+        partner_to: 3,
+        empty: bit(1) | bit(2) | bit(3),
+        safe: bit(4) | bit(3),
+    };
+    /// e1-g1 with the rook h1-f1. f1 and g1 are empty. e1 and f1 are not attacked.
+    pub const KING_SIDE: Castle = Castle {
+        king_from: 4,
+        king_to: 6,
+        partner: Kind::Rook,
+        partner_from: 7,
+        partner_to: 5,
+        empty: bit(5) | bit(6),
+        safe: bit(4) | bit(5),
+    };
+    /// The castles of ordinary chess, in the order of the generated moves.
+    pub const STANDARD: [Castle; 2] = [Castle::QUEEN_SIDE, Castle::KING_SIDE];
+
+    /// The same castle for a color: Black gets the mirror of the ranks.
+    pub fn for_color(self, color: Color) -> Castle {
+        if color == Color::White {
+            return self;
+        }
+        Castle {
+            king_from: self.king_from ^ 56,
+            king_to: self.king_to ^ 56,
+            partner_from: self.partner_from ^ 56,
+            partner_to: self.partner_to ^ 56,
+            empty: self.empty.swap_bytes(),
+            safe: self.safe.swap_bytes(),
+            ..self
+        }
+    }
+
+    /// The squares that must be empty: `empty` and the two `to` squares, without the squares
+    /// of the king and the partner.
+    pub fn required_empty(self) -> Bitboard {
+        (self.empty | bit(self.king_to) | bit(self.partner_to)) & !bit(self.king_from) & !bit(self.partner_from)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub struct SideRules {
-    /// The rules for knight, bishop, rook, queen, and king, in this order.
-    pub kinds: [KindRules; 5],
-    pub pawn: PawnRules,
-    pub castling: bool,
+    /// The movement of each kind, by `Kind::index()`: pawn, knight, bishop, rook, queen, king.
+    pub kinds: [KindRules; Kind::COUNT],
+    /// The castles of the side, in the order of the generated moves.
+    pub castles: Vec<Castle>,
 }
 
 /// The names of the rule flags of the TypeScript engine (`MoveRules` in `src/engine/types.ts`).
@@ -128,14 +283,21 @@ pub enum RulesError {
     UnknownFlag(String),
     /// The kind has an offset of (0, 0) or an offset that is larger than the board.
     BadOffset(Kind, Offset),
-    /// The promotion zone must leave one rank or more for the pawns.
+    /// The number of steps of an atom must be from 1 to `Atom::MAX_STEPS`.
+    BadSteps(Kind, u8),
+    /// The promotion zone must leave one rank or more for the pieces.
     BadPromoDistance(u8),
-    /// A pawn cannot become a pawn or a king, and the list cannot have a kind two times.
+    /// A piece cannot become a pawn or a king, and the list cannot have a kind two times.
     BadPromotion(Kind),
     /// The list of promotion kinds is empty.
     NoPromotion,
-    /// The pawn has `PawnRules`. It has no atoms.
-    PawnAtoms,
+    /// An atom of this kind makes en passant squares and does not reset the clock, but another
+    /// atom of the kind resets the clock. A move has one special property only, thus the
+    /// engine cannot give such a move both properties.
+    EnPassantKeepsClock(Kind),
+    /// The castle at this index has a square off the board, a king that does not move, the king
+    /// and the partner on the same square, or the same king squares as an earlier castle.
+    BadCastle(usize),
 }
 
 impl std::fmt::Display for RulesError {
@@ -145,17 +307,35 @@ impl std::fmt::Display for RulesError {
             RulesError::BadOffset(kind, (df, dr)) => {
                 write!(f, "The offset ({df}, {dr}) of kind {} is not permitted", kind.letter())
             }
+            RulesError::BadSteps(kind, steps) => {
+                write!(f, "An atom of kind {} has {steps} steps; it must have 1 to 7", kind.letter())
+            }
             RulesError::BadPromoDistance(d) => write!(f, "The promotion distance {d} is more than 6"),
             RulesError::BadPromotion(kind) => {
                 write!(f, "The promotion kind {} is a pawn, a king, or in the list two times", kind.letter())
             }
             RulesError::NoPromotion => write!(f, "The list of promotion kinds is empty"),
-            RulesError::PawnAtoms => write!(f, "The pawn has PawnRules and cannot have atoms"),
+            RulesError::EnPassantKeepsClock(kind) => write!(
+                f,
+                "An atom of kind {} makes en passant squares and keeps the clock, but another atom resets it",
+                kind.letter()
+            ),
+            RulesError::BadCastle(index) => write!(f, "The castle at index {index} is not valid"),
         }
     }
 }
 
 impl std::error::Error for RulesError {}
+
+/// The atoms of the pawn of ordinary chess: the step, the double step on the first move, and
+/// the diagonal captures. All of them reset the clock.
+pub fn standard_pawn_atoms() -> Vec<Atom> {
+    vec![
+        Atom::leap(&FORWARD, Mode::MoveOnly).resets_clock(),
+        Atom::slide(&FORWARD, Mode::MoveOnly).max_steps(2).if_unmoved().makes_en_passant().resets_clock(),
+        Atom::leap(&FORWARD_DIAG, Mode::CaptureOnly).captures_en_passant().resets_clock(),
+    ]
+}
 
 impl SideRules {
     /// Ordinary chess.
@@ -163,86 +343,100 @@ impl SideRules {
         use Mode::MoveOrCapture as Both;
         SideRules {
             kinds: [
-                KindRules { atoms: vec![Atom::leap(&KNIGHT, Both)] },
-                KindRules { atoms: vec![Atom::slide(&DIAG, Both)] },
-                KindRules { atoms: vec![Atom::slide(&ORTHO, Both)] },
-                KindRules { atoms: vec![Atom::slide(&ORTHO, Both), Atom::slide(&DIAG, Both)] },
-                KindRules { atoms: vec![Atom::leap(&KING, Both)] },
+                KindRules { atoms: standard_pawn_atoms(), promotion: Some(Promotion::STANDARD) },
+                KindRules { atoms: vec![Atom::leap(&KNIGHT, Both)], promotion: None },
+                KindRules { atoms: vec![Atom::slide(&DIAG, Both)], promotion: None },
+                KindRules { atoms: vec![Atom::slide(&ORTHO, Both)], promotion: None },
+                KindRules { atoms: vec![Atom::slide(&ORTHO, Both), Atom::slide(&DIAG, Both)], promotion: None },
+                KindRules { atoms: vec![Atom::leap(&KING, Both)], promotion: None },
             ],
-            pawn: PawnRules {
-                double_step: DoubleStep::FirstMove,
-                promo_distance: 0,
-                backward_step: false,
-                promotions: Promotions::STANDARD,
-            },
-            castling: true,
+            castles: Castle::STANDARD.to_vec(),
         }
     }
 
-    /// The atoms of a kind. The pawn has `PawnRules`, thus the list of the pawn is empty.
+    /// The atoms of a kind.
+    #[inline(always)]
     pub fn atoms(&self, kind: Kind) -> &[Atom] {
-        match officer_index(kind) {
-            Ok(index) => &self.kinds[index].atoms,
-            Err(_) => &[],
+        &self.kinds[kind.index()].atoms
+    }
+
+    /// The rules of a kind.
+    #[inline(always)]
+    pub fn kind(&self, kind: Kind) -> &KindRules {
+        &self.kinds[kind.index()]
+    }
+
+    /// Adds an atom to the movement of a kind.
+    pub fn with_atom(mut self, kind: Kind, atom: Atom) -> SideRules {
+        self.kinds[kind.index()].atoms.push(atom);
+        self
+    }
+
+    /// Replaces the movement of a kind.
+    pub fn with_kind(mut self, kind: Kind, atoms: Vec<Atom>) -> SideRules {
+        self.kinds[kind.index()].atoms = atoms;
+        self
+    }
+
+    /// Replaces the promotion of a kind. `None`: the kind does not promote.
+    pub fn with_promotion(mut self, kind: Kind, promotion: Option<Promotion>) -> SideRules {
+        self.kinds[kind.index()].promotion = promotion;
+        self
+    }
+
+    /// Replaces the castles.
+    pub fn with_castles(mut self, castles: Vec<Castle>) -> SideRules {
+        self.castles = castles;
+        self
+    }
+
+    /// `false` removes all castles. `true` gives the castles of ordinary chess.
+    pub fn with_castling(self, castling: bool) -> SideRules {
+        self.with_castles(if castling { Castle::STANDARD.to_vec() } else { Vec::new() })
+    }
+
+    /// Pawns can always move two squares forward: the atoms of the pawn that make en passant
+    /// squares lose their condition.
+    pub fn forced_march(mut self) -> SideRules {
+        for atom in &mut self.kinds[Kind::Pawn.index()].atoms {
+            if atom.makes_en_passant {
+                atom.condition = Condition::Always;
+            }
         }
-    }
-
-    /// Adds an atom to the movement of a kind. Gives an error for `Kind::Pawn`.
-    pub fn with_atom(mut self, kind: Kind, atom: Atom) -> Result<SideRules, RulesError> {
-        self.kinds[officer_index(kind)?].atoms.push(atom);
-        Ok(self)
-    }
-
-    /// Replaces the movement of a kind. Gives an error for `Kind::Pawn`.
-    pub fn with_kind(mut self, kind: Kind, atoms: Vec<Atom>) -> Result<SideRules, RulesError> {
-        self.kinds[officer_index(kind)?].atoms = atoms;
-        Ok(self)
-    }
-
-    /// Adds an atom to a kind that is not the pawn.
-    fn with_officer_atom(mut self, kind: Kind, atom: Atom) -> SideRules {
-        self.kinds[kind.index() - 1].atoms.push(atom);
         self
     }
 
-    pub fn with_pawn(mut self, edit: impl FnOnce(&mut PawnRules)) -> SideRules {
-        edit(&mut self.pawn);
+    /// Pawns can move one square backward to an empty square. The step does not reset the clock.
+    pub fn backpedal(mut self) -> SideRules {
+        let step = Atom::leap(&BACKWARD, Mode::MoveOnly);
+        let atoms = &mut self.kinds[Kind::Pawn.index()].atoms;
+        if !atoms.contains(&step) {
+            atoms.push(step);
+        }
         self
-    }
-
-    pub fn with_castling(mut self, castling: bool) -> SideRules {
-        self.castling = castling;
-        self
-    }
-
-    /// Pawns can always move two squares forward.
-    pub fn forced_march(self) -> SideRules {
-        self.with_pawn(|pawn| pawn.double_step = DoubleStep::Always)
-    }
-
-    /// Pawns can move one square backward to an empty square.
-    pub fn backpedal(self) -> SideRules {
-        self.with_pawn(|pawn| pawn.backward_step = true)
     }
 
     /// Pawns promote one rank earlier.
-    pub fn early_promo(self) -> SideRules {
-        self.with_pawn(|pawn| pawn.promo_distance = 1)
+    pub fn early_promo(mut self) -> SideRules {
+        if let Some(promotion) = &mut self.kinds[Kind::Pawn.index()].promotion {
+            promotion.distance = 1;
+        }
+        self
     }
 
     /// The king can also move as a knight.
     pub fn king_knight(self) -> SideRules {
-        self.with_officer_atom(Kind::King, Atom::leap(&KNIGHT, Mode::MoveOrCapture))
+        self.with_atom(Kind::King, Atom::leap(&KNIGHT, Mode::MoveOrCapture))
     }
 
     /// Knights can also jump three squares in one direction and one square to the side.
     pub fn long_leap(self) -> SideRules {
-        self.with_officer_atom(Kind::Knight, Atom::leap(&CAMEL, Mode::MoveOrCapture))
+        self.with_atom(Kind::Knight, Atom::leap(&CAMEL, Mode::MoveOrCapture))
     }
 
     /// Bishops can move one square orthogonally to an empty square.
     pub fn sidestep(self) -> SideRules {
-        self.with_officer_atom(Kind::Bishop, Atom::leap(&ORTHO, Mode::MoveOnly))
+        self.with_atom(Kind::Bishop, Atom::leap(&ORTHO, Mode::MoveOnly))
     }
 
     /// Applies one rule flag of the TypeScript engine by its name.
@@ -263,27 +457,50 @@ impl SideRules {
         names.into_iter().try_fold(SideRules::standard(), SideRules::with_flag)
     }
 
+    /// The castle of a color whose king goes from `from` to `to`, with the squares of that color.
+    pub fn castle(&self, color: Color, from: Square, to: Square) -> Option<Castle> {
+        self.castles.iter().map(|castle| castle.for_color(color)).find(|c| c.king_from == from && c.king_to == to)
+    }
+
     pub fn validate(&self) -> Result<(), RulesError> {
-        if self.pawn.promo_distance > 6 {
-            return Err(RulesError::BadPromoDistance(self.pawn.promo_distance));
-        }
-        for kind in Kind::OFFICERS {
-            for atom in self.atoms(kind) {
-                let (Atom::Leap { offsets, .. } | Atom::Slide { dirs: offsets, .. }) = atom;
-                for &(df, dr) in offsets {
+        for kind in Kind::ALL {
+            let rules = self.kind(kind);
+            if let Some(promotion) = rules.promotion
+                && promotion.distance > 6
+            {
+                return Err(RulesError::BadPromoDistance(promotion.distance));
+            }
+            let resets = rules.atoms.iter().any(|atom| atom.resets_clock);
+            for atom in &rules.atoms {
+                if !(1..=Atom::MAX_STEPS).contains(&atom.max_steps) {
+                    return Err(RulesError::BadSteps(kind, atom.max_steps));
+                }
+                for &(df, dr) in &atom.offsets {
                     if (df, dr) == (0, 0) || df.abs() > 7 || dr.abs() > 7 {
                         return Err(RulesError::BadOffset(kind, (df, dr)));
                     }
                 }
+                if atom.makes_en_passant && !atom.resets_clock && resets {
+                    return Err(RulesError::EnPassantKeepsClock(kind));
+                }
+            }
+        }
+        for (index, castle) in self.castles.iter().enumerate() {
+            let squares = [castle.king_from, castle.king_to, castle.partner_from, castle.partner_to];
+            let repeated = self.castles[..index]
+                .iter()
+                .any(|earlier| (earlier.king_from, earlier.king_to) == (castle.king_from, castle.king_to));
+            if squares.iter().any(|&s| s >= 64)
+                || castle.king_from == castle.king_to
+                || castle.king_from == castle.partner_from
+                || castle.king_to == castle.partner_to
+                || repeated
+            {
+                return Err(RulesError::BadCastle(index));
             }
         }
         Ok(())
     }
-}
-
-/// The index of a kind in `SideRules::kinds`.
-fn officer_index(kind: Kind) -> Result<usize, RulesError> {
-    if kind == Kind::Pawn { Err(RulesError::PawnAtoms) } else { Ok(kind.index() - 1) }
 }
 
 /// The rules of the two sides: `[White, Black]`.
@@ -304,6 +521,15 @@ impl Rules {
 
     pub fn side(&self, color: Color) -> &SideRules {
         &self.sides[color.index()]
+    }
+
+    /// The move of the partner of a castle of `color`: (from, to). None if the move is not a
+    /// castle of that color.
+    pub fn castle_partner(&self, color: Color, m: crate::types::Move) -> Option<(Square, Square)> {
+        if m.special != crate::types::Special::Castle {
+            return None;
+        }
+        self.side(color).castle(color, m.from, m.to).map(|castle| (castle.partner_from, castle.partner_to))
     }
 
     pub fn validate(&self) -> Result<(), RulesError> {

@@ -82,14 +82,14 @@ fn answer(line: &str) -> Res<Value> {
 fn analyze(state: &mut State, depths: &Value) -> Res<Value> {
     let mut list = MoveList::new();
     legal_moves(state, &mut list);
-    let moves = write_moves(&list);
+    let moves = write_moves(&list, state);
 
     let mut from_each = Map::new();
     for s in 0..64u8 {
         if state.piece_at(s).is_some() {
             list.clear();
             moves_from(state, s, &mut list);
-            from_each.insert(s.to_string(), write_moves(&list));
+            from_each.insert(s.to_string(), write_moves(&list, state));
         }
     }
 
@@ -101,7 +101,7 @@ fn analyze(state: &mut State, depths: &Value) -> Res<Value> {
         for (name, captures_only) in [("all", false), ("captures", true)] {
             list.clear();
             pseudo_moves(state, color, captures_only, &mut list);
-            lists.insert(name.to_string(), write_moves(&list));
+            lists.insert(name.to_string(), write_moves(&list, state));
         }
         pseudo.insert(color_name(color).to_string(), Value::Object(lists));
         // One character for each square: 1 if this color attacks the square.
@@ -139,10 +139,7 @@ fn playout(state: &mut State, moves: &Value, ids: &Ids) -> Res<Value> {
     // The first move after which the state was not consistent, from 1. 0 is the start.
     let mut inconsistent: Option<usize> = (!consistent(state)).then_some(0);
     for (index, value) in moves.as_array().ok_or("\"moves\" must be a list")?.iter().enumerate() {
-        let m = read_move(value)?;
-        if state.piece_at(m.from).is_none() {
-            return Err(format!("the move {value} starts on an empty square"));
-        }
+        let m = read_move(value, state)?;
         before.push(state.clone());
         undos.push((m, state.make(m)));
         states.push(write_state(state, ids));
@@ -244,8 +241,8 @@ fn write_state(state: &State, ids: &Ids) -> Value {
 }
 
 /// Changes a move of the TypeScript engine into a move of this engine. The two forms hold
-/// the same data: `ep` and `castle` come from the `from` and `to` squares.
-fn read_move(value: &Value) -> Res<Move> {
+/// the same data: `ep` and `castle` come from the squares of the move and the rules.
+fn read_move(value: &Value, state: &State) -> Res<Move> {
     let from = read_square(&value["from"])?;
     let to = read_square(&value["to"])?;
     let promo = if value["promo"].is_null() { None } else { Some(read_kind(&value["promo"])?) };
@@ -259,19 +256,26 @@ fn read_move(value: &Value) -> Res<Move> {
         _ => return Err(format!("the move {value} has more than one special property")),
     };
     let m = Move { from, to, promo, special };
-    if special == Special::DoubleStep && value["ep"] != m.crossed_square() {
-        return Err(format!("the en passant square of {value} is not between the two squares"));
+    let Some(piece) = state.piece_at(from) else {
+        return Err(format!("the move {value} starts on an empty square"));
+    };
+    if special == Special::DoubleStep && value["ep"] != json!(en_passant_square(state, m)) {
+        return Err(format!("the en passant square of {value} is not the square that the move passes"));
     }
-    if special == Special::Castle {
-        let (rook_from, rook_to) = m.castle_rook();
-        if value["castle"] != json!([rook_from, rook_to]) {
-            return Err(format!("the rook move of {value} is not the rook move of a castle"));
-        }
+    if special == Special::Castle && value["castle"] != json!(state.rules().castle_partner(piece.color, m)) {
+        return Err(format!("the partner move of {value} is not the partner move of a castle"));
     }
     Ok(m)
 }
 
-fn write_move(m: Move) -> Value {
+/// The one en passant square that a move makes. The rule flags of the TypeScript engine make
+/// one square or none.
+fn en_passant_square(state: &State, m: Move) -> Option<Square> {
+    let squares = state.ep_squares_of(m);
+    (squares.count_ones() == 1).then(|| squares.trailing_zeros() as Square)
+}
+
+fn write_move(m: Move, state: &State) -> Value {
     let mut out = Map::new();
     out.insert("from".to_string(), json!(m.from));
     out.insert("to".to_string(), json!(m.to));
@@ -280,19 +284,19 @@ fn write_move(m: Move) -> Value {
     }
     match m.special {
         Special::None => {}
-        Special::DoubleStep => drop(out.insert("ep".to_string(), json!(m.crossed_square()))),
+        Special::DoubleStep => drop(out.insert("ep".to_string(), json!(en_passant_square(state, m)))),
         Special::EnPassant => drop(out.insert("epCapture".to_string(), json!(true))),
         Special::Backward => drop(out.insert("back".to_string(), json!(true))),
         Special::Castle => {
-            let (rook_from, rook_to) = m.castle_rook();
-            out.insert("castle".to_string(), json!([rook_from, rook_to]));
+            let color = state.piece_at(m.from).map_or(Color::White, |piece| piece.color);
+            out.insert("castle".to_string(), json!(state.rules().castle_partner(color, m)));
         }
     }
     Value::Object(out)
 }
 
-fn write_moves(list: &MoveList) -> Value {
-    Value::Array(list.iter().map(|&m| write_move(m)).collect())
+fn write_moves(list: &MoveList, state: &State) -> Value {
+    Value::Array(list.iter().map(|&m| write_move(m, state)).collect())
 }
 
 fn write_outcome(result: Option<Outcome>) -> Value {
