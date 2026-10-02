@@ -12,7 +12,7 @@ Chrogue is a game UI, not a web form. It has the layout and density of a chess p
 - Physical, not flat. Objects have one light source from above.
 - The board is the largest thing on the battle screen. The cards are the most prominent objects in camp.
 
-Decision source: the user selected mockup C, "Platform with objects", on 1 October 2026. Status: provisional.
+Decision source: the user selected mockup C, "Platform with objects", on 1 October 2026, and accepted the rendered battle and camp screens. Status: established.
 
 ## Objects
 
@@ -22,11 +22,12 @@ Decision source: the user selected mockup C, "Platform with objects", on 1 Octob
 | Medal | The picture of a card or of a token | Established |
 | Token | A relic or an enemy trait | Established |
 | Info button and paper tip | The text of a card or of a token | Established |
-| Key | Each button. A key goes down when the player presses it. The primary key is amber. | Provisional |
-| Plaque | A raised bar that holds the state of one side: the enemy, or the player | Provisional |
-| Well | A recessed slot that holds a count or a group of pieces | Provisional |
-| Shelf | A recessed area that holds a row of cards | Provisional |
-| Lamp | The turn status. It is lit when the player can move. | Provisional |
+| Key | Each button. A key goes down when the player presses it. The primary key is amber. | Established |
+| Plaque | A raised bar that holds the state of one side: the enemy, or the player | Established |
+| Well | A recessed slot that holds a count or a group of pieces | Established |
+| Shelf | A recessed area that holds a row of cards | Established |
+| Lamp | The turn status. It is lit when the player can move. | Established |
+| Menu | A raised bar of keys on a screen between runs. The primary key has the full width. | Provisional |
 
 Rules:
 
@@ -42,7 +43,10 @@ Rules:
 - At 1440×900, camp shows all its content with no page scroll.
 - The camp layout is stable during a visit. After the player takes or skips the reward, the reward shelf stays: the card that the player took keeps its color, and the other cards are dim. A visit that starts with no reward has no reward shelf.
 
-Status: provisional. Reference surfaces: the battle screen and the camp screen in `gallery.html`.
+- Screens between runs (the title, the end of a run) are one column in the center: a heading, a menu, and wells for the numbers. The upgrades screen is a shelf of cards.
+- The game has no rules screen. The player finds the rules and the relics in a run. The result of a battle gives its cause.
+
+Status: the battle and the camp are established. The title, the upgrades, and the end of a run are provisional. Reference surfaces: the demos in `gallery.html`, and the title of the game.
 
 ## Responsive and accessibility rules
 
@@ -64,5 +68,4 @@ Each color is a custom property in `:root` of `style.css`. A component uses the 
 
 ## Not yet covered
 
-- The title, upgrades, and end-of-run screens have the old panel look. They take the new objects after the user accepts the battle and camp screens.
 - The end of a run does not show a summary of the run. This is a follow-up task.

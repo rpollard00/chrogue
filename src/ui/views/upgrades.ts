@@ -28,10 +28,12 @@ export function viewUpgrades(app: App, { bought }: ScreenOf<'upgrades'>): HTMLEl
         h('span', { class: 'sr-only' }, `Level ${level} of ${def.costs.length}`)));
   });
   const spent = bought ? UPGRADES[bought].costs[(meta.upgrades[bought] ?? 0) - 1] ?? 0 : 0;
-  return h('main', { class: 'panel' },
-    h('h2', {}, 'Upgrades'),
-    h('p', { class: 'crown-count purse' }, amount('crowns', counter({ from: meta.crowns + spent, to: meta.crowns }))),
-    h('p', { class: 'dim' }, 'Upgrades apply to each new run.'),
-    h('div', { class: 'cards' }, cards),
+  return h('main', { class: 'upgrades' },
+    h('header', {},
+      h('h1', {}, 'Upgrades'),
+      h('p', { class: 'well purse crown-count' }, amount('crowns', counter({ from: meta.crowns + spent, to: meta.crowns })))),
+    h('section', { class: 'shelf', 'aria-label': 'Upgrades' },
+      h('div', { class: 'cards' }, cards),
+      h('p', { class: 'hint' }, 'Upgrades apply to each new run.')),
     button('Back', () => app.show({ name: 'title' })));
 }

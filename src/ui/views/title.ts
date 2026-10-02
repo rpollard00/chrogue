@@ -1,6 +1,12 @@
 import { FLOORS } from '../../game';
 import type { App } from '../app';
 import { button, h } from '../dom';
+import type { Child } from '../dom';
+import { currencyIcon } from '../icons';
+
+/** A recessed slot with a label and a value. */
+const stat = (label: string, ...value: Child[]): HTMLElement =>
+  h('div', { class: 'well' }, h('dt', { class: 'cap' }, label), h('dd', {}, ...value));
 
 export function viewTitle(app: App): HTMLElement {
   const { meta, run } = app;
@@ -8,12 +14,15 @@ export function viewTitle(app: App): HTMLElement {
   const start = () => {
     if (!run || confirm('Your current run will end. Start a new run?')) app.startRun();
   };
-  return h('main', { class: 'panel title' },
-    h('h1', {}, 'Chrogue'),
+  return h('main', { class: 'front' },
+    h('h1', { class: 'wordmark' }, 'Chrogue'),
     h('p', { class: 'tagline' }, 'Eight battles. One army. Every piece you lose stays lost.'),
-    h('div', { class: 'menu' },
+    h('nav', { class: 'menu', 'aria-label': 'Main menu' },
       run && button(`Continue run (floor ${run.floor})`, resume, { class: 'primary' }),
       button('New run', start, { class: run ? '' : 'primary' }),
       button('Upgrades', () => app.show({ name: 'upgrades', bought: null }))),
-    h('p', { class: 'dim' }, `Crowns: ${meta.crowns} · Best: ${meta.best} of ${FLOORS.length} floors · Runs: ${meta.runs}`));
+    h('dl', { class: 'stats' },
+      stat('Crowns', currencyIcon('crowns'), String(meta.crowns)),
+      stat('Best', `${meta.best} of ${FLOORS.length} floors`),
+      stat('Runs', String(meta.runs))));
 }

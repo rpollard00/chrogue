@@ -45,7 +45,6 @@
   display: flex;
   justify-content: center;
 }
-.gallery-stage .title { margin-top: 1.5rem; }
 .gallery-stage.skip-intro .intro { display: none; }
 
 @media (max-width: 700px) {

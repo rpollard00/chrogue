@@ -151,18 +151,33 @@ button.primary:disabled {
   box-shadow: inset 0 1px 0 var(--shine-soft), 0 1px 0 var(--amber-off-edge);
 }
 
-.panel {
-  width: min(calc(100% - 2rem), 860px);
-  margin: 1.5rem 1rem;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 1.5rem;
+/* A screen between runs is one column in the center: the title, and the end of a run. */
+.front {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 1.4rem;
+  box-sizing: content-box;
+  width: min(31rem, var(--view-w) - 2rem);
+  min-height: calc(var(--view-h) - 2rem);
+  padding: 1rem 0;
+  text-align: center;
 }
-
-.title { max-width: 460px; text-align: center; margin-top: 8vh; }
+.front :is(h1, p) { margin: 0; }
+.wordmark {
+  font-size: clamp(3.6rem, 19vw, 6rem);
+  line-height: 0.9;
+  letter-spacing: 0.05em;
+  text-shadow: 0 -1px 0 var(--shine-hard), 0 3px 0 var(--edge), 0 10px 14px var(--shade);
+}
 .tagline { color: var(--dim); }
-.menu { display: grid; gap: 0.75rem; margin: 1.5rem 0; }
+/* The menu is a raised bar. The primary key has the full width, and the other keys share a row. */
+.menu { display: flex; flex-wrap: wrap; gap: 0.9rem 0.7rem; width: 100%; padding: 1.1rem 1.1rem 1.25rem; }
+.menu button { flex: 1 1 7rem; }
+.menu .primary { flex-basis: 100%; min-height: 3.3rem; font-size: 1.3rem; }
+.stats { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.7rem; margin: 0; }
+.stats .well { display: grid; justify-items: center; gap: 0; padding: 0.4rem 1rem 0.5rem; }
+.stats dd { display: flex; align-items: center; gap: 0.35rem; margin: 0; font: 800 1.2rem/1.2 var(--display); letter-spacing: 0.03em; }
 
 
 .icon { display: inline-grid; width: 1em; height: 1em; vertical-align: -0.125em; }
@@ -194,7 +209,6 @@ button .amount { margin-left: 0.45rem; }
 .medal .piece { font-size: 1.2em; }
 
 .tokens { --flair: var(--relic); display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
-.panel .tokens { margin-bottom: 1rem; }
 .tokens.foe { --flair: var(--danger); }
 .token {
   display: flex;
@@ -264,6 +278,8 @@ button.info:active { translate: 0 1px; }
   align-items: center;
   gap: 0.6rem 0.9rem;
   padding: 0.55rem 0.75rem;
+}
+.plaque, .menu {
   border-radius: 12px;
   background: linear-gradient(160deg, var(--raised-hi), var(--raised-lo));
   box-shadow: inset 0 1px 0 var(--shine), inset 0 0 0 1px var(--rim), 0 3px 0 var(--edge), 0 12px 14px -8px var(--shade);
@@ -724,6 +740,21 @@ button.info:active { translate: 0 1px; }
 .pip.on { background: var(--accent); border-color: var(--accent); }
 .pip.new { animation: pip 500ms cubic-bezier(0.2, 1.6, 0.4, 1) 150ms both; }
 .crown-count { color: var(--accent); }
+/* The upgrades: the crowns, a shelf of cards, and the key that goes back. */
+.upgrades {
+  display: grid;
+  align-content: center;
+  gap: 1rem;
+  box-sizing: content-box;
+  width: min(46rem, var(--view-w) - 2rem);
+  min-height: calc(var(--view-h) - 2rem);
+  padding: 1rem 0;
+}
+.upgrades header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.upgrades :is(h1, .purse) { margin: 0; }
+.upgrades .cards { margin: 0.5rem 0 1rem; }
+.upgrades .hint { text-align: center; }
+.upgrades > button { justify-self: start; }
 .card.maxed { --flair: var(--accent); }
 .card.bought { overflow: hidden; animation: unlock 800ms ease-out; }
 .card.bought::after {
@@ -736,7 +767,7 @@ button.info:active { translate: 0 1px; }
   pointer-events: none;
 }
 
-.over .emblem { position: relative; width: max-content; margin: 0 auto 1rem; }
+.over .emblem { position: relative; width: max-content; }
 .over .emblem .piece {
   display: block;
   font-size: 4.5rem;
@@ -746,7 +777,15 @@ button.info:active { translate: 0 1px; }
 .over.won .emblem .piece { color: var(--dim); -webkit-text-stroke: 0; }
 .over.won h1 { color: var(--accent); animation: glow 1.6s ease-out both; }
 .over .burst i { animation-delay: 700ms; }
-.over .tally { margin-top: 1.25rem; }
+/* The tally of crowns is in a recessed slot. */
+.over .tally {
+  width: 100%;
+  margin: 0;
+  padding: 0.8rem 1rem;
+  border-radius: 9px;
+  background: linear-gradient(var(--well-hi), var(--well-lo));
+  box-shadow: inset 0 2px 4px var(--shade), inset 0 -1px 0 var(--shine-soft);
+}
 .badge {
   display: inline-block;
   padding: 0 0.5rem;
@@ -794,6 +833,5 @@ button.info:active { translate: 0 1px; }
 }
 
 @media (max-width: 480px) {
-  .panel { padding: 1rem; }
   .card .medal { --size: 4rem; }
 }
