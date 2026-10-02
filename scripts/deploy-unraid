@@ -36,7 +36,7 @@ remote "docker run -d --name $NAME --label $LABEL --restart unless-stopped \
 remote "docker images $NAME --format '{{.Repository}}:{{.Tag}}' | grep -vxF $image | xargs -r docker rmi" >/dev/null || true
 
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-  if curl -fsS --max-time 3 "http://$ADDRESS/src/main.js" -o /dev/null; then
+  if curl -fsS --max-time 3 "http://$ADDRESS/" -o /dev/null; then
     echo "Deployed $image as container $NAME at http://$ADDRESS"
     exit 0
   fi
