@@ -70,6 +70,16 @@
   color-scheme: dark;
 }
 
+/*
+ * The game has two set layouts: one for a wide screen, and one for a phone or a screen in portrait.
+ * A layout does not change with its content. On a small screen, the full layout becomes smaller: each size is in rem,
+ * and the size of 1rem comes from the screen. The wide layout is for 80rem by 45rem, and the phone layout is for 22.5rem by 40rem.
+ */
+html { font-size: clamp(10px, min(100vw / 80, 100dvh / 45), 16px); }
+@media (max-width: 720px), (orientation: portrait) {
+  html { font-size: clamp(10px, min(100vw / 22.5, 100dvh / 40), 16px); }
+}
+
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 
@@ -78,7 +88,7 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
-  font: 16px/1.5 var(--body);
+  font: 1rem/1.5 var(--body);
 }
 
 #app { display: flex; justify-content: center; }
@@ -209,7 +219,7 @@ button .amount { margin-left: 0.45rem; }
 .medal .piece { font-size: 1.2em; }
 
 /* The relics are a fan of medals that overlap with a fixed step. */
-.fan { --flair: var(--relic); --step: 1.75rem; display: flex; margin: 0; padding: 0 0.9rem 0 0; list-style: none; }
+.fan { --flair: var(--relic); --step: 1.75rem; display: flex; margin: 0; padding: 0; list-style: none; }
 .fan.foe { --flair: var(--danger); }
 .fan li { position: relative; display: flex; width: var(--step); }
 button.chip {
@@ -487,25 +497,29 @@ button.info:active { translate: 0 1px; }
 .start { display: grid; gap: 0.5rem; justify-items: end; margin-left: auto; text-align: right; }
 .reason { margin: 0; font-size: 0.8rem; color: var(--dim); }
 /* 20.5rem is the height of the two plaques and of the space around the table. */
-.shelves { display: flex; flex-wrap: wrap; gap: 1rem; min-height: min(26rem, var(--view-h) - 20.5rem); }
-.shelf { flex: 1 1 auto; display: flex; flex-direction: column; }
+/* The reward shelf has the width of three cards. */
+.shelves { display: grid; grid-template-columns: 33.05rem minmax(0, 1fr); gap: 1rem; height: min(26rem, var(--view-h) - 20.5rem); }
+.shelf { display: flex; flex-direction: column; }
 .shelf header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-height: 2.4rem; margin-bottom: 0.75rem; }
 .shelf h2, .army h2 { margin: 0; font-size: 1.2rem; }
 .shelf .cards { justify-content: center; margin: auto 0; }
 .shelf > .dim { margin: auto; }
 /* A shelf is as wide as its row of cards, thus the width of a card cannot come from the width of the shelf. */
-@media (min-width: 721px) { .shelf .card { flex: none; width: 9.75rem; } }
+@media (min-width: 721px) and (orientation: landscape) {
+  .shelf .card { flex: none; width: 9.75rem; }
+  .camp .plaque { flex-wrap: nowrap; }
+}
 .army { display: grid; gap: 0.2rem; max-width: 12.5rem; }
 .army h2 span { color: var(--dim); }
 .hint { margin: 0; font-size: 0.8rem; line-height: 1.35; color: var(--dim); }
 .relics { flex: 1 1 10rem; display: grid; gap: 0.4rem; }
 .camp .me .purse { margin-left: auto; }
 .pin { display: none; }
-/* On a narrow screen, the camp scrolls. The gold and the start key stay in view in a bar at the bottom. */
-@media (max-width: 720px) {
+/* On a phone, the camp scrolls. The gold and the start key stay in view in a bar at the bottom. */
+@media (max-width: 720px), (orientation: portrait) {
   .camp { display: flex; flex-direction: column; gap: 0.75rem; width: calc(var(--view-w) - 1.2rem); min-height: 0; padding: 0.6rem 0 0; }
   .camp .plaque.foe { min-height: 0; }
-  .shelves { min-height: 0; }
+  .shelves { display: flex; flex-direction: column; height: auto; }
   .camp .plaque :is(.start, .purse) { display: none; }
   .camp .board.homes { width: 100%; }
   .camp .taken .piece { font-size: 1.5rem; }
@@ -529,40 +543,84 @@ button.info:active { translate: 0 1px; }
   .pin .reason { grid-column: 1 / -1; }
 }
 
-/* The battle is one column: the enemy plaque, the board, and the player plaque. The board takes the height that the plaques leave. */
+/*
+ * The battle is one column: the enemy plaque, the board, and the player plaque.
+ * Each plaque is a grid with set rows, thus the size of the board comes only from the screen.
+ */
 .battle {
+  --plaques: 11.6rem;
+  --board: min(var(--view-w) - 1.5rem, 56rem, var(--view-h) - var(--plaques) - 2.8rem);
   display: grid;
   align-content: center;
   gap: 0.65rem;
   box-sizing: content-box;
-  width: min(var(--view-w) - 1.5rem, 56rem, max(20rem, var(--view-h) - var(--plaques, 11rem) - 2.8rem));
+  /* On a short screen, the board is narrower than the plaques. */
+  width: max(var(--board), min(33rem, var(--view-w) - 1.5rem));
   min-height: calc(var(--view-h) - 1.5rem);
   padding: 0.75rem 0;
 }
-.battle .plaque { min-height: 3.6rem; }
-/* Each plaque keeps its size for the full battle, thus the board keeps its size. No item comes or goes with the state. */
-.battle .foe .well { margin-left: auto; }
-/* The player plaque has two lines. Line 1: the status and the gold. Line 2: the captured pieces, the relics, and the Give up key. */
-.battle .me { box-shadow: inset 0 2px 0 var(--accent), inset 0 0 0 1px var(--rim), 0 3px 0 var(--edge), 0 12px 14px -8px var(--shade); }
-.battle .me .id { flex: 1 1 8rem; min-height: 3.2rem; align-content: center; }
-.battle .me::after { content: ''; order: 1; flex-basis: 100%; }
-.battle .me :is(.lined, .fan, .quiet) { order: 2; }
-.battle .me .quiet { margin-left: auto; }
-/* A tray has a slot for each piece that it can get, thus it keeps its width. The pieces overlap. */
-.battle .taken { --step: 1.1rem; flex-wrap: nowrap; gap: 0; min-width: calc(var(--slots) * var(--step) + 0.5rem); }
-.battle .taken .piece { display: grid; place-items: center; width: var(--step); animation: pip 500ms cubic-bezier(0.2, 1.6, 0.4, 1); }
-/* A narrow screen: the tray and the fan have their own lines, and the gold goes below them. The rule uses the width of the screen. The width of the board is not applicable, because it comes from the height of the plaques. */
-@media (max-width: 600px) {
-  .battle .fan { --step: 1.65rem; order: 1; flex-basis: 100%; }
-  .battle .taken { --step: 0.85rem; }
-  .battle .taken .piece { font-size: 1.4rem; }
-  .battle .lined { flex: 1 1 100%; }
-  .battle .foe .fan { order: 2; }
-  .battle .me .fan { order: 2; }
-  .battle .me .purse { order: 3; }
-  .battle .me .quiet { order: 3; min-height: 2.25rem; }
+.battle .plaque { display: grid; grid-template-rows: 3.1rem; }
+.battle .foe { grid-template-columns: 2.6rem minmax(0, 1fr) auto auto; grid-template-areas: 'medal id fan stash'; }
+.battle .me {
+  grid-template-columns: 2.6rem 0.9rem minmax(0, 1fr) auto;
+  grid-template-rows: 3.1rem 2.6rem;
+  grid-template-areas: 'medal id id purse' 'stash stash fan quiet';
+  box-shadow: inset 0 2px 0 var(--accent), inset 0 0 0 1px var(--rim), 0 3px 0 var(--edge), 0 12px 14px -8px var(--shade);
 }
-.board-wrap { position: relative; }
+.battle .plaque > .medal { grid-area: medal; }
+.battle .id { grid-area: id; min-width: 0; align-content: center; }
+.battle .id :is(.name, .lamp) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.battle .purse { grid-area: purse; }
+.battle .stash { grid-area: stash; }
+.battle .fan { grid-area: fan; }
+.battle .quiet { grid-area: quiet; justify-self: end; }
+@media (max-width: 720px), (orientation: portrait) {
+  .battle { --plaques: 18rem; width: calc(var(--view-w) - 1.5rem); }
+  .battle .foe, .battle .me { grid-template-columns: 2.6rem 0.9rem minmax(0, 1fr) auto; }
+  .battle .foe { grid-template-rows: 3.1rem 2.6rem; grid-template-areas: 'medal id id id' 'stash stash fan fan'; }
+  .battle .me { grid-template-rows: 3.1rem 2.6rem 2.6rem; grid-template-areas: 'medal id id id' 'stash stash fan fan' 'purse purse purse quiet'; }
+  .battle .fan { --step: 1.4rem; }
+  .battle .purse { justify-self: start; }
+}
+
+/* The stash shows the last piece that a side captured, and the number of the pieces. Its list of all the pieces shows above it. */
+.stash { position: relative; width: 4.4rem; }
+.stash > button {
+  justify-content: space-between;
+  width: 100%;
+  min-height: 2.6rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9px;
+  font: 800 1rem/1 var(--display);
+  color: var(--lining-ink);
+  background: linear-gradient(var(--lining-lo), var(--lining));
+  box-shadow: inset 0 2px 4px var(--shade), inset 0 -1px 0 var(--shine-soft);
+}
+.stash > button:disabled { translate: none; cursor: default; }
+.stash .piece { font-size: 1.6rem; animation: pip 500ms cubic-bezier(0.2, 1.6, 0.4, 1); }
+.stash .pop {
+  position: absolute;
+  bottom: calc(100% + 0.9rem);
+  left: 0;
+  z-index: 6;
+  display: none;
+  gap: 0.3rem;
+  width: max-content;
+  max-width: min(19rem, var(--view-w) - 3rem);
+  padding: 0.5rem 0.75rem 0.6rem;
+  border-radius: 9px;
+  background: linear-gradient(var(--lining-hi), var(--lining));
+  box-shadow: inset 0 1px 0 var(--shine), 0 3px 0 var(--edge), 0 14px 20px -6px var(--shade);
+  pointer-events: none;
+  animation: tip 120ms ease-out;
+}
+.stash .pop .cap { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--lining-ink); }
+.stash .pop .piece { animation: none; }
+.stash:is(:hover, :focus-within) > button:enabled + .pop { display: grid; }
+/* The stash of the enemy is at the top of the screen, thus its list shows below it. */
+.foe .stash .pop { top: calc(100% + 0.9rem); bottom: auto; }
+@media (min-width: 721px) and (orientation: landscape) { .foe .stash .pop { right: 0; left: auto; } }
+.board-wrap { position: relative; width: var(--board); justify-self: center; }
 .dots i { font-style: normal; animation: blink 1s infinite; }
 .dots i:nth-child(2) { animation-delay: 150ms; }
 .dots i:nth-child(3) { animation-delay: 300ms; }

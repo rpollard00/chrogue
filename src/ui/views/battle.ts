@@ -6,7 +6,7 @@ import type { App, ScreenOf } from '../app';
 import { button, glyph, h, pieceEl, squareName } from '../dom';
 import { burst, counter, removeWhenDone, replay, tally } from '../effects';
 import type { TallyRow } from '../effects';
-import { enemyName, flashRelics, pieceWell, plaque, purse, relicList } from '../widgets';
+import { enemyName, flashRelics, plaque, purse, relicList, stash } from '../widgets';
 import type { PieceWell } from '../widgets';
 
 type BattleScreen = ScreenOf<'battle'>;
@@ -88,12 +88,9 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
   let shownPromotion: Move[] | null = null;
   board.append(promotion);
   // The pieces that each side captured.
-  // Each tray has a slot for each piece that it can get. The kings do not go to a tray.
-  const slots = (of: Color, by: Color): number =>
-    battle.taken[by].length + state.board.filter((p) => p?.color === of && p.type !== 'k').length;
   const trays: Record<Color, PieceWell> = {
-    w: pieceWell('b', 'Pieces that you captured', 'Captured', slots('b', 'w')),
-    b: pieceWell('w', 'Pieces that you lost', 'Lost', slots('w', 'b')),
+    w: stash('b', 'Pieces that you captured', 'Captured'),
+    b: stash('w', 'Pieces that you lost', 'Lost'),
   };
   const captureGold = h('strong', {}, '0');
   const captureNote = h('small', { hidden: true }, '+', captureGold, ' from captures');
@@ -244,19 +241,5 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
   const me = plaque('player', 'You',
     h('div', { class: 'id' }, h('strong', { class: 'name' }, 'You'), status),
     trays.w.el, purse(String(run.gold), captureNote), relics, giveUp);
-  const main = h('main', { class: 'battle' }, foe, wrap, me);
-  // The board takes the height that the plaques leave. A plaque can wrap to more lines, thus the screen measures the plaques.
-  let fitted = 0;
-  const fit = (): void => {
-    const height = Math.ceil(foe.getBoundingClientRect().height + me.getBoundingClientRect().height);
-    if (height !== fitted) main.style.setProperty('--plaques', `${height}px`);
-    fitted = height;
-  };
-  // The first measurement is before the first paint, when the shell has the screen on the page.
-  queueMicrotask(fit);
-  // A change of size in the callback of the observer causes a loop error, thus the next frame does the measurement.
-  const resized = new ResizeObserver(() => requestAnimationFrame(fit));
-  resized.observe(foe);
-  resized.observe(me);
-  return main;
+  return h('main', { class: 'battle' }, foe, wrap, me);
 }

@@ -64,14 +64,17 @@ export function viewCamp(app: App, screen: CampScreen): HTMLElement {
   const take = (offer: Offer) => act(() => {
     if (takeDraft(run, offer) && reward) reward.taken = offer;
   });
-  const draft = reward && h('section', { class: 'shelf' },
+  // The shelf is on each visit, thus the table has one layout. A visit with no reward has an empty shelf.
+  const draft = h('section', { class: 'shelf' },
     run.draft
       ? h('header', {}, h('h2', {}, 'Select one reward'), button('Skip the reward', act(() => skipDraft(run))))
-      : h('header', {}, h('h2', {}, reward.taken ? 'Reward taken' : 'Reward skipped')),
-    h('div', { class: deal },
-      reward.offers.map((offer) => (run.draft
-        ? offerCard(offer, run, { verb: 'Take', run: take(offer) })
-        : settledCard(offer, offer === reward.taken)))));
+      : h('header', {}, h('h2', {}, !reward ? 'Reward' : reward.taken ? 'Reward taken' : 'Reward skipped')),
+    reward
+      ? h('div', { class: deal },
+        reward.offers.map((offer) => (run.draft
+          ? offerCard(offer, run, { verb: 'Take', run: take(offer) })
+          : settledCard(offer, offer === reward.taken))))
+      : h('p', { class: 'dim' }, 'No reward to select.'));
   const shop = h('section', { class: 'shelf' },
     h('header', {},
       h('h2', {}, 'Shop'),
@@ -110,7 +113,7 @@ export function viewCamp(app: App, screen: CampScreen): HTMLElement {
         h('h2', {}, 'Your army ', h('span', {}, `(${run.army.length} of ${ARMY_MAX})`)),
         h('p', { class: 'hint' }, 'To move a piece, select the piece and then select a square.')),
       viewArmy(app, screen),
-      run.relics.length > 0 && h('div', { class: 'relics' }, h('span', { class: 'kicker' }, 'Your relics'), relics),
+      h('div', { class: 'relics' }, h('span', { class: 'kicker' }, 'Your relics'), relics),
       purse(gold())),
     h('div', { class: 'pin' }, h('span', { class: 'purse gold-count' }, amount('gold', gold())), start()));
 }

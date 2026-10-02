@@ -48,22 +48,42 @@ export interface PieceWell {
   show(types: readonly PieceType[]): void;
 }
 
-/**
- * A well for pieces that are not on the board. Its lining has the brown of the board.
- * `label` names the group for a screen reader. `caption` is a visible text before the pieces.
- * With `slots`, the well has the width of that number of pieces from the start, thus it does not change the layout when a piece comes.
- * With no `slots`, the well is hidden while it has no piece.
- */
-export function pieceWell(color: Color, label: string, caption?: string, slots?: number): PieceWell {
+/** A well that shows a group of pieces. Its lining has the brown of the board. `label` names the group for a screen reader. */
+export function pieceWell(color: Color, label: string): PieceWell {
   const row = h('span', { class: 'taken', role: 'img' });
-  const el = h('div', { class: 'well lined', hidden: slots === undefined, style: slots === undefined ? null : `--slots: ${slots}` },
-    caption && h('span', { class: 'cap' }, caption), row);
   return {
-    el,
+    el: h('div', { class: 'well lined' }, row),
     show(types) {
       for (let i = row.childElementCount; i < types.length; i++) row.append(pieceEl(types[i], color));
       row.setAttribute('aria-label', `${label}: ${countPieces(types) || 'none'}`);
-      el.hidden = slots === undefined && types.length === 0;
+    },
+  };
+}
+
+let stashes = 0;
+
+/**
+ * The pieces that one side captured. The stash has a set size: it shows the last piece and the number of the pieces.
+ * The stash under the pointer, or with the keyboard focus, shows a list of all the pieces. `caption` is the heading of the list.
+ */
+export function stash(color: Color, label: string, caption: string): PieceWell {
+  const listId = `stash-${++stashes}`;
+  const last = h('span', {}), count = h('span', {});
+  const all = h('span', { class: 'taken' });
+  // A tap gives the focus to the button in each browser, thus a touch screen shows the list.
+  const open = h('button', { type: 'button', disabled: true, 'aria-describedby': listId, onclick: () => open.focus() }, last, count);
+  let shown = -1;
+  return {
+    el: h('div', { class: 'stash' }, open, h('div', { class: 'pop', role: 'tooltip', id: listId }, h('span', { class: 'cap' }, caption), all)),
+    show(types) {
+      if (types.length === shown) return;
+      shown = types.length;
+      open.toggleAttribute('disabled', shown === 0);
+      open.setAttribute('aria-label', `${label}: ${countPieces(types) || 'none'}`);
+      last.replaceChildren(...(shown ? [pieceEl(types[shown - 1], color)] : []));
+      count.textContent = shown ? `×${shown}` : '';
+      // The list has the pieces in the sequence of their values.
+      all.replaceChildren(...ORDER.flatMap((type) => types.filter((t) => t === type).map((t) => pieceEl(t, color))));
     },
   };
 }
