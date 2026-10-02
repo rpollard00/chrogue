@@ -64,5 +64,5 @@ Each color is a custom property in `:root` of `style.css`. A component uses the 
 
 ## Not yet covered
 
-- The title, upgrades, help, and end-of-run screens have the old panel look. They take the new objects after the user accepts the battle and camp screens.
+- The title, upgrades, and end-of-run screens have the old panel look. They take the new objects after the user accepts the battle and camp screens.
 - The end of a run does not show a summary of the run. This is a follow-up task.

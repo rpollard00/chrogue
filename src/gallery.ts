@@ -134,10 +134,6 @@ const DEMOS: Demo[] = [
     })),
   },
   {
-    group: 'Between runs', name: 'Relic list', note: 'The help screen shows each relic with its text.',
-    start: (app) => app.show({ name: 'help' }),
-  },
-  {
     group: 'Between runs', name: 'Upgrade', note: 'The card flashes, and the crowns count down.',
     start: (app) => app.show({ name: 'upgrades', bought: null }),
     steps: [card('Militia')],

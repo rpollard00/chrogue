@@ -5,7 +5,7 @@ import type { App, Screen } from './app';
 import { viewBattle } from './views/battle';
 import { viewCamp } from './views/camp';
 import { viewOver } from './views/over';
-import { viewHelp, viewTitle } from './views/title';
+import { viewTitle } from './views/title';
 import { viewUpgrades } from './views/upgrades';
 
 /** The data at the start of the shell and the functions that save it. */
@@ -24,7 +24,6 @@ export function createApp(root: HTMLElement, store: Store): App {
   function view(): HTMLElement {
     switch (screen.name) {
       case 'title': return viewTitle(app);
-      case 'help': return viewHelp(app);
       case 'upgrades': return viewUpgrades(app, screen);
       case 'battle': return viewBattle(app, screen);
       case 'camp': return viewCamp(app, screen);

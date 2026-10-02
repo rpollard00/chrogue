@@ -24,7 +24,6 @@ export type CampCue =
 /** The current screen and the data that only this screen uses. */
 export type Screen =
   | { name: 'title' }
-  | { name: 'help' }
   // bought is the upgrade that the player bought last on this screen.
   | { name: 'upgrades'; bought: UpgradeId | null }
   | { name: 'battle'; run: Run; view: BattleView }
