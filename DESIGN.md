@@ -76,6 +76,17 @@ Rules:
 
 Status: established. The user accepted the rendered screens of the TypeScript game on 1 October 2026. For the upgrades screen, the user selected mockup C, "a board of medals and one panel", and accepted the rendered screen on 1 October 2026. The client draws the same screens. Reference surfaces: the screens of the client.
 
+## The debug menu
+
+The debug menu is a development tool (`client/README.md`, "The debug menu"). It is not a part of the interface of the game.
+
+- The menu is above the layout, as a dialog is. It does not move or resize an area of a screen.
+- The menu is the one place that lists the relics. The game shows no such list ("Composition").
+- The panel of the menu has a set size, and each tab has a set layout for its largest content: 22 relics, 8 floors, 5 kinds of pieces, and the 16 upgrades of the medal board. A row with no content stays empty.
+- The menu uses the objects of the game: keys, wells, medals, and the paper tip. A toggle is a key that has an amber ring, an amber lamp, and an amber label when it is on.
+
+Decision source: the user asked for the menu on 3 October 2026. Status: provisional.
+
 ## Responsive and accessibility rules
 
 - A phone width is a first-class target. The game must be fully playable at 390 pixels wide.
@@ -102,4 +113,5 @@ Each color has a name in `client/theme.lua`. A module uses the name, not a raw v
 - The end of a run does not show a summary of the run. This is a follow-up task.
 - The medal board holds 16 upgrades. The design for more upgrades (a second page, or a board that scrolls) is not decided. A test stops a 17th upgrade.
 - A slot on a phone holds a name of 13 characters. A test stops a longer name.
+- The Relics tab of the debug menu holds 22 relics. A 23rd relic does not show.
 - The phone layout, the focus ring, the text for a screen reader, and the stop of motion for a player who prefers reduced motion ("Responsive and accessibility rules").

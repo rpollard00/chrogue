@@ -21,7 +21,7 @@ The options come after the game folder. The client gives `--seed`, `--no-save`, 
 
 - `--size 1440x900`: the size of the window. The default is 1280 by 720.
 - `--seed 7`: the seed of the core. The same seed and the same clicks give the same game.
-- `--no-debug`: the core does not accept the debug commands of `PROTOCOL.md`. Without this option, the core accepts them. The test scripts use them to prepare positions. `--debug` has no effect.
+- `--no-debug`: the core does not accept the debug commands of `PROTOCOL.md`, and the game has no debug menu. Without this option, the core accepts them. The debug menu sends them, and the test scripts use them to prepare positions. `--debug` has no effect.
 - `--no-save`: the core keeps the saved data in memory only.
 - `--save-dir PATH`: the core keeps the saved data in `PATH`, not in the save folder of LÖVE.
 - `--keep-alive`: the core continues after the game stops. The game prints the address of the core.
@@ -34,10 +34,26 @@ The options come after the game folder. The client gives `--seed`, `--no-save`, 
 ## Keys
 
 - `F1` changes the effects: all on, post pass off, all off. The corner of the window shows the mode.
+- `F2` opens and closes the debug menu. See "The debug menu".
 - `Escape` closes the dialog, the promotion picker, and a pinned paper tip. Then it clears the selection of a piece.
 - `Enter` does the function of the primary key: Continue run or New run on the title, Continue after a battle, Start the battle in the camp, Buy on the upgrades, and New run at the end of a run. In a dialog, `Enter` is OK.
 
-A new screen takes no click and no key (other than `F1`) during its fade of 0.2 seconds. Thus the second click of a double click, or a second `Enter`, does not act on the next screen. A press of the button on one screen and its release on a different screen is not a click.
+A new screen takes no click and no key (other than `F1` and `F2`) during its fade of 0.2 seconds. Thus the second click of a double click, or a second `Enter`, does not act on the next screen. A press of the button on one screen and its release on a different screen is not a click.
+
+## The debug menu
+
+The debug menu is a development tool. It is available on each screen, unless the command line has `--no-debug`. `F2` opens it and closes it, and a click on the chip "Debug (F2)" in the corner of the window does the same. `Escape` and the Close key also close it.
+
+While the menu is open, the screen below it takes no click and no key. The screen continues: the enemy moves, and the motion plays.
+
+The menu shows the debug state of the core (`../core/PROTOCOL.md`, "Debug state"), and each control sends one debug command. The limits of each number come from the core. Only the gold and the crowns have no limit in the core: their steppers stop at 9999 gold and at 999 crowns, the largest numbers that the purses of the game have space for. If the core refuses a command, the line at the bottom of the menu shows the message of the core until the next action.
+
+- Run: the seed of this run, and the seed of new runs. To set the seed of new runs, click the field, type at most 9 digits, and press `Enter` or Set. Random clears the seed. New run starts a new run from each screen, with no question. The steppers change the floor and the gold of the run.
+- Relics: one row for each relic. Owned gives the relic to the run or removes it. Offered permits or stops the relic as a reward, as a shop item, and as a boss trait. Trait gives the relic to the enemy or removes it. The pointer on a name shows the text of the relic. Offer all and Offer none change Offered for each relic.
+- Enemy: for each floor, the AI level, the budget of the enemy army, and the number of boss traits. For each kind of piece, the most pieces in an army, the weight, and the first floor. A click on a budget stepper with `Shift` changes the budget by 5. A value that differs from its default is amber. Defaults sets each number of this tab to its default.
+- Upgrades: the crowns, and the level of each upgrade.
+
+A command that changes the run or the upgrades during a battle starts the battle again (`../core/PROTOCOL.md`, "Debug commands"). The settings of the Enemy tab, the seed of new runs, and Offered are not saved: a new core starts with the defaults.
 
 ## The connection to the core
 
@@ -90,7 +106,7 @@ To continue a battle in a new window:
 | Step | Function |
 |---|---|
 | `{ 'click', 'e2' }` | A square of the battle board, or a home square of the camp (`a1` to `h2`). An index from 0 is also correct. |
-| `{ 'press', NAME, ARG }` | A named control of the screen or of the dialog. |
+| `{ 'press', NAME, ARG }` | A named control of the screen, of the dialog, or of the debug menu. |
 | `{ 'play', FUNCTION }` | The function gets the view and gives a move of `view.moves`. The step clicks its two squares. In the promotion picker, it clicks the piece of the move (`promo`). |
 | `{ 'again' }` | A click at the point of the last click, for a double click. |
 | `{ 'down', NAME, ARG }`, `{ 'up' }` | A press of the button on a named control, and its release at the same point. |
@@ -110,12 +126,12 @@ To continue a battle in a new window:
 | `{ 'fps', 3, 'label' }` | Counts the frames for 3 seconds, and prints the frames per second. |
 | `{ 'size', 1920, 1080 }` | The size of the window. |
 | `{ 'screenshot', '/absolute/path.png' }` | A screenshot. |
-| `{ 'dump', '/absolute/path.json' }` | The last view of the core, the state of the client, the set areas of the screen, the connection, and the frames. |
+| `{ 'dump', '/absolute/path.json' }` | The last view of the core, the state of the client, the state of the debug menu, the set areas of the screen, the connection, and the frames. |
 | `{ 'log', 'text' }`, `{ 'quit' }` | A line on stdout, and the end of the game. `quit` writes the line "The script is at its end." |
 
 A `settle` or `screen` step stops the game with an error after 30 seconds.
 
-The named controls are in the `control` function of each screen module:
+The named controls are in the `control` function of each screen module and of `debugmenu.lua`:
 
 - Title: `continueRun`, `newRun`, `upgrades`.
 - Upgrades: `slot` (a number from 1 to 16, or an upgrade id), `buy`, `back`.
@@ -124,6 +140,12 @@ The named controls are in the `control` function of each screen module:
 - End of a run: `newRun`, `upgrades`, `title`.
 - Dialog: `ok`, `cancel`.
 - Notice: `notice` (the number of the notice, from 1).
+- Debug menu: `debugChip` (the chip in the corner of the window, on each screen). While the menu is open, a step gets only the controls of the menu and of its current tab:
+  - `tab` (`'run'`, `'relics'`, `'enemy'`, or `'upgrades'`), `close`.
+  - Run: `useSeed`, `seedField`, `setSeed`, `randomSeed`, `newRun`, and the steppers `floor` and `gold` (the side: `'-'` or `'+'`).
+  - Relics: `owned`, `offered`, `trait`, and `name` (a relic id), `offerAll`, `offerNone`.
+  - Enemy: the steppers `level`, `budget`, and `traits` (the floor and the side: `{ 3, '+' }`), the steppers `cap`, `weight`, and `minFloor` (the kind and the side: `{ 'q', '-' }`), `defaults`.
+  - Upgrades: the steppers `crowns` (`'-'` or `'+'`) and `upgrade` (an upgrade id and the side: `{ 'pawn', '+' }`).
 
 `test/run.sh [folder]` runs all the scripts of `test/`. It writes the screenshots, the dumps, and the log to the folder (default `/tmp/chrogue-love4/run`). Each run opens a window for some seconds. With `CHROGUE_NO_AUTH=1`, each run has `--no-auth`.
 
@@ -137,6 +159,7 @@ The run fails if a game stops with an error, if the core refused a command that 
 - `test/fps.lua`: the frames per second on the camp and the battle, in each effects mode.
 - `test/input.lua`: a double click on Continue and on Buy, two presses of `Enter` after a draw, and a release on a new screen. The shop cards keep their slots after a purchase.
 - `test/battle.lua`: a battle that starts with no legal move, Give up during the pause before the enemy move, refusals of `enemy_move`, and a promotion to a knight.
+- `test/debug.lua`: the debug menu. The chip and `F2`, two new runs with one seed, Owned and Offered, a third trait and an 11th relic that the core refuses, a budget stepper, and an upgrade stepper.
 - `test/saves.lua`: the notices of `save_failed` (a save folder that cannot take a file) and of `save_problem`.
 - `test/icons.lua`: the SVG path reader of `icons.lua`.
 - `test/saved-a.lua`, `test/saved-b.lua`: with `--embed`, a game starts a run and quits, and a second game on the same save folder continues the run.
@@ -156,6 +179,7 @@ With `CHROGUE_EFFECTS=off`, `flow.lua` and `showcase.lua` start with the effects
 | `title.lua`, `upgrades.lua`, `battle.lua`, `camp.lua`, `over.lua` | One module for each screen of the view |
 | `board.lua`, `plaques.lua`, `fan.lua`, `result.lua` | The areas of the battle. `fan.lua` is also in the camp |
 | `ui.lua` | The shared elements: keys, amounts, medals, cards, the paper tip, pips, tallies, and the dialog |
+| `debugmenu.lua` | The debug menu: a development tool above the layout |
 | `shaders.lua` | The background, the foil, and the post pass |
 | `gfx.lua`, `icons.lua`, `theme.lua` | Surfaces, text, pieces, icons, colors, and typefaces |
 | `script.lua` | The test hook |

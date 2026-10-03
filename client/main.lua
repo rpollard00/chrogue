@@ -3,6 +3,7 @@
   of each response, plays its events as motion, and sends the commands of the player.
   This file has the window, the frame, the command line, the screen manager, and the input. README.md tells how to run it.
 ]]
+local debugmenu = require('debugmenu')
 local gfx = require('gfx')
 local json = require('json')
 local layout = require('layout')
@@ -28,6 +29,8 @@ local app = {
   screen = nil, name = nil, view = nil,
   -- The question of the dialog that is open, or nil.
   dialog = nil,
+  -- The debug menu (debugmenu.lua). It is above the screen and the dialog.
+  debugMenu = nil,
   -- `pressed` is the control under the press of the button, and `pressedOn` the screen object of the press.
   pointer = { x = nil, y = nil, hover = nil, pressed = nil, pressedOn = nil },
   options = {},
@@ -39,8 +42,12 @@ local app = {
   frames = { count = 0, worstMs = 0, started = 0 },
 }
 
+app.debugMenu = debugmenu.new(app)
+
 local runner
 local originX, originY = 0, 0
+-- The pointer for a screen that is below the debug menu: no point and no control.
+local NO_POINTER = {}
 local TRANSITION = 0.2
 local NOTICE_TIME = 14
 
@@ -58,14 +65,18 @@ function app.waiting() return net.busy() end
 
 function app.confirm(question, ok) app.dialog = { question = question, ok = ok } end
 
--- Opens the screen of a view. A press of the button on the screen before does not become a click on this screen.
+-- True for the name of a control of the debug menu, and for its chip.
+local function ofMenu(name) return name ~= nil and name:find(debugmenu.PREFIX, 1, true) == 1 end
+
+-- Opens the screen of a view. A press of the button on the screen before does not become a click on this screen. A
+-- press on a control of the debug menu stays, because the menu is not a part of the screen.
 local function enter(view, events)
   local module = assert(SCREENS[view.screen], 'The core sent a screen that the client does not know: ' .. tostring(view.screen))
   app.screen = module.new(app, view, events)
   app.name = view.screen
   app.dialog = nil
   app.enteredAt = love.timer.getTime()
-  app.pointer.pressed, app.pointer.pressedOn = nil, nil
+  if not ofMenu(app.pointer.pressed) then app.pointer.pressed, app.pointer.pressedOn = nil, nil end
 end
 
 -- False during the fade of a new screen. A second click or key of the player is then for the screen before, thus the
@@ -100,6 +111,7 @@ net.onConnect = function()
   -- After each connection, the client asks for the view. The core keeps the session, thus the same screen continues.
   net.sendFirst({ cmd = 'view' })
   app.resync = true
+  app.debugMenu:connected()
 end
 
 net.onResponse = function(response, request)
@@ -109,6 +121,8 @@ net.onResponse = function(response, request)
   if not view then return end
   local events = response.events or {}
   app.events(events)
+  -- The debug menu keeps the debug state of each response that has it.
+  local fromMenu = app.debugMenu:response(response, request)
   if not response.ok then
     local err = response.error or {}
     local cmd = request and request.cmd or '?'
@@ -120,9 +134,13 @@ net.onResponse = function(response, request)
       io.stderr:write(('The core refused %s: %s (%s)\n'):format(cmd, tostring(err.code), tostring(err.message)))
       if runner then error(('The core refused %s (%s), and the script did not expect it'):format(cmd, tostring(err.code))) end
     end
+    -- A refusal of a request of the debug menu changes nothing, and the screen did not ask for it.
+    if fromMenu then return end
     if app.screen and app.name == view.screen then app.screen:refused(view, request) else enter(view, {}) end
     return
   end
+  -- These two commands change nothing. A screen must not act a second time on the same view.
+  if request and (request.cmd == 'hello' or request.cmd == 'debug_state') then return end
   if request and request.cmd == 'view' and app.resync then
     app.resync = false
     enter(view, events)
@@ -161,13 +179,37 @@ local function noticeRects()
   return list
 end
 
--- The control at a point of the stage. A notice is above all. The dialog is above the screen.
+--[[
+  The chip of the debug menu: a key in the corner of the window, next to the name of the effects mode. Its position and
+  its size are in pixels of the window. Its place is after the longest name of an effects mode, thus it does not move.
+]]
+local function chip()
+  local font = theme.font('body', 13)
+  local widest = 0
+  for _, mode in ipairs(shaders.MODES) do widest = math.max(widest, font:getWidth(mode.label .. '  (F1)')) end
+  return 6 + widest + 14 + 6, lg.getHeight() - 26, font:getWidth('Debug (F2)') + 14, 20
+end
+
+local function onChip(x, y)
+  if not app.options.debug or not x then return false end
+  local cx, cy, cw, ch = chip()
+  return x >= cx and x < cx + cw and y >= cy and y < cy + ch
+end
+
+-- The debug menu opens only when the core has debug commands and the game has a screen.
+local function toggleMenu()
+  if app.options.debug and net.state == 'connected' and app.screen then app.debugMenu:toggle() end
+end
+
+-- The control at a point of the stage. A notice is above all. The debug menu is above the dialog, and the dialog is
+-- above the screen.
 function app.hit(x, y)
   if not x then return nil end
   for i, r in ipairs(noticeRects()) do
     if layout.contains(r, x, y) then return 'notice' .. i end
   end
   if net.state ~= 'connected' or not app.screen then return nil end
+  if app.debugMenu.isOpen then return app.debugMenu:hit(x, y) end
   if app.dialog then
     local d = ui.dialogLayout(layout.stage)
     if layout.contains(d.ok, x, y) then return 'ok' end
@@ -180,6 +222,15 @@ end
 -- The rectangle of a named control, for the test script.
 function app.control(name, arg)
   if name == 'notice' then return assert(noticeRects()[arg or 1], 'No notice ' .. tostring(arg)) end
+  if name == 'debugChip' then
+    local x, y, w, h = chip()
+    local left, top = toStage(x, y)
+    local right, bottom = toStage(x + w, y + h)
+    return { x = left, y = top, w = right - left, h = bottom - top }
+  end
+  if app.debugMenu.isOpen then
+    return assert(app.debugMenu:control(name, arg), ('The debug menu has no control %s %s'):format(tostring(name), tostring(arg)))
+  end
   if app.dialog then
     local d = ui.dialogLayout(layout.stage)
     return assert(d[name], 'The dialog has no control ' .. tostring(name))
@@ -193,6 +244,8 @@ local function activate(name)
     table.remove(app.notices, tonumber(name:sub(7)))
     return
   end
+  if name == debugmenu.CHIP then return toggleMenu() end
+  if ofMenu(name) then return app.debugMenu:activate(name) end
   if app.dialog then
     local dialog = app.dialog
     app.dialog = nil
@@ -273,8 +326,10 @@ function love.update(dt)
   local frames = app.frames
   frames.count = frames.count + 1
   if frames.count > 5 then frames.worstMs = math.max(frames.worstMs, love.timer.getDelta() * 1000) end
-  -- A long frame (a screenshot, a move of the window) does not skip the motion.
-  if app.screen then app.screen:update(math.min(dt, 0.05), app.pointer) end
+  -- A long frame (a screenshot, a move of the window) does not skip the motion. The screen below the debug menu
+  -- continues, with no pointer.
+  if app.screen then app.screen:update(math.min(dt, 0.05), app.debugMenu.isOpen and NO_POINTER or app.pointer) end
+  app.debugMenu:update(dt)
   local t = love.timer.getTime()
   for i = #app.notices, 1, -1 do
     if t - app.notices[i].at > NOTICE_TIME then table.remove(app.notices, i) end
@@ -288,30 +343,39 @@ local function moved(x, y)
   p.hover = app.hit(x, y)
 end
 
-function love.mousemoved(x, y)
+-- The pointer is at a point of the window. A point on the chip of the debug menu is not a point of the stage.
+local function movedTo(x, y)
+  if onChip(x, y) then
+    local p = app.pointer
+    p.x, p.y, p.hover = nil, nil, debugmenu.CHIP
+    return
+  end
   moved(toStage(x, y))
+end
+
+function love.mousemoved(x, y)
+  movedTo(x, y)
 end
 
 function love.mousepressed(x, y, button)
   if button ~= 1 then return end
-  moved(toStage(x, y))
+  movedTo(x, y)
   local p = app.pointer
-  -- A notice takes a click at each time. The screen takes a click only after its fade.
-  local ready = app.inputReady() or (p.hover and p.hover:find('^notice'))
+  -- A notice and the debug menu take a click at each time. The screen takes a click only after its fade.
+  local ready = app.inputReady() or ofMenu(p.hover) or (p.hover and p.hover:find('^notice'))
   p.pressed, p.pressedOn = ready and p.hover or nil, app.screen
 end
 
--- A click is a press and a release on the same control of the same screen.
+-- A click is a press and a release on the same control of the same screen. The debug menu stays when the screen changes.
 function love.mousereleased(x, y, button)
   if button ~= 1 then return end
   local p = app.pointer
   local pressed, on = p.pressed, p.pressedOn
   p.pressed, p.pressedOn = nil, nil
-  local sx, sy = toStage(x, y)
-  moved(sx, sy)
-  if pressed and pressed == p.hover and on == app.screen then activate(pressed) end
+  movedTo(x, y)
+  if pressed and pressed == p.hover and (on == app.screen or ofMenu(pressed)) then activate(pressed) end
   -- The click can change the controls, thus the control below the pointer can be a different one.
-  moved(sx, sy)
+  movedTo(x, y)
 end
 
 function love.mousefocus(focus)
@@ -321,6 +385,12 @@ end
 function love.keypressed(key)
   if key == 'f1' then
     shaders.cycle()
+    return
+  end
+  if key == 'f2' then return toggleMenu() end
+  -- While the debug menu is open, the dialog and the screen get no key.
+  if app.debugMenu.isOpen then
+    app.debugMenu:key(key)
     return
   end
   if not app.inputReady() then return end
@@ -357,13 +427,15 @@ function love.draw()
   lg.translate(originX, originY)
   lg.scale(gfx.u)
   if app.screen then
+    local open = app.debugMenu.isOpen
     local pointer = app.pointer
-    if app.dialog then pointer = { x = pointer.x, y = pointer.y } end
+    if open then pointer = NO_POINTER elseif app.dialog then pointer = { x = pointer.x, y = pointer.y } end
     app.screen:draw(pointer)
     -- A new screen comes into view from the background.
     local t = (love.timer.getTime() - app.enteredAt) / TRANSITION
     if t < 1 then gfx.rect(-1, -1, layout.stage.w + 2, layout.stage.h + 2, 0, C.bg, 1 - gfx.ease(t)) end
-    if app.dialog then ui.dialog(layout.stage, app.dialog.question, app.pointer) end
+    if app.dialog then ui.dialog(layout.stage, app.dialog.question, open and NO_POINTER or app.pointer) end
+    if open then app.debugMenu:draw(app.pointer) end
   end
   connection()
   local t = love.timer.getTime()
@@ -380,6 +452,15 @@ function love.draw()
   lg.rectangle('fill', 6, lg.getHeight() - 26, font:getWidth(label) + 14, 20, 4, 4)
   lg.setColor(0.91, 0.90, 0.88, 0.9)
   lg.print(label, font, 13, lg.getHeight() - 24)
+  -- The chip of the debug menu. Its text is amber while the menu is open.
+  if app.options.debug then
+    local x, y, w, h = chip()
+    local ink = app.debugMenu.isOpen and C.accent or C.text
+    lg.setColor(0, 0, 0, app.pointer.hover == debugmenu.CHIP and 0.8 or 0.55)
+    lg.rectangle('fill', x, y, w, h, 4, 4)
+    lg.setColor(ink[1], ink[2], ink[3], 0.9)
+    lg.print('Debug (F2)', font, x + 7, y + 2)
+  end
   -- The time of the work of the frame (update and draw), with no wait for the screen.
   local frames = app.frames
   if frames.workStart and frames.count > 5 then
@@ -420,6 +501,7 @@ function app.dump()
     view = app.view,
     client = app.screen and app.screen:state() or json.null,
     dialog = app.dialog and app.dialog.question or json.null,
+    debug = app.debugMenu:state(),
     notices = (function()
       local list = {}
       for i, n in ipairs(app.notices) do list[i] = { kind = n.kind, title = n.title, lines = n.lines } end
