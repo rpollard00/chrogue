@@ -1,2 +1,2 @@
 # The patches have the line ends of the files that they change.
-ports/web/*.patch -text
+web/*.patch -text

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Builds the web build (ports/web) and its image on this workstation, and replaces the chrogue container on the
-# Unraid server.
+# Builds the web build and its image on this workstation, and replaces the chrogue container on the Unraid server.
 # The script sends the image through SSH. It does not use a registry.
 set -euo pipefail
 
@@ -16,8 +15,8 @@ remote() { ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=1
 
 # The tests of the core: the rules of the game that the page has.
 (cd core && cargo test --release)
-ports/web/build.sh
-docker build --platform linux/amd64 --label "$LABEL" -t "$image" .
+web/build.sh
+docker build --platform linux/amd64 --label "$LABEL" -t "$image" web
 
 # A container with this name that this script did not make stops the deployment.
 existing=$(remote "docker ps -a --filter name=^$NAME\$ --format '{{.Label \"io.chrogue.app\"}}|{{.ID}}'")

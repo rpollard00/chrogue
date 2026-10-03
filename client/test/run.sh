@@ -1,7 +1,7 @@
 #!/bin/sh
 # Runs the scripts of test/ against the real game and a real core. Each run opens a window for some seconds.
 # Usage: test/run.sh [output folder]. The screenshots, the dumps and the logs go to the output folder.
-# Build the core first: cargo build --release in ../../core.
+# Build the core first: cargo build --release in ../core.
 # CHROGUE_NO_AUTH=1 adds --no-auth to each run, for a core that does not check the token of a connection.
 #
 # The run fails if a game stops with an error, if the core refused a command that a script did not expect (the client
@@ -10,7 +10,7 @@ set -u
 here=$(cd "$(dirname "$0")/.." && pwd)
 love=${LOVE:-$HOME/.cache/chrogue-tools/love.AppImage}
 out=${1:-/tmp/chrogue-love4/run}
-core=${CHROGUE_CORE:-$here/../../core/target/release/chrogue-core}
+core=${CHROGUE_CORE:-$here/../core/target/release/chrogue-core}
 auth=
 if [ "${CHROGUE_NO_AUTH:-}" = 1 ]; then auth=--no-auth; fi
 mkdir -p "$out"

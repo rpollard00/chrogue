@@ -1,6 +1,6 @@
 # Design
 
-The visual and interaction intent of Chrogue. Raw values are in the client: `ports/love/theme.lua` has the colors and the typefaces, and `ports/love/layout.lua` has the areas. This file records what they mean and how to select among them.
+The visual and interaction intent of Chrogue. Raw values are in the client: `client/theme.lua` has the colors and the typefaces, and `client/layout.lua` has the areas. This file records what they mean and how to select among them.
 
 Status words: **provisional** means the user approved the direction and the rendered game is under validation. **Established** means the user accepted the rendered result.
 
@@ -87,15 +87,15 @@ The client does not obey these rules at this time. It has only the wide layout, 
 
 ## Color
 
-Each color has a name in `ports/love/theme.lua`. A module uses the name, not a raw value, so that a second theme can replace the colors. The game has one theme, dark. Themes are a possible later task.
+Each color has a name in `client/theme.lua`. A module uses the name, not a raw value, so that a second theme can replace the colors. The game has one theme, dark. Themes are a possible later task.
 
 ## Sources
 
-- Colors and typefaces: `ports/love/theme.lua`
-- Areas of each screen: `ports/love/layout.lua`
-- Typeface files and their licenses: `ports/love/fonts/`. The display typeface is Fira Sans Condensed ExtraBold.
-- Shared elements: `ports/love/ui.lua`, `ports/love/gfx.lua`, `ports/love/icons.lua`
-- Rendered reference surfaces: the client with the script `test/showcase.lua`, which shows the largest content of each screen (`ports/love/README.md`, "Test scripts")
+- Colors and typefaces: `client/theme.lua`
+- Areas of each screen: `client/layout.lua`
+- Typeface files and their licenses: `client/fonts/`. The display typeface is Fira Sans Condensed ExtraBold.
+- Shared elements: `client/ui.lua`, `client/gfx.lua`, `client/icons.lua`
+- Rendered reference surfaces: the client with the script `test/showcase.lua`, which shows the largest content of the battle, the camp, and the end of a run (`client/README.md`, "Test scripts")
 
 ## Not yet covered
 

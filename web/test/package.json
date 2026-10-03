@@ -1,9 +1,9 @@
 {
-  "name": "chrogue",
+  "name": "chrogue-web-test",
   "private": true,
   "type": "module",
   "scripts": {
-    "deploy:unraid": "scripts/deploy-unraid"
+    "check": "tsc"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",

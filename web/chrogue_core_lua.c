@@ -1,7 +1,7 @@
 /*
   The Lua module chrogue_core of the WebAssembly build: the C interface of the core (chrogue_core.h) for Lua 5.1.
   The WebAssembly build of LÖVE has no LuaJIT, thus the game cannot load the core with the FFI. build.sh links this file
-  and the library of the core into LÖVE. ports/love/core.lua uses the module.
+  and the library of the core into LÖVE. client/core.lua uses the module.
 
   chrogue_core.open(options) gives a core, or nil and the reason. chrogue_core.command(core, line) gives the response
   line. chrogue_core.close(core) closes the core.

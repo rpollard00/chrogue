@@ -296,7 +296,7 @@ The same arguments give the same output.
 
 The crate `game/` (`chrogue-game`) has the roguelite layer: runs, relics, upgrades, offers, floors, battles, and saved data. The crate `server/` has the binary `chrogue-core`. A client, a test, or an agent plays the full game through one JSON protocol with no interface. `PROTOCOL.md` documents the protocol.
 
-The crate `embed/` (`chrogue-embed`) gives the same protocol as a C interface. A client loads this library into its own process and needs no socket. The WebAssembly build of the game (`ports/web`) links it into LÖVE.
+The crate `embed/` (`chrogue-embed`) gives the same protocol as a C interface. A client loads this library into its own process and needs no socket. The WebAssembly build of the game (`web`) links it into LÖVE.
 
 ### Commands
 
@@ -305,7 +305,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
 - Server on stdio: `cargo run --release --bin chrogue-core -- --stdio --no-save`
 - Server on TCP: `CHROGUE_TOKEN=$(openssl rand -hex 32) cargo run --release --bin chrogue-core -- --listen 127.0.0.1:0 --save-dir /path/to/saves`. The first line of a client is `{"auth":"<the token>"}` (see "Authentication" in `PROTOCOL.md`). Exit codes: 2 for a usage error or a bad token, 3 if another core holds the lock of the save directory.
 - Library for a client: `cargo build --release -p chrogue-embed`. The result is `target/release/libchrogue_core.so` (`.dylib` on macOS, `chrogue_core.dll` on Windows) and the static library `libchrogue_core.a`.
-- Library for the WebAssembly build: `cargo build --release -p chrogue-embed --target wasm32-unknown-emscripten`. `ports/web/build.sh` runs this command.
+- Library for the WebAssembly build: `cargo build --release -p chrogue-embed --target wasm32-unknown-emscripten`. `web/build.sh` runs this command.
 - Tests of the game layer and of the server: `cargo test --release -p chrogue-game -p chrogue-server`. With `-- --nocapture`, the fuzz test prints the error codes and the TCP test prints the round-trip times.
 
 ### Structure

@@ -2,16 +2,16 @@
 
 This folder is a client of Chrogue for LÖVE 11.5. It has all the screens of a run: the title, the upgrades, the battle, the camp, and the end of a run.
 
-The client has no game rules. The Rust core in `../../core` has them. The client starts the core, sends commands to it, draws the `view` of each response, and plays the `events` of each response as motion. `../../core/PROTOCOL.md` is the contract between the two.
+The client has no game rules. The Rust core in `../core` has them. The client starts the core, sends commands to it, draws the `view` of each response, and plays the `events` of each response as motion. `../core/PROTOCOL.md` is the contract between the two.
 
 The client has only the wide layout. The phone layout is a later task.
 
 ## Build and run
 
-1. Build the core. In `../../core`, run `cargo build --release`.
+1. Build the core. In `../core`, run `cargo build --release`.
 2. In this folder, run `love .`. LÖVE 11.5 is necessary. A copy is at `~/.cache/chrogue-tools/love.AppImage`.
 
-The client looks for the core at `../../core/target/release/chrogue-core`, from this folder. To use a different binary, set `CHROGUE_CORE` to its path. If the client does not find the core, the window shows the path that it tried.
+The client looks for the core at `../core/target/release/chrogue-core`, from this folder. To use a different binary, set `CHROGUE_CORE` to its path. If the client does not find the core, the window shows the path that it tried.
 
 The core keeps the saved data in the save folder of LÖVE (`~/.local/share/love/chrogue-love` on Linux): `meta.json` and `run.json`.
 
@@ -55,12 +55,12 @@ The client sends one request at a time. The other requests wait in a queue. Afte
 
 ### The core in the process of the game
 
-With `--embed`, the client loads the library of the core (`../../core/embed`) with the FFI of LuaJIT, and starts no program. In a browser (`../web`), the client always uses this mode, and the library is a part of the build.
+With `--embed`, the client loads the library of the core (`../core/embed`) with the FFI of LuaJIT, and starts no program. In a browser (`../web`), the client always uses this mode, and the library is a part of the build.
 
-1. Build the library. In `../../core`, run `cargo build --release`.
+1. Build the library. In `../core`, run `cargo build --release`.
 2. In this folder, run `love . --embed`.
 
-The client looks for the library at `../../core/target/release/libchrogue_core.so`, from this folder (`libchrogue_core.dylib` on macOS, `chrogue_core.dll` on Windows). To use a different file, set `CHROGUE_CORE_LIB` to its path.
+The client looks for the library at `../core/target/release/libchrogue_core.so`, from this folder (`libchrogue_core.dylib` on macOS, `chrogue_core.dll` on Windows). To use a different file, set `CHROGUE_CORE_LIB` to its path.
 
 - `--seed`, `--debug`, `--no-save`, and `--save-dir` have the same function. `--connect`, `--keep-alive`, and `--no-auth` have no function.
 - The client sends one request in each frame, and the core answers in the call. No token, no time limit, and no reconnection are necessary.

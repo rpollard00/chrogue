@@ -90,12 +90,12 @@ local function isCore(pid)
   return comm ~= '' and basename(comm) == name
 end
 
--- The core binary: CHROGUE_CORE, else ../../core/target/release/chrogue-core from the game folder.
+-- The core binary: CHROGUE_CORE, else ../core/target/release/chrogue-core from the game folder.
 function net.findCore()
   local env = os.getenv('CHROGUE_CORE')
   if env and env ~= '' then return env, exists(env) end
   local source = love.filesystem.getSource():gsub('/+$', '')
-  local path = source .. '/../../core/target/release/chrogue-core'
+  local path = source .. '/../core/target/release/chrogue-core'
   return path, exists(path)
 end
 

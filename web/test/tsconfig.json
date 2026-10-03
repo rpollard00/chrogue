@@ -13,5 +13,5 @@
     "noEmit": true,
     "types": ["bun"]
   },
-  "include": ["ports/web/test"]
+  "include": ["."]
 }

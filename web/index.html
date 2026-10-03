@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Chrogue</title>
 <style>
-  /* The page is only the window of the game. The game sets its own layout in the canvas (ports/love/layout.lua). */
+  /* The page is only the window of the game. The game sets its own layout in the canvas (client/layout.lua). */
   html, body { margin: 0; height: 100%; overflow: hidden; background: #15171c; }
   canvas { display: block; width: 100vw; height: 100vh; outline: none; }
   #status { position: fixed; inset: 0; display: grid; place-items: center; padding: 2rem; text-align: center;
@@ -20,7 +20,7 @@
      not use the module of an old build with the script of a new one. -->
 <script src="love.js?v=@BUILD@"></script>
 <script>
-  // These options of the game come from the address: ?seed=7&debug becomes --seed 7 --debug (ports/love/README.md).
+  // These options of the game come from the address: ?seed=7&debug becomes --seed 7 --debug (client/README.md).
   // The other options are for a window or for a socket, and a page has none.
   const OPTIONS = ['seed', 'debug', 'no-save', 'script'];
   const SAVE_FOLDER = '/home/web_user/savedir';

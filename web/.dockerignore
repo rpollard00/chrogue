@@ -1,0 +1,5 @@
+**
+!Dockerfile
+!httpd.conf
+!dist/
+!dist/**

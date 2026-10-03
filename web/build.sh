@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Builds the game for a browser: LÖVE and the core as one WebAssembly module, the game as game.love, and the page.
-# Usage: ports/web/build.sh [game]. The files go to ports/web/dist. README.md has the tools and the steps.
+# Usage: web/build.sh [game]. The files go to web/dist. README.md has the tools and the steps.
 #   (no argument)  all the steps. The first build of LÖVE takes some minutes; a later build makes only what changed.
-#   game           only game.love and the page, for a change of ports/love with no change of the core.
+#   game           only game.love and the page, for a change of client/ with no change of the core.
 # The script is for bash: emsdk_env.sh of the Emscripten SDK finds its folder only in bash, zsh, or ksh.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
-root=$(cd "$here/../.." && pwd)
+root=$(cd "$here/.." && pwd)
 tools=${CHROGUE_TOOLS:-${XDG_CACHE_HOME:-$HOME/.cache}/chrogue-tools}
 work=${CHROGUE_WEB_WORK:-$tools/web}
 emsdk=${EMSDK:-$tools/emsdk}
@@ -23,7 +23,7 @@ love_commit=87189e63432ac07c1ee88a78e2e09e8e23a0d414
 
 need() {
   for tool in "$@"; do
-    command -v "$tool" > /dev/null 2>&1 || { echo "build.sh needs $tool. See ports/web/README.md." >&2; exit 1; }
+    command -v "$tool" > /dev/null 2>&1 || { echo "build.sh needs $tool. See web/README.md." >&2; exit 1; }
   done
 }
 
@@ -41,7 +41,7 @@ checkout() {
   cp "$patch" "$stamp"
 }
 
-# game.love: the files of ports/love. With CHROGUE_WEB_TESTS=1, the test scripts are also in the file.
+# game.love: the files of client/. With CHROGUE_WEB_TESTS=1, the test scripts are also in the file.
 # The page: index.html with a stamp of the three files in the addresses that it loads.
 pack() {
   need bsdtar sha256sum
@@ -53,7 +53,7 @@ pack() {
   local tests=(--exclude=test)
   if [ "${CHROGUE_WEB_TESTS:-}" = 1 ]; then tests=(); fi
   # The names in the file have no "./" before them: LÖVE looks for main.lua.
-  (cd "$root/ports/love" && bsdtar -c --format zip -f "$dist/game.love" --exclude=README.md "${tests[@]}" -- *)
+  (cd "$root/client" && bsdtar -c --format zip -f "$dist/game.love" --exclude=README.md "${tests[@]}" -- *)
   local build
   build=$(cat "$dist/love.js" "$dist/love.wasm" "$dist/game.love" | sha256sum | cut -c 1-12)
   sed "s/@BUILD@/$build/g" "$here/index.html" > "$dist/index.html"
@@ -64,7 +64,7 @@ pack() {
 engine() {
   need git cargo cmake ninja
   if [ ! -f "$emsdk/emsdk_env.sh" ]; then
-    echo "build.sh did not find the Emscripten SDK at $emsdk. Set EMSDK. See ports/web/README.md." >&2
+    echo "build.sh did not find the Emscripten SDK at $emsdk. Set EMSDK. See web/README.md." >&2
     exit 1
   fi
   # shellcheck disable=SC1091

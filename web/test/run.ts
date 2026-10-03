@@ -1,9 +1,9 @@
 /*
-  Runs the test scripts of the client (ports/love/test) in the web build, in a Chromium with no window.
-  Usage: bun ports/web/test/run.ts [run ...]. Build the game first: ports/web/build.sh.
+  Runs the test scripts of the client (client/test) in the web build, in a Chromium with no window.
+  Usage: bun web/test/run.ts [run ...]. Build the game first: web/build.sh.
   With no argument, the test does each run of RUNS. An argument is the name of a run, for example flow.
 
-  The test makes a copy of ports/web/dist with the test scripts in game.love, serves it on a loopback port, and opens
+  The test makes a copy of web/dist with the test scripts in game.love, serves it on a loopback port, and opens
   the page with ?script=test/NAME.lua. It reads the console of the page: a script ends with the line
   "The script is at its end.", and an error of the game is a line with "Error". The screenshots and the dumps of the
   scripts go to CHROGUE_OUT (default /tmp/chrogue-web/run), in one folder for each run.
@@ -33,7 +33,7 @@ const HEIGHT = 900;
 
 type Run = {
   name: string;
-  // The options of the game, as the address gives them (ports/web/index.html).
+  // The options of the game, as the address gives them (web/index.html).
   query: string;
   // The pixels of the screen for each CSS pixel.
   scale: number;
@@ -209,7 +209,7 @@ async function run(page: Page, address: string, test: Run): Promise<boolean> {
         const line = event.params.args.map((arg) => String(arg.value ?? arg.description ?? '')).join(' ');
         lines.push(line);
         if (line === END) ended('end');
-        // The game writes this line when a script stops with an error (ports/love/main.lua).
+        // The game writes this line when a script stops with an error (client/main.lua).
         if (line.startsWith('Error:')) ended('error');
         break;
       }
@@ -228,7 +228,7 @@ async function run(page: Page, address: string, test: Run): Promise<boolean> {
   await Bun.sleep(AFTER_END_MS);
   page.onEvent = () => {};
 
-  // The run fails as a run of ports/love/test/run.sh does: an error of the game, or a refusal that the script did not
+  // The run fails as a run of client/test/run.sh does: an error of the game, or a refusal that the script did not
   // expect. A line that starts with "expected" is a refusal that the script expected.
   const bad = lines.filter((line) => /error|traceback|refused/i.test(line) && !line.startsWith('expected'));
   const ok = reason === 'end' && bad.length === 0;
@@ -262,10 +262,10 @@ function selectRuns(names: string[]): Run[] {
 async function main(): Promise<number> {
   const selected = selectRuns(Bun.argv.slice(2));
   for (const file of ['index.html', 'love.js', 'love.wasm']) {
-    if (!(await Bun.file(join(dist, file)).exists())) throw new Error(`${join(dist, file)} is missing. Run ports/web/build.sh first.`);
+    if (!(await Bun.file(join(dist, file)).exists())) throw new Error(`${join(dist, file)} is missing. Run web/build.sh first.`);
   }
 
-  // The copy of the game with the test scripts. ports/web/dist stays the game for the players.
+  // The copy of the game with the test scripts. web/dist stays the game for the players.
   const site = mkdtempSync(join(tmpdir(), 'chrogue-web-test-'));
   started.push(() => rmSync(site, { recursive: true, force: true }));
   for (const file of ['love.js', 'love.wasm']) await Bun.write(join(site, file), Bun.file(join(dist, file)));

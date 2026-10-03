@@ -1,5 +1,0 @@
-**
-!Dockerfile
-!httpd.conf
-!ports/web/dist/
-!ports/web/dist/**

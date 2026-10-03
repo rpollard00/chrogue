@@ -4,7 +4,7 @@
   core.open(options) gives a core, or nil and the reason. The options are those of chrogue_open: save_dir, seed, debug.
   A core has core:command(line), which gives the response line of a request line (core/PROTOCOL.md), and core:close().
 
-  The WebAssembly build has no LuaJIT. The core is linked into it as the Lua module chrogue_core (ports/web). The
+  The WebAssembly build has no LuaJIT. The core is linked into it as the Lua module chrogue_core (web). The
   desktop game loads the library of the core with the FFI of LuaJIT.
 ]]
 local json = require('json')
@@ -13,12 +13,12 @@ local core = {}
 
 local NAMES = { Windows = 'chrogue_core.dll', ['OS X'] = 'libchrogue_core.dylib' }
 
--- The library of the core: CHROGUE_CORE_LIB, else ../../core/target/release from the game folder.
+-- The library of the core: CHROGUE_CORE_LIB, else ../core/target/release from the game folder.
 function core.findLibrary()
   local env = os.getenv('CHROGUE_CORE_LIB')
   if env and env ~= '' then return env end
   local source = love.filesystem.getSource():gsub('/+$', '')
-  return source .. '/../../core/target/release/' .. (NAMES[love.system.getOS()] or 'libchrogue_core.so')
+  return source .. '/../core/target/release/' .. (NAMES[love.system.getOS()] or 'libchrogue_core.so')
 end
 
 -- The functions open, command and close of the core, from the linked module or from the library.

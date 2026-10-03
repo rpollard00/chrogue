@@ -11,7 +11,7 @@ Decision source: the user gave these decisions on 2 October 2026, unless an entr
 ### The game is a Rust core and a LÖVE client
 
 - The Rust core in `core/` has the chess engine, the enemy AI, the runs, and the saved data.
-- The LÖVE client in `ports/love/` draws the screens. It has no game rules.
+- The LÖVE client in `client/` draws the screens. It has no game rules.
 
 Reasons:
 
@@ -47,7 +47,7 @@ Decision source: the user decided the deprecation on 2 October 2026, and the rem
 
 ### The game also goes to the web through WebAssembly
 
-The web version is the full LÖVE game with the core in it, as one WebAssembly build (`ports/web`). Thus the game stays on the web, and the web has the same game as the desktop.
+The web version is the full LÖVE game with the core in it, as one WebAssembly build (`web`). Thus the game stays on the web, and the web has the same game as the desktop.
 
 The user wanted this build before the removal of the TypeScript game. It is the web target of the game.
 
@@ -67,7 +67,7 @@ The game saves the result of a battle with the move that ends the battle. If the
 
 ### The suite of the client runs only on request
 
-The suite of the client (`ports/love/test/run.sh`) runs only when the user tells.
+The suite of the client (`client/test/run.sh`) runs only when the user tells.
 
 Reason: it takes some minutes, opens many windows, and loads the workstation for that time.
 

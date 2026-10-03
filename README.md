@@ -5,9 +5,9 @@ Chrogue is a roguelite chess game. Each battle is on a standard 8x8 chess board.
 The game has two parts:
 
 - `core/`: The Rust core. It has the chess engine, the enemy AI, the runs, and the saved data.
-- `ports/love/`: The LÖVE client. It draws the screens and sends commands to the core.
+- `client/`: The LÖVE client. It draws the screens and sends commands to the core.
 
-`ports/web/` builds these two parts for a browser, as one WebAssembly module. This build is the web version of the game.
+`web/` builds these two parts for a browser, as one WebAssembly module. This build is the web version of the game.
 
 `DECISIONS.md` records the direction of the project and the reason for each decision.
 
@@ -16,22 +16,22 @@ The game has two parts:
 Rust and LÖVE 11.5 are necessary.
 
 1. In `core/`, run `cargo build --release`.
-2. In `ports/love/`, run `love .`.
+2. In `client/`, run `love .`.
 
-The client starts the core. `ports/love/README.md` has the options of the command line, the keys, and the location of the saved data.
+The client starts the core. `client/README.md` has the options of the command line, the keys, and the location of the saved data.
 
 ### In a browser
 
-The Emscripten SDK and the Rust target `wasm32-unknown-emscripten` are also necessary. `ports/web/README.md` has the steps to install them.
+The Emscripten SDK and the Rust target `wasm32-unknown-emscripten` are also necessary. `web/README.md` has the steps to install them.
 
-1. Run `ports/web/build.sh`.
-2. Give the folder `ports/web/dist` to a static server, and open its page.
+1. Run `web/build.sh`.
+2. Give the folder `web/dist` to a static server, and open its page.
 
 ## Run the tests
 
 - Core: In `core/`, run `cargo test --release`. `core/README.md` has the other commands: the lint, the speed of the engine, and the self-play matches of the AI.
-- Client: Build the core, then run `ports/love/test/run.sh`. Each test opens a window for some seconds, and the full suite takes some minutes.
-- Web build: Run `ports/web/build.sh`, then run `bun ports/web/test/run.ts`. The test runs scripts of the client in a Chromium with no window. It takes some minutes and uses the graphics card.
+- Client: Build the core, then run `client/test/run.sh`. Each test opens a window for some seconds, and the full suite takes some minutes.
+- Web build: Run `web/build.sh`, then run `bun web/test/run.ts`. The test runs scripts of the client in a Chromium with no window. It takes some minutes and uses the graphics card.
 
 ## Rules
 
@@ -55,8 +55,8 @@ Each run gives crowns. Crowns buy permanent upgrades on the title screen.
 - `core/server/`: The program `chrogue-core`. It gives the commands of `core/PROTOCOL.md` on stdio or on a local TCP socket.
 - `core/embed/`: The library `chrogue_core`. It gives the same commands as a C interface, for a client that loads the core into its own process.
 - `core/tools/`: Tools for the engine: a timer, self-play matches, and the move of the AI for one position.
-- `ports/love/`: The client. It has the screens, the motion, and the shaders. It has no game rules.
-- `ports/web/`: The build of the client and the core for a browser, its page, and its test.
+- `client/`: The client. It has the screens, the motion, and the shaders. It has no game rules.
+- `web/`: The build of the client and the core for a browser, its page, its test, and the files of the deployment.
 
 A relic changes a battle in two ways. Its movement rules are data that the engine and the AI read. Its effect runs at a fixed point of a battle.
 
@@ -78,10 +78,10 @@ Saved data keeps relic ids and upgrade ids. If you remove an id, the core remove
 
 The container on the Unraid server has the web build.
 
-Run `bun run deploy:unraid`. The command does these steps without a confirmation prompt:
+Run `web/deploy-unraid`. The script does these steps without a confirmation prompt:
 
-1. It runs the tests of the core (`cargo test --release`) and builds the web build (`ports/web/build.sh`) on this workstation. It does not run the test of the web build, which takes some minutes.
-2. It builds the image on this workstation. The image has BusyBox `httpd` and the files of `ports/web/dist`.
+1. It runs the tests of the core (`cargo test --release`) and builds the web build (`web/build.sh`) on this workstation. It does not run the test of the web build, which takes some minutes.
+2. It builds the image on this workstation. The image has BusyBox `httpd` and the files of `web/dist`.
 3. It sends the image to `root@media.media` through SSH. It does not use a registry.
 4. It replaces the container `chrogue` on network `br0` at `192.168.88.13`, port 80.
 5. It makes sure that the server gives the page and `love.wasm`.
@@ -93,4 +93,4 @@ The saved data of a player is in the browser of the player, for the address of t
 
 The web build has only the wide layout. The game has no layout for a phone at this time.
 
-`Dockerfile`, `httpd.conf`, and `scripts/deploy-unraid` are the files of the deployment.
+`web/Dockerfile`, `web/httpd.conf`, and `web/deploy-unraid` are the files of the deployment.

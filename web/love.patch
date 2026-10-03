@@ -16,7 +16,7 @@ index 242d749..e8686a6 100644
  set_target_properties(${LOVE_LIB_NAME} PROPERTIES C_VISIBILITY_PRESET hidden CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
  target_link_libraries(${LOVE_LIB_NAME} ${LOVE_LINK_LIBRARIES} ${LOVE_3P})
  
-+# Chrogue: the core of the game as the Lua module chrogue_core (ports/web in the Chrogue repository).
++# Chrogue: the core of the game as the Lua module chrogue_core (web in the Chrogue repository).
 +if(EMSCRIPTEN AND CHROGUE_CORE_LIB)
 +	add_library(chrogue_core_lua STATIC ${CHROGUE_CORE_LUA})
 +	target_include_directories(chrogue_core_lua PRIVATE ${CHROGUE_CORE_INCLUDE})
@@ -110,4 +110,4 @@ index c18bbc5..2259d7f 100644
  }
 -addSaveDir();
 +// Chrogue: this script runs after the game starts (Emscripten 4 and later), which is too late for the saved data.
-+// The page mounts the save folder before the start (ports/web/index.html).
++// The page mounts the save folder before the start (web/index.html).

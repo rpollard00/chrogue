@@ -3,9 +3,9 @@
 Chrogue is a roguelite chess game. The game has two parts:
 
 - `core/`: The Rust core. It has the chess engine, the enemy AI, the runs, and the saved data.
-- `ports/love/`: The LÖVE client. It draws the screens and sends commands to the core.
+- `client/`: The LÖVE client. It draws the screens and sends commands to the core.
 
-`ports/web/` builds the two parts for a browser as one WebAssembly module. It is the web version of the game, and it has no code of the game.
+`web/` builds the two parts for a browser as one WebAssembly module. It is the web version of the game, and it has no code of the game.
 
 `DECISIONS.md` records the direction of the project. `README.md` has the commands and the structure of the code. `core/PROTOCOL.md` is the contract between the core and a client.
 
@@ -26,12 +26,12 @@ Read `DESIGN.md` before you change the interface. Its first rule applies to each
 
 If a change needs more space than its area has, change the design of the area. Do not let the layout move.
 
-The client has only the wide layout at this time. `ports/love/layout.lua` has the areas of each screen. The plan for the phone layout is open (`DECISIONS.md`).
+The client has only the wide layout at this time. `client/layout.lua` has the areas of each screen. The plan for the phone layout is open (`DECISIONS.md`).
 
 ## Other rules
 
 - The game does not show a rules screen or a list of relics. The player finds these in a run.
 - Use `jj`, not `git`. Make one change for each feature, with a Conventional Commit description.
 - Core: In `core/`, run `cargo test --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check` before you finish.
-- Client: Look at the result in the client at 1440×900 (`love . --size 1440x900` in `ports/love/`). Run `ports/love/test/run.sh` only when the user tells you to: it opens many windows and takes some minutes.
-- Web build: If you change `ports/web/`, the library `core/embed`, or how the client draws, run `ports/web/build.sh` before you finish, and look at the result in a browser at 1440×900. `bun ports/web/test/run.ts` uses the graphics card for some minutes. Ask the user before you run it.
+- Client: Look at the result in the client at 1440×900 (`love . --size 1440x900` in `client/`). Run `client/test/run.sh` only when the user tells you to: it opens many windows and takes some minutes.
+- Web build: If you change `web/`, the library `core/embed`, or how the client draws, run `web/build.sh` before you finish, and look at the result in a browser at 1440×900. `bun web/test/run.ts` uses the graphics card for some minutes. Ask the user before you run it.
