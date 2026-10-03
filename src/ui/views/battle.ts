@@ -1,6 +1,6 @@
 import { inCheck, kingSquare, movesFrom } from '../../engine';
 import type { Color, Move, PieceId, PieceType, Square } from '../../engine';
-import { FLOORS, PIECE_NAME, canScout, enemyMove, floorOf, playMove, settleBattle } from '../../game';
+import { FLOORS, PIECE_NAME, canScout, enemyMove, floorOf, playMove } from '../../game';
 import type { BattleResult, MoveReport } from '../../game';
 import type { App, ScreenOf } from '../app';
 import { button, glyph, h, pieceEl, squareName } from '../dom';
@@ -13,13 +13,6 @@ type BattleScreen = ScreenOf<'battle'>;
 
 // The delay lets the browser show the move of the player before the search starts.
 const ENEMY_DELAY_MS = 350;
-
-function leave(app: App, screen: BattleScreen): void {
-  const { run, view } = screen;
-  const next = settleBattle(run, view.battle);
-  if (next === 'camp') app.openCamp(run);
-  else app.endRun(run, next === 'won');
-}
 
 const WIN_TEXT: Record<Color, Record<'checkmate' | 'rout' | 'stalemate', string>> = {
   w: {
@@ -38,7 +31,7 @@ const DRAW_TEXT: Record<'clock' | 'bare', string> = {
   bare: 'Only the kings remain. The battle is a draw.',
 };
 
-function viewResult(app: App, screen: BattleScreen, result: BattleResult): HTMLElement {
+function viewResult(screen: BattleScreen, result: BattleResult, leave: () => void): HTMLElement {
   const { reward, winner } = result, rows: TallyRow[] = [];
   let rescued = 0;
   if (winner !== 'b') {
@@ -53,7 +46,7 @@ function viewResult(app: App, screen: BattleScreen, result: BattleResult): HTMLE
     h('p', {}, winner === null ? DRAW_TEXT[result.reason] : WIN_TEXT[winner][result.reason]),
     rows.length > 0 && tally(rows, 'Total gold'),
     rescued > 0 && h('p', { class: 'dim' }, `Pieces that return to your army: ${rescued}`),
-    button('Continue', () => leave(app, screen), { class: 'primary' }));
+    button('Continue', leave, { class: 'primary' }));
 }
 
 // The position of a square in the piece layer. Each unit is the width of one square.
@@ -222,7 +215,7 @@ export function viewBattle(app: App, screen: BattleScreen): HTMLElement {
     const report = playMove(battle, run, move);
     Object.assign(view, { last: move, selected: -1, targets: [], promotion: null });
     if (battle.result) {
-      wrap.append(viewResult(app, screen, battle.result));
+      wrap.append(viewResult(screen, battle.result, app.settleBattle(run, battle)));
     } else if (state.turn === 'b') {
       view.busy = true;
       setTimeout(() => {

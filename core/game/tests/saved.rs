@@ -36,8 +36,8 @@ fn send(session: &mut Session, request: Value) -> Value {
     reply
 }
 
-/// Wins the first battle at once and goes to the camp.
-fn win_first_battle(session: &mut Session) -> Value {
+/// Starts a run and wins its first battle at once. The battle stays on the screen with its result.
+fn win_first_move(session: &mut Session) -> Value {
     send(session, json!({ "cmd": "new_run" }));
     send(
         session,
@@ -47,7 +47,12 @@ fn win_first_battle(session: &mut Session) -> Value {
         session,
         json!({ "cmd": "debug_set_enemy", "pieces": [{ "kind": "k", "square": 60 }, { "kind": "n", "square": 8 }] }),
     );
-    send(session, json!({ "cmd": "move", "from": 0, "to": 8 }));
+    send(session, json!({ "cmd": "move", "from": 0, "to": 8 }))
+}
+
+/// Wins the first battle at once and goes to the camp.
+fn win_first_battle(session: &mut Session) -> Value {
+    win_first_move(session);
     let reply = send(session, json!({ "cmd": "continue" }));
     assert_eq!(reply["view"]["screen"], json!("camp"));
     reply["view"].clone()
@@ -88,6 +93,69 @@ fn a_run_saved_in_the_battle_phase_starts_that_battle_again() {
     assert_eq!(second.view()["run"], json!({ "floor": 1, "phase": "battle" }));
     let again = send(&mut second, json!({ "cmd": "continue_run" }))["view"].clone();
     assert_eq!(again, start);
+}
+
+#[test]
+fn a_won_battle_is_saved_when_it_ends() {
+    let storage = Shared::default();
+    let mut first = Session::with_debug(Box::new(storage.clone()), 11, true);
+    let end = win_first_move(&mut first)["view"].clone();
+    assert_eq!((&end["screen"], &end["result"]["next"]), (&json!("battle"), &json!("camp")));
+
+    // A client that starts again continues in the camp. It cannot play the battle a second time.
+    let mut second = Session::new(Box::new(storage.clone()), 99);
+    assert_eq!(second.view()["run"], json!({ "floor": 2, "phase": "camp" }));
+    let reloaded = send(&mut second, json!({ "cmd": "continue_run" }))["view"].clone();
+    let camp = send(&mut first, json!({ "cmd": "continue" }))["view"].clone();
+    assert_eq!(reloaded, camp);
+
+    // The title after the result has the run in the camp too.
+    let mut third = Session::with_debug(Box::new(Shared::default()), 11, true);
+    win_first_move(&mut third);
+    let title = send(&mut third, json!({ "cmd": "to_title" }))["view"].clone();
+    assert_eq!(title["run"], json!({ "floor": 2, "phase": "camp" }));
+    assert_eq!(send(&mut third, json!({ "cmd": "continue_run" }))["view"], camp);
+}
+
+#[test]
+fn a_lost_battle_ends_the_run_when_it_ends() {
+    let storage = Shared::default();
+    let mut first = Session::with_debug(Box::new(storage.clone()), 11, true);
+    send(&mut first, json!({ "cmd": "new_run" }));
+    send(
+        &mut first,
+        json!({ "cmd": "debug_set_army", "units": [{ "kind": "k", "home": 4 }, { "kind": "p", "home": 8 }] }),
+    );
+    send(
+        &mut first,
+        json!({ "cmd": "debug_set_enemy", "pieces": [{ "kind": "k", "square": 60 }, { "kind": "r", "square": 56 }] }),
+    );
+    send(&mut first, json!({ "cmd": "move", "from": 4, "to": 12 }));
+    // The rook captures the pawn, thus the king of the player is alone.
+    let end = send(&mut first, json!({ "cmd": "debug_enemy_move", "from": 56, "to": 8 }))["view"].clone();
+    assert_eq!((&end["screen"], &end["result"]["next"]), (&json!("battle"), &json!("lost")));
+
+    // A client that starts again has no run to continue, and the permanent data has the run.
+    let second = Session::new(Box::new(storage.clone()), 99);
+    assert_eq!(second.view()["run"], Value::Null);
+    assert_eq!(second.view()["meta"]["runs"], json!(1));
+
+    // `continue` shows the summary. The run counts one time.
+    let over = send(&mut first, json!({ "cmd": "continue" }));
+    assert_eq!(over["view"]["screen"], json!("over"));
+    assert!(over["events"].as_array().unwrap().iter().any(|e| e["type"] == "run_end"));
+    assert_eq!(over["view"]["meta"]["runs"], json!(1));
+    assert_eq!(Session::new(Box::new(storage), 5).view()["meta"]["runs"], json!(1));
+}
+
+#[test]
+fn a_debug_change_after_the_result_keeps_the_result_on_the_screen() {
+    let mut session = Session::with_debug(Box::new(Shared::default()), 11, true);
+    win_first_move(&mut session);
+    let changed = send(&mut session, json!({ "cmd": "debug_set_gold", "gold": 50 }))["view"].clone();
+    assert_eq!(changed["screen"], json!("battle"));
+    assert_ne!(changed["result"], Value::Null);
+    assert_eq!(send(&mut session, json!({ "cmd": "continue" }))["view"]["gold"], json!(50));
 }
 
 fn temp_dir(name: &str) -> PathBuf {

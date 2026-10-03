@@ -24,15 +24,40 @@ pub struct Reward {
     pub taken: Option<usize>,
 }
 
+/// What a completed battle did to the run. The session saves it when the battle ends, thus a
+/// client that starts again continues after the battle and cannot play the battle a second time.
+#[derive(Clone, Debug)]
+pub enum Settled {
+    /// The run in the camp before its next floor.
+    Camp(Run),
+    /// The run ended. `run` is the run after the battle.
+    Over { summary: RunSummary, run: Run },
+}
+
 /// The current screen and the data that only this screen has (`Screen` in `src/ui/app.ts`).
 /// The title and the upgrades screen keep the run in progress, if one is saved.
 #[derive(Clone, Debug)]
 pub enum Screen {
-    Title { run: Option<Run> },
-    Upgrades { run: Option<Run> },
-    Battle { run: Run, battle: Box<Battle> },
-    Camp { run: Run, reward: Option<Reward> },
-    Over { summary: RunSummary },
+    Title {
+        run: Option<Run>,
+    },
+    Upgrades {
+        run: Option<Run>,
+    },
+    /// `run` is the run at the start of the battle: the view of the battle shows it until
+    /// `continue`. `settled` is None until the battle has a result.
+    Battle {
+        run: Run,
+        battle: Box<Battle>,
+        settled: Option<Box<Settled>>,
+    },
+    Camp {
+        run: Run,
+        reward: Option<Reward>,
+    },
+    Over {
+        summary: RunSummary,
+    },
 }
 
 impl Screen {
@@ -46,9 +71,15 @@ impl Screen {
         }
     }
 
+    /// The run in progress: the run that the session saves. After a battle has a result, it is
+    /// the run after the battle, or None if the run ended.
     pub fn run(&self) -> Option<&Run> {
         match self {
             Screen::Title { run } | Screen::Upgrades { run } => run.as_ref(),
+            Screen::Battle { settled: Some(settled), .. } => match settled.as_ref() {
+                Settled::Camp(run) => Some(run),
+                Settled::Over { .. } => None,
+            },
             Screen::Battle { run, .. } | Screen::Camp { run, .. } => Some(run),
             Screen::Over { .. } => None,
         }
@@ -57,6 +88,10 @@ impl Screen {
     fn run_mut(&mut self) -> Option<&mut Run> {
         match self {
             Screen::Title { run } | Screen::Upgrades { run } => run.as_mut(),
+            Screen::Battle { settled: Some(settled), .. } => match settled.as_mut() {
+                Settled::Camp(run) => Some(run),
+                Settled::Over { .. } => None,
+            },
             Screen::Battle { run, .. } | Screen::Camp { run, .. } => Some(run),
             Screen::Over { .. } => None,
         }
@@ -65,6 +100,10 @@ impl Screen {
     fn take_run(&mut self) -> Option<Run> {
         match std::mem::replace(self, Screen::Title { run: None }) {
             Screen::Title { run } | Screen::Upgrades { run } => run,
+            Screen::Battle { settled: Some(settled), .. } => match *settled {
+                Settled::Camp(run) => Some(run),
+                Settled::Over { .. } => None,
+            },
             Screen::Battle { run, .. } | Screen::Camp { run, .. } => Some(run),
             Screen::Over { .. } => None,
         }
@@ -351,7 +390,7 @@ fn start_battle(game: &mut Game, mut run: Run, done: &mut Done) -> Result<(), Fa
     let battle = Battle::new(&run).map_err(|e| Fail::new(Code::Blocked, format!("The battle cannot start: {e}")))?;
     let def = run.floor_def();
     let start = json!({ "floor": run.floor, "name": def.name, "boss": def.boss });
-    game.screen = Screen::Battle { run, battle: Box::new(battle) };
+    game.screen = Screen::Battle { run, battle: Box::new(battle), settled: None };
     screen_event(done, &game.screen);
     done.push(EventKind::BattleStart, start);
     done.save_run = true;
@@ -369,17 +408,39 @@ fn open_camp(game: &mut Game, run: Run, done: &mut Done) {
 
 fn end_run(game: &mut Game, run: Run, won: bool, debug: bool, done: &mut Done) {
     let summary = game.meta.finish_run(&run, won);
+    done.save_meta = true;
+    show_over(game, summary, &run, debug, done);
+}
+
+/// Shows the summary of a run that ended. The permanent data has the run already.
+fn show_over(game: &mut Game, summary: RunSummary, run: &Run, debug: bool, done: &mut Done) {
     let mut fields = json!({
         "won": summary.won, "cleared": summary.cleared, "bonus": summary.bonus,
         "crowns": summary.crowns, "new_best": summary.new_best,
     });
     if debug {
-        fields["run"] = save::run_json(&run);
+        fields["run"] = save::run_json(run);
     }
     game.screen = Screen::Over { summary };
     screen_event(done, &game.screen);
     done.push(EventKind::RunEnd, fields);
-    done.save_meta = true;
+    done.save_run = true;
+}
+
+/// Applies a battle to the saved data when it gets its result: the run goes to the camp before
+/// its next floor, or the run ends. The screen does not change until `continue`.
+fn settle(game: &mut Game, done: &mut Done) {
+    let Game { meta, screen, dice, barred, .. } = game;
+    let Screen::Battle { run, battle, settled: settled @ None } = screen else { return };
+    let mut after = run.clone();
+    let Some(next) = battle.settle(&mut after, dice, barred) else { return };
+    *settled = Some(Box::new(match next {
+        Next::Camp => Settled::Camp(after),
+        next => {
+            done.save_meta = true;
+            Settled::Over { summary: meta.finish_run(&after, next == Next::Won), run: after }
+        }
+    }));
     done.save_run = true;
 }
 
@@ -436,7 +497,7 @@ fn battle_in<'a>(
     phases: &[BattlePhase],
 ) -> Result<(&'a Run, &'a mut Battle), Fail> {
     let screen = &mut game.screen;
-    let Screen::Battle { run, battle } = screen else { return wrong_screen(command, screen) };
+    let Screen::Battle { run, battle, .. } = screen else { return wrong_screen(command, screen) };
     let phase = battle.phase();
     if !phases.contains(&phase) {
         return fail(
@@ -451,6 +512,7 @@ fn play(game: &mut Game, command: Command, phase: BattlePhase, mv: Move, done: &
     let (run, battle) = battle_in(game, command, &[phase])?;
     let report = battle.play(run, mv);
     move_events(&report, battle, done);
+    settle(game, done);
     Ok(())
 }
 
@@ -600,14 +662,14 @@ fn apply(game: &mut Game, command: Command, args: &Args, debug: bool) -> Result<
         }
         Command::Continue => {
             battle_in(game, command, &[BattlePhase::Over])?;
-            let Screen::Battle { mut run, battle } = std::mem::replace(&mut game.screen, Screen::Title { run: None })
+            let Screen::Battle { settled: Some(settled), .. } =
+                std::mem::replace(&mut game.screen, Screen::Title { run: None })
             else {
-                return fail(Code::Internal, "The screen is not a battle");
+                return fail(Code::Internal, "The battle has no result");
             };
-            match battle.settle(&mut run, &mut game.dice, &game.barred) {
-                Some(Next::Camp) => open_camp(game, run, d),
-                Some(next) => end_run(game, run, next == Next::Won, debug, d),
-                None => return fail(Code::Internal, "The battle has no result"),
+            match *settled {
+                Settled::Camp(run) => open_camp(game, run, d),
+                Settled::Over { summary, run } => show_over(game, summary, &run, debug, d),
             }
         }
         Command::ToTitle => {
@@ -725,7 +787,8 @@ fn debug_command(game: &mut Game, command: Command, args: &Args, d: &mut Done) -
         EventKind::DebugChanged,
         json!({ "what": command.name().trim_start_matches("debug_set_").trim_start_matches("debug_") }),
     );
-    if matches!(game.screen, Screen::Battle { .. }) {
+    // A battle with a result is in the saved data already, thus its screen stays.
+    if matches!(game.screen, Screen::Battle { settled: None, .. }) {
         let Some(run) = game.screen.take_run() else { return fail(Code::Internal, "The battle has no run") };
         start_battle(game, run, d)?;
     }
@@ -864,7 +927,7 @@ mod tests {
             Screen::Title { run: None },
             Screen::Title { run: Some(run.clone()) },
             Screen::Upgrades { run: None },
-            Screen::Battle { run: run.clone(), battle },
+            Screen::Battle { run: run.clone(), battle, settled: None },
             Screen::Camp { run, reward: None },
             Screen::Over { summary: RunSummary { won: false, cleared: 0, bonus: 0, crowns: 0, new_best: false } },
         ];

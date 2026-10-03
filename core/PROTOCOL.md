@@ -104,8 +104,10 @@ The `phase` of the battle view tells who acts: `player`, `enemy`, or `over`.
 | `move` | `from`, `to`, `promo` (optional: `q`, `r`, `b`, `n`) | `player` | Plays the move of the player. A promotion needs `promo` (error `promo_required`). After the move the phase is `enemy`, or `over`. |
 | `enemy_move` | | `enemy` | The AI of the floor selects and plays the enemy move. The command blocks until the move is done. On floor 8 a move usually takes less than 100 ms; a board with many queens (an army of 7 queens against 23 queens) takes up to about 190 ms. |
 | `give_up` | | `player`, `enemy` | Ends the run as a loss. Goes to `over`. |
-| `continue` | | `over` | Settles the battle: the gold, the lost units, and the promoted pieces go to the run. Goes to `camp`, or to `over` if the run is won or lost. |
-| `to_title` | | any | Goes to the title. The battle is not saved. `continue_run` starts it again from its start, as a reload of the browser game does. |
+| `continue` | | `over` | Goes to `camp`, or to `over` if the run is won or lost. The core settled the battle when it ended (see below). |
+| `to_title` | | any | Goes to the title. A battle with no result is not saved: `continue_run` starts it again from its start, as a reload of the browser game does. After the result, the title has the run in the camp, or no run if the run ended. |
+
+The core settles a battle with the move that ends it (the move that gives the `result` event): the gold, the lost units, and the promoted pieces go to the run, the run goes to the camp before its next floor or it ends, and the core saves this at once. The view of the battle shows the run of the battle until `continue`. Thus a client that starts again after the result continues in the camp, or has no run. It cannot play the battle a second time.
 
 The client owns the pause before the enemy move. The browser game waits 350 ms after the move of the player, then sends the equivalent of `enemy_move`.
 
@@ -133,7 +135,7 @@ The client owns the pause before the enemy move. The browser game waits 350 ms a
 
 ### Debug commands
 
-These commands work only in a session with `--debug`. Else the error is `debug_disabled`. They are the debug menu of the browser game (`src/ui/debug.ts`), and some more commands for tests. A change of the meta or of the run is saved immediately. If the screen is a battle, the battle starts again, as the debug menu does when it closes. Each change gives the event `debug_changed`.
+These commands work only in a session with `--debug`. Else the error is `debug_disabled`. They are the debug menu of the browser game (`src/ui/debug.ts`), and some more commands for tests. A change of the meta or of the run is saved immediately. If the screen is a battle with no result, the battle starts again, as the debug menu does when it closes. After the result, the change goes to the run after the battle (error `no_run` if the run ended), and the screen stays. Each change gives the event `debug_changed`.
 
 A command that changes the pieces or their rules (`debug_set_army`, `debug_set_enemy`, `debug_add_unit`, `debug_remove_unit`, `debug_set_floor`, `debug_set_relic`, `debug_set_trait`) must leave a board that the engine can take as it is. Else the error is `bad_args` with a message that starts with `The board is not valid`, and the run does not change: two pieces on one square (two enemy pieces, or an enemy piece on the home square of a unit), or a side with no king or with two kings. An enemy piece on an empty home square is permitted. A start with the enemy king in check is permitted, as in the camp and in saved data (see [Open issues](#open-issues)). The pawn of Conscription goes to the first square of ranks 2 and 3 that no unit and no enemy piece has.
 
@@ -341,6 +343,6 @@ A won battle and a camp action (from the test `the_camp_example_is_real`: the ar
 ## Open issues
 
 - With Tactical Retreat (`backpedal`), a pawn can step back and forward again and again. The forward step is a pawn advance, thus it resets the 50-move clock, and the game has no rule for a repeated position. A battle can then continue with no end. The core keeps this rule of the TypeScript game and does not add a repetition rule.
-- A draw on the last floor: the TypeScript game goes to floor 9 and fails there (`generateEnemy(9)` throws). The core stays on floor 8: `continue` opens the camp before floor 8 again, with no reward.
+- A draw on the last floor: the run stays on floor 8, in the two games. `continue` opens the camp before floor 8 again, with no reward.
 - The camp can give a start where the enemy king is in check: a rook or a queen of the player on an open e-file against an enemy with no pawn on e7. As in the TypeScript game, `start_battle` starts that battle, and White can capture the king. The debug commands and saved data permit such a start too (`gametest/parity.ts` compares random starts of this kind with the TypeScript game). A rule that refuses it belongs in `start_battle`, and it changes the game: it is a decision for the design.
 - A battle can start in a position where the player has no legal move (for example, a debug army that is in checkmate at the start). As in the TypeScript game, the result is checked only after a move: the phase is `player` with no moves, and only `give_up` and `to_title` work.

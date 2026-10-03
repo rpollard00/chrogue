@@ -1,6 +1,6 @@
 // The application shell. It owns the state and the change of screens.
-import { createBattle, finishRun, newRun } from '../game';
-import type { Meta, Run } from '../game';
+import { createBattle, finishRun, newRun, settleBattle } from '../game';
+import type { Meta, Run, RunSummary } from '../game';
 import type { App, Screen } from './app';
 import { viewBattle } from './views/battle';
 import { viewCamp } from './views/camp';
@@ -29,6 +29,15 @@ export function createApp(root: HTMLElement, store: Store): App {
       case 'camp': return viewCamp(app, screen);
       case 'over': return viewOver(app, screen);
     }
+  }
+
+  // Adds the run to the permanent data and removes it from the saved data.
+  function closeRun(current: Run, won: boolean): RunSummary {
+    const summary = finishRun(meta, current, won);
+    store.saveMeta(meta);
+    run = null;
+    store.saveRun(null);
+    return summary;
   }
 
   const app: App = {
@@ -60,12 +69,17 @@ export function createApp(root: HTMLElement, store: Store): App {
       store.saveRun(current);
       app.show({ name: 'camp', run: current, selected: -1, cue: { kind: 'enter' }, reward: current.draft && { offers: current.draft, taken: null } });
     },
+    settleBattle(current, battle) {
+      const next = settleBattle(current, battle);
+      if (next === 'camp') {
+        store.saveRun(current);
+        return () => app.openCamp(current);
+      }
+      const summary = closeRun(current, next === 'won');
+      return () => app.show({ name: 'over', summary });
+    },
     endRun(current: Run, won: boolean) {
-      const summary = finishRun(meta, current, won);
-      store.saveMeta(meta);
-      run = null;
-      store.saveRun(null);
-      app.show({ name: 'over', summary });
+      app.show({ name: 'over', summary: closeRun(current, won) });
     },
     saveRun: () => store.saveRun(run),
     saveMeta: () => store.saveMeta(meta),

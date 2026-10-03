@@ -42,6 +42,11 @@ export interface App {
   startRun(): void;
   startBattle(run: Run): void;
   openCamp(run: Run): void;
+  /**
+   * Applies a completed battle to the run and saves the result, thus a reload cannot start the battle again.
+   * Returns the function that shows the next screen.
+   */
+  settleBattle(run: Run, battle: Battle): () => void;
   endRun(run: Run, won: boolean): void;
   saveRun(): void;
   saveMeta(): void;

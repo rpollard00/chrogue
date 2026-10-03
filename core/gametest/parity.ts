@@ -367,19 +367,10 @@ async function playBattle(core: Core, rng: Rng, n: number, meta: Meta, stats: St
     rescued: coreResult.rescued,
   });
 
-  let next: string;
   const floor = run.floor;
-  try {
-    next = settleBattle(run, battle);
-  } catch (error) {
-    // A draw on the last floor: the TypeScript game calls generateEnemy(9), which throws.
-    // The core stays on the last floor. See the report.
-    if (!(result.winner === null && floor === FLOORS.length)) throw error;
-    stats.floor8Draws++;
-    const reply = await core.ok('continue');
-    same(where, 'draw on the last floor', { screen: 'camp', floor: FLOORS.length }, { screen: reply.view.screen, floor: reply.view.floor?.number });
-    return;
-  }
+  const next = settleBattle(run, battle);
+  // A draw on the last floor: the two games stay on the last floor.
+  if (result.winner === null && floor === FLOORS.length) stats.floor8Draws++;
   stats.next[next] = (stats.next[next] ?? 0) + 1;
   same(where, 'next', next, coreResult.next);
   const reply = await core.ok('continue');

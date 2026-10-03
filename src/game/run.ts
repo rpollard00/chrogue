@@ -20,7 +20,8 @@ export function newRun(meta: Meta): Run {
 
 // Moves the run to the camp before its next floor.
 export function enterCamp(run: Run, withDraft: boolean): void {
-  run.floor++;
+  // A draw on the last floor does not clear it, thus the run stays on the last floor.
+  run.floor = Math.min(run.floor + 1, FLOORS.length);
   run.enemy = generateEnemy(run.floor);
   run.draft = withDraft ? rollDraft(run) : null;
   run.shop = rollShop(run);

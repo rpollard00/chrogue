@@ -368,8 +368,7 @@ To add a relic, add one entry to `RELICS` in `game/src/content.rs` and the same 
 
 ### Behavior that differs from the TypeScript game
 
-- A draw on the last floor stays on the last floor. The TypeScript game goes to floor 9 and throws.
 - The AI of floor `n` is `Level::floor(n)` of the engine, not the `ai` field of `src/game/floors.ts`.
-- Saved data: a unit id is at most 19999 and appears one time, a relic id appears one time in a list, a count is at most 2^53 - 1, and the board must be valid (no two pieces on one square, one king on each side, and no check of the enemy king at the start of a battle). A file that the core cannot use is kept as `<name>.bad-<unix time>`; the browser game drops such data. The comment of `game/src/save.rs` has the list.
+- Saved data: a unit id is at most 19999 and appears one time, a relic id appears one time in a list, a count is at most 2^53 - 1, and the board must be valid (no two pieces on one square, and one king on each side). A file that the core cannot use is kept as `<name>.bad-<unix time>`; the browser game drops such data. The comment of `game/src/save.rs` has the list.
 - The pawn of Conscription does not go to the square of an enemy piece. The TypeScript game puts it there (only a debug enemy can be on rank 2 or 3).
 - The debug commands refuse two pieces on one square and a side with no king or two kings (see `PROTOCOL.md`).

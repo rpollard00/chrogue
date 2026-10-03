@@ -251,7 +251,7 @@ pub fn view(screen: &Screen, meta: &Meta) -> Value {
             "can_continue": run.is_some(),
         }),
         Screen::Upgrades { .. } => upgrades_view(meta),
-        Screen::Battle { run, battle } => battle_view(run, battle, meta),
+        Screen::Battle { run, battle, .. } => battle_view(run, battle, meta),
         Screen::Camp { run, reward } => camp_view(run, reward, meta),
         Screen::Over { summary } => over_view(summary, meta),
     }
@@ -260,11 +260,7 @@ pub fn view(screen: &Screen, meta: &Meta) -> Value {
 /// The run of the screen in the shape of the saved data. The debug command `view` with
 /// `"run": true` adds it, thus a test can compare a run with the TypeScript game.
 pub fn run_data(screen: &Screen) -> Value {
-    match screen {
-        Screen::Title { run } | Screen::Upgrades { run } => run.as_ref().map_or(Value::Null, run_json),
-        Screen::Battle { run, .. } | Screen::Camp { run, .. } => run_json(run),
-        Screen::Over { .. } => Value::Null,
-    }
+    screen.run().map_or(Value::Null, run_json)
 }
 
 /// The data of `hello`: the version, the names of the protocol, and the content tables.

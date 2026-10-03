@@ -311,8 +311,7 @@ impl Run {
 
     /// Moves the run to the camp before its next floor.
     ///
-    /// A draw on the last floor stays on the last floor. The TypeScript game goes to floor 9
-    /// there, and `generateEnemy(9)` throws.
+    /// A draw on the last floor stays on the last floor.
     pub fn enter_camp(&mut self, with_draft: bool, dice: &mut Dice, barred: &[RelicId]) {
         self.floor = (self.floor + 1).min(FLOORS.len());
         self.enemy = generate_enemy(self.floor, dice, barred);

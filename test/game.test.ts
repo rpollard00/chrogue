@@ -160,6 +160,14 @@ test('the last floor ends the run with a win', () => {
   expect(finishRun(meta, run, true).newBest).toBe(false);
 });
 
+test('a draw on the last floor keeps the run on the last floor', () => {
+  const run = runAgainst([KING, { type: 'p', square: sq('a7') }], (r) => (r.floor = FLOORS.length));
+  const battle = createBattle(run);
+  battle.result = { winner: null, reason: 'clock', reward: { captures: 0, clear: 0, bonuses: [] } };
+  expect(settleBattle(run, battle)).toBe('camp');
+  expect(run).toMatchObject({ floor: FLOORS.length, phase: 'camp', draft: null });
+});
+
 test('offers change the run, and a blocked offer does nothing', () => {
   const run = newRun(emptyMeta());
   expect(takeOffer({ kind: 'gold', amount: 12 }, run)).toBe(true);

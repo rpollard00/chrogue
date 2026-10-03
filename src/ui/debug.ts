@@ -194,7 +194,8 @@ export function mountDebug(app: App): void {
     const { screen } = app;
     if (!stale) return;
     // The camp reads the run each time that it shows. A battle has a copy of the army, thus it starts again.
-    if (screen.name === 'battle') return app.startBattle(screen.run);
+    // A battle with a result is in the saved data already, thus its screen stays.
+    if (screen.name === 'battle') return screen.view.battle.result ? undefined : app.startBattle(screen.run);
     if (screen.name === 'camp') screen.cue = null;
     app.render();
   });
