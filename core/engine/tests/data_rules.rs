@@ -1,17 +1,21 @@
 //! Rules that the six rule flags do not give. Each test defines its rules through the
 //! public rules data only: these movement rules need no engine code. The tests also cover the
-//! errors for rules and states that are not valid, and the limits of the move list.
+//! errors for rules and states that are not valid, and the limits of the move list. The last
+//! part has the movement atoms of nine relics of the game.
 
 mod common;
 
-use chrogue_engine::fen::square;
-use chrogue_engine::rules::{CAMEL, DIAG, KNIGHT, ORTHO};
+use std::collections::BTreeSet;
+
+use chrogue_engine::fen::{KIWIPETE, square};
+use chrogue_engine::movegen::{evasion_moves, evasion_squares, may_give_check};
+use chrogue_engine::rules::{ALFIL, CAMEL, DABBABA, DIAG, FORWARD, KING, KNIGHT, ORTHO};
 use chrogue_engine::{
     Atom, Castle, Color, Kind, Mode, Move, MoveList, Outcome, Piece, Placement, Promotion, Promotions, Rules,
-    RulesError, SideRules, Special, Square, State, StateError, Tables, in_check, is_attacked, legal_moves, moves_from,
-    outcome, perft, pseudo_moves,
+    RulesError, SideRules, Special, Square, State, StateError, Tables, in_check, is_attacked, is_legal, legal_moves,
+    moves_from, outcome, perft, pseudo_moves,
 };
-use common::{from_fen, legal, squares, targets};
+use common::{from_fen, legal, squares, targets, targets_from};
 
 /// The moves of `moves_from`.
 fn moves_from_list(state: &State, from: &str) -> Vec<Move> {
@@ -417,4 +421,470 @@ fn rules_and_states_that_are_not_valid_give_an_error() {
     ));
     assert!(chrogue_engine::fen::placements("4k3/8/8/8/8/8/8/4K4").is_err());
     assert!(chrogue_engine::fen::placements("4x3/8/8/8/8/8/8/4K3").is_err());
+}
+
+// ---- The movement atoms of the relics ----
+//
+// The game layer adds each of these atoms to `SideRules::standard()` with `with_atom`.
+
+/// Rampart Vault: the rook jumps two squares on a file or a rank to an empty square.
+fn vault() -> SideRules {
+    SideRules::standard().with_atom(Kind::Rook, Atom::leap(&DABBABA, Mode::MoveOnly))
+}
+
+/// Crossfire: the rook captures on the next square of each diagonal.
+fn crossfire() -> SideRules {
+    SideRules::standard().with_atom(Kind::Rook, Atom::leap(&DIAG, Mode::CaptureOnly))
+}
+
+/// Close Quarters: the knight captures on the next square of its file and its rank.
+fn close_quarters() -> SideRules {
+    SideRules::standard().with_atom(Kind::Knight, Atom::leap(&ORTHO, Mode::CaptureOnly))
+}
+
+/// Pilgrim's Leap: the bishop jumps two squares on a diagonal.
+fn pilgrims_leap() -> SideRules {
+    SideRules::standard().with_atom(Kind::Bishop, Atom::leap(&ALFIL, Mode::MoveOrCapture))
+}
+
+/// Queen's Flight: the queen jumps as a knight to an empty square.
+fn queens_flight() -> SideRules {
+    SideRules::standard().with_atom(Kind::Queen, Atom::leap(&KNIGHT, Mode::MoveOnly))
+}
+
+/// Huntress: the queen captures as a knight.
+fn huntress() -> SideRules {
+    SideRules::standard().with_atom(Kind::Queen, Atom::leap(&KNIGHT, Mode::CaptureOnly))
+}
+
+/// The atom of Gallop: one jump of a knight, or two jumps in the same direction.
+fn gallop_atom() -> Atom {
+    Atom::slide(&KNIGHT, Mode::MoveOrCapture).max_steps(2)
+}
+
+/// Gallop: the knight also has `gallop_atom`.
+fn gallop() -> SideRules {
+    SideRules::standard().with_atom(Kind::Knight, gallop_atom())
+}
+
+/// Crusade: the bishop slides straight forward.
+fn crusade() -> SideRules {
+    SideRules::standard().with_atom(Kind::Bishop, Atom::slide(&FORWARD, Mode::MoveOrCapture))
+}
+
+/// Royal March: the king goes one or two squares in each of its directions.
+fn royal_march() -> SideRules {
+    SideRules::standard().with_atom(Kind::King, Atom::slide(&KING, Mode::MoveOrCapture).max_steps(2))
+}
+
+/// The number of legal move sequences of `depth` half moves. `checks` counts the nodes where
+/// the side that has the move is in check. At each node:
+///
+/// - No two legal moves have the same squares and the same promotion.
+/// - The moves of `moves_from` for the pieces of the side are the legal moves.
+/// - For a side in check, the legal moves of `evasion_moves` are the legal moves, in the same order.
+/// - `may_give_check` is true for each move that gives check. The search relies on it.
+fn walk(state: &mut State, depth: u32, checks: &mut u32) -> u64 {
+    let color = state.turn();
+    let moves = legal(state);
+    let distinct: BTreeSet<_> = moves.iter().map(|m| (m.from, m.to, m.promo.map(|kind| kind as u8))).collect();
+    assert_eq!(distinct.len(), moves.len(), "two legal moves have the same squares: {moves:?}");
+    let mut by_piece = MoveList::new();
+    for from in 0..64 {
+        if state.piece_at(from).is_some_and(|piece| piece.color == color) {
+            moves_from(state, from, &mut by_piece);
+        }
+    }
+    let sorted = |list: &[Move]| {
+        let mut keys: Vec<_> =
+            list.iter().map(|m| (m.from, m.to, m.promo.map(|kind| kind as u8), m.special as u8)).collect();
+        keys.sort_unstable();
+        keys
+    };
+    assert_eq!(sorted(by_piece.as_slice()), sorted(&moves), "`moves_from` and `legal_moves` differ");
+    if in_check(state, color) {
+        *checks += 1;
+        let mut list = MoveList::new();
+        evasion_moves(state, color, evasion_squares(state, color), &mut list);
+        let evasions: Vec<Move> = list.iter().copied().filter(|&m| is_legal(state, m, color)).collect();
+        assert_eq!(evasions, moves, "the evasions differ from the legal moves");
+    }
+    let mut nodes = 0;
+    for m in moves {
+        let undo = state.make(m);
+        assert!(
+            !in_check(state, color.other()) || may_give_check(state, m, &undo),
+            "the search skips the check of {m:?}"
+        );
+        nodes += if depth == 1 { 1 } else { walk(state, depth - 1, checks) };
+        state.unmake(m, undo);
+    }
+    nodes
+}
+
+/// Makes sure that the rules are valid, and walks the move tree of Kiwipete to depth 3 with
+/// the rules for the two sides. Thus Black plays the mirror of the atom. Gives the number of
+/// move sequences.
+fn walk_kiwipete(side: SideRules) -> u64 {
+    assert_eq!(side.validate(), Ok(()));
+    let rules = Rules::new(side.clone(), side);
+    assert_eq!(rules.validate(), Ok(()));
+    assert!(Tables::new(rules.clone()).is_ok());
+    let mut state = from_fen(KIWIPETE, Color::White, rules);
+    let before = state.clone();
+    let mut checks = 0;
+    let nodes = walk(&mut state, 3, &mut checks);
+    assert_eq!(perft(&mut state, 3), nodes);
+    assert!(state == before, "the walk changed the state");
+    assert!(checks > 0, "the tree has no check");
+    // Ordinary chess has 97 862 sequences. A different number shows that the tree has moves of the rule.
+    assert_ne!(nodes, 97_862);
+    nodes
+}
+
+#[test]
+fn rampart_vault_lets_a_rook_jump_two_squares_to_an_empty_square() {
+    let rules = || white(vault());
+
+    // The pawn on a2 and the bishop on b1 close the file and the rank of the rook on a1. The
+    // rook jumps over them to a3 and c1.
+    let fen = "4k3/8/8/8/8/8/P7/RB2K3";
+    assert_eq!(targets(&mut from_fen(fen, Color::White, rules()), "a1"), squares(&["a3", "c1"]));
+    assert!(targets(&mut from_fen(fen, Color::White, Rules::standard()), "a1").is_empty());
+    // A black pawn on a3 and a white knight on c1: the jump does not capture, and it does not
+    // go to a square with a friend.
+    assert!(targets(&mut from_fen("4k3/8/8/8/8/p7/P7/RBN1K3", Color::White, rules()), "a1").is_empty());
+    // The rook on d4 captures the pawn on d5 by its slide, and it jumps over the pawn to d6.
+    // The other jump squares (b4, f4, d2) are also squares of the slides. Each target occurs one time.
+    let mut state = from_fen("4k3/8/8/3p4/3R4/8/8/4K3", Color::White, rules());
+    let expected = squares(&["a4", "b4", "c4", "e4", "f4", "g4", "h4", "d1", "d2", "d3", "d5", "d6"]);
+    assert_eq!(targets(&mut state, "d4"), expected);
+    assert_eq!(targets_from(&state, "d4"), expected);
+
+    // The jump attacks no square. The rook on e6 gives no check over the pawn on e7, and the
+    // king on d8 can go to e8.
+    assert!(!in_check(&from_fen("4k3/4p3/4R3/8/8/8/8/K7", Color::Black, rules()), Color::Black));
+    let mut state = from_fen("3k4/4p3/4R3/8/8/8/8/K7", Color::Black, rules());
+    assert!(!is_attacked(&state, square("e8"), Color::White));
+    assert_eq!(targets(&mut state, "d8"), squares(&["c7", "c8", "d7", "e8"]));
+
+    walk_kiwipete(vault());
+}
+
+#[test]
+fn crossfire_lets_a_rook_capture_and_give_check_on_the_next_diagonal_squares() {
+    let rules = || white(crossfire());
+
+    // The diagonal squares of d4 are c3, c5, e3, and e5. Only e5 has an enemy piece.
+    let mut state = from_fen("4k3/8/8/4p3/3R4/8/8/4K3", Color::White, rules());
+    let slides = ["a4", "b4", "c4", "e4", "f4", "g4", "h4", "d1", "d2", "d3", "d5", "d6", "d7", "d8"];
+    assert_eq!(targets(&mut state, "d4"), squares(&[&slides[..], &["e5"]].concat()));
+
+    // The rook on d7 attacks the king on e8 only by the diagonal capture.
+    let fen = "4k3/3R4/8/8/8/8/8/4K3";
+    let mut check = from_fen(fen, Color::Black, rules());
+    assert!(in_check(&check, Color::Black));
+    assert!(!in_check(&from_fen(fen, Color::Black, Rules::standard()), Color::Black));
+    // The king captures the rook or goes to f8. The slides of the rook attack d8, e7, and f7.
+    assert_eq!(targets(&mut check, "e8"), squares(&["d7", "f8"]));
+
+    // The rook on d6 attacks the empty square e7 by the diagonal capture, thus the king cannot go there.
+    let fen = "4k3/8/3R4/8/8/8/8/4K3";
+    let mut state = from_fen(fen, Color::Black, rules());
+    assert!(is_attacked(&state, square("e7"), Color::White));
+    assert_eq!(targets(&mut state, "e8"), squares(&["f7", "f8"]));
+    assert_eq!(targets(&mut from_fen(fen, Color::Black, Rules::standard()), "e8"), squares(&["e7", "f7", "f8"]));
+
+    walk_kiwipete(crossfire());
+}
+
+#[test]
+fn close_quarters_lets_a_knight_capture_and_give_check_on_the_next_squares_of_its_file_and_rank() {
+    let rules = || white(close_quarters());
+
+    // The squares next to d4 on its file and its rank are c4, d3, d5, and e4. Only d5 has an enemy piece.
+    let mut state = from_fen("4k3/8/8/3p4/3N4/8/8/4K3", Color::White, rules());
+    assert_eq!(targets(&mut state, "d4"), squares(&["b3", "b5", "c2", "c6", "e2", "e6", "f3", "f5", "d5"]));
+
+    // The knight on e7 attacks the king on e8 only by the new capture.
+    let fen = "4k3/4N3/8/8/8/8/8/4K3";
+    let mut check = from_fen(fen, Color::Black, rules());
+    assert!(in_check(&check, Color::Black));
+    assert!(!in_check(&from_fen(fen, Color::Black, Rules::standard()), Color::Black));
+    // The king captures the knight or goes to d8 or f8. The knight attacks d7 and f7.
+    assert_eq!(targets(&mut check, "e8"), squares(&["d8", "e7", "f8"]));
+
+    // The knight on e6 attacks d8 and f8 by its jumps, and the empty square e7 by the new capture.
+    let fen = "4k3/8/4N3/8/8/8/8/4K3";
+    let mut state = from_fen(fen, Color::Black, rules());
+    assert!(is_attacked(&state, square("e7"), Color::White));
+    assert_eq!(targets(&mut state, "e8"), squares(&["d7", "f7"]));
+    assert_eq!(targets(&mut from_fen(fen, Color::Black, Rules::standard()), "e8"), squares(&["d7", "e7", "f7"]));
+
+    walk_kiwipete(close_quarters());
+}
+
+#[test]
+fn pilgrims_leap_lets_a_bishop_jump_two_squares_on_a_diagonal_and_give_a_check_that_no_piece_can_block() {
+    let rules = || white(pilgrims_leap());
+
+    // The pawns on b2 and d2 close the diagonals of the bishop on c1. It jumps over them to
+    // a3, and it captures the pawn on e3.
+    let fen = "4k3/8/8/8/8/4p3/1P1P4/2B1K3";
+    assert_eq!(targets(&mut from_fen(fen, Color::White, rules()), "c1"), squares(&["a3", "e3"]));
+    assert!(targets(&mut from_fen(fen, Color::White, Rules::standard()), "c1").is_empty());
+    // The jump does not go to a square with a friend: a white pawn on a3.
+    assert_eq!(targets(&mut from_fen("4k3/8/8/8/8/P3p3/1P1P4/2B1K3", Color::White, rules()), "c1"), squares(&["e3"]));
+    // The bishop on d4 captures the pawn on e5 by its slide, and the knight on f6 by a jump
+    // over the pawn. The other jump squares (b2, b6, f2) are also squares of the slides.
+    let mut state = from_fen("4k3/8/5n2/4p3/3B4/8/8/4K3", Color::White, rules());
+    let expected = squares(&["a1", "b2", "c3", "e3", "f2", "g1", "c5", "b6", "a7", "e5", "f6"]);
+    assert_eq!(targets(&mut state, "d4"), expected);
+    assert_eq!(targets_from(&state, "d4"), expected);
+
+    // The bishop on c6 gives check to the king on e8 over the pawn on d7.
+    let fen = "4k3/3p4/2B5/8/8/8/8/4K3";
+    let mut check = from_fen(fen, Color::Black, rules());
+    assert!(in_check(&check, Color::Black));
+    assert!(!in_check(&from_fen(fen, Color::Black, Rules::standard()), Color::Black));
+    // The king goes out of the check, or the pawn captures the bishop. A pawn step does not end the check.
+    assert_eq!(targets(&mut check, "e8"), squares(&["d8", "e7", "f7", "f8"]));
+    assert_eq!(targets(&mut check, "d7"), squares(&["c6"]));
+    assert_eq!(legal(&mut check).len(), 5);
+
+    // The bishop on c6 attacks e8 by its slide and by the jump. A piece on d7 blocks only the
+    // slide, thus the rook on d2 cannot end the check on d7.
+    let fen = "4k3/8/2B5/8/8/8/3r4/K7";
+    let mut check = from_fen(fen, Color::Black, rules());
+    assert!(targets(&mut check, "d2").is_empty());
+    assert_eq!(targets(&mut check, "e8"), squares(&["d8", "e7", "f7", "f8"]));
+    assert_eq!(evasion_squares(&check, Color::Black), 1 << square("c6"));
+    assert_eq!(targets(&mut from_fen(fen, Color::Black, Rules::standard()), "d2"), squares(&["d7"]));
+
+    walk_kiwipete(pilgrims_leap());
+}
+
+#[test]
+fn queens_flight_lets_a_queen_jump_as_a_knight_to_an_empty_square_with_no_check() {
+    let rules = || white(queens_flight());
+
+    // The queen on a1 has friends on a2, b1, and b2. Its knight squares are b3 and c2. It
+    // jumps to c2, and it does not capture the pawn on b3.
+    let fen = "4k3/8/8/8/8/1p6/PP6/QN2K3";
+    assert_eq!(targets(&mut from_fen(fen, Color::White, rules()), "a1"), squares(&["c2"]));
+    assert!(targets(&mut from_fen(fen, Color::White, Rules::standard()), "a1").is_empty());
+
+    // The queen on d6 is a knight jump from e8 and from f7. The jump attacks nothing: the king
+    // on e8 is not in check and can go to f7.
+    let mut state = from_fen("4k3/8/3Q4/8/8/8/8/4K2p", Color::Black, rules());
+    assert!(!in_check(&state, Color::Black));
+    assert!(!is_attacked(&state, square("f7"), Color::White));
+    assert_eq!(targets(&mut state, "e8"), squares(&["f7"]));
+    assert_eq!(outcome(&mut state), None);
+
+    walk_kiwipete(queens_flight());
+}
+
+#[test]
+fn huntress_lets_a_queen_capture_and_give_check_as_a_knight() {
+    let rules = || white(huntress());
+
+    // The same queen on a1 captures the pawn on b3, and it does not jump to the empty square c2.
+    let mut state = from_fen("4k3/8/8/8/8/1p6/PP6/QN2K3", Color::White, rules());
+    assert_eq!(targets(&mut state, "a1"), squares(&["b3"]));
+
+    // The queen on d6 gives check to the king on e8 by the knight capture. It also attacks f7,
+    // the only square that its slides leave to the king. Thus the queen alone gives mate.
+    let fen = "4k3/8/3Q4/8/8/8/8/4K2p";
+    let mut mate = from_fen(fen, Color::Black, rules());
+    assert!(in_check(&mate, Color::Black));
+    assert!(!in_check(&from_fen(fen, Color::Black, Rules::standard()), Color::Black));
+    assert_eq!(outcome(&mut mate), Some(Outcome::Checkmate { winner: Color::White }));
+    // The king on g8 cannot go to f7, a knight square of the queen. The slides attack f8.
+    let fen = "6k1/8/3Q4/8/8/8/8/4K3";
+    let mut state = from_fen(fen, Color::Black, rules());
+    assert_eq!(targets(&mut state, "g8"), squares(&["g7", "h7", "h8"]));
+    assert_eq!(targets(&mut from_fen(fen, Color::Black, Rules::standard()), "g8"), squares(&["f7", "g7", "h7", "h8"]));
+
+    walk_kiwipete(huntress());
+}
+
+#[test]
+fn queens_flight_and_huntress_together_give_each_knight_target_one_time() {
+    let (quiet, capture) = (Atom::leap(&KNIGHT, Mode::MoveOnly), Atom::leap(&KNIGHT, Mode::CaptureOnly));
+    let flight_first = queens_flight().with_atom(Kind::Queen, capture);
+    let huntress_first = huntress().with_atom(Kind::Queen, quiet);
+    let amazon = SideRules::standard().with_atom(Kind::Queen, Atom::leap(&KNIGHT, Mode::MoveOrCapture));
+    let nodes = walk_kiwipete(amazon);
+    for side in [flight_first, huntress_first] {
+        // The queen on a1 jumps to c2 and captures on b3.
+        let mut state = from_fen("4k3/8/8/8/8/1p6/PP6/QN2K3", Color::White, white(side.clone()));
+        assert_eq!(targets(&mut state, "a1"), squares(&["b3", "c2"]));
+        assert_eq!(targets_from(&state, "a1"), squares(&["b3", "c2"]));
+        assert!(in_check(&from_fen("4k3/8/3Q4/8/8/8/8/4K2p", Color::Black, white(side.clone())), Color::Black));
+        // The two atoms give the same moves as one knight leap that moves and captures.
+        assert_eq!(walk_kiwipete(side), nodes);
+    }
+}
+
+#[test]
+fn gallop_lets_a_knight_make_two_jumps_in_one_direction() {
+    let rules = || white(gallop());
+
+    // The lines of the knight on a1 are b3, c5 and c2, e3.
+    let mut state = from_fen("7k/8/8/8/8/8/8/N3K3", Color::White, rules());
+    assert_eq!(targets(&mut state, "a1"), squares(&["b3", "c5", "c2", "e3"]));
+    assert_eq!(targets_from(&state, "a1"), squares(&["b3", "c5", "c2", "e3"]));
+    // A white pawn on b3 blocks the first line. The knight captures the black pawn on e3 with its second jump.
+    let mut state = from_fen("7k/8/8/8/8/1P2p3/8/N3K3", Color::White, rules());
+    assert_eq!(targets(&mut state, "a1"), squares(&["c2", "e3"]));
+    // The knight captures a black pawn on b3, and the line stops there.
+    let mut state = from_fen("7k/8/8/8/8/1p6/8/N3K3", Color::White, rules());
+    assert_eq!(targets(&mut state, "a1"), squares(&["b3", "c2", "e3"]));
+
+    // The knight gives check from two jumps away. A piece of either color on b3 blocks the check.
+    let fen = "8/8/8/2k5/8/8/8/N3K3";
+    assert!(in_check(&from_fen(fen, Color::Black, rules()), Color::Black));
+    assert!(!in_check(&from_fen(fen, Color::Black, Rules::standard()), Color::Black));
+    assert!(!in_check(&from_fen("8/8/8/2k5/8/1P6/8/N3K3", Color::Black, rules()), Color::Black));
+    assert!(!in_check(&from_fen("8/8/8/2k5/8/1p6/8/N3K3", Color::Black, rules()), Color::Black));
+
+    // The evasions: the rook on a8 captures the knight, the rook on b8 goes between the knight
+    // and the king, or the king moves. The knight and the white king attack no square next to c5.
+    let mut check = from_fen("rr6/8/8/2k5/8/8/8/N3K3", Color::Black, rules());
+    assert_eq!(evasion_squares(&check, Color::Black), 1 << square("a1") | 1 << square("b3"));
+    assert_eq!(targets(&mut check, "a8"), squares(&["a1"]));
+    assert_eq!(targets(&mut check, "b8"), squares(&["b3"]));
+    assert_eq!(targets(&mut check, "c5").len(), 8);
+    assert_eq!(legal(&mut check).len(), 10);
+
+    // A piece between the knight and the king cannot go away: the bishop on b3 has no legal move.
+    let fen = "8/8/8/2k5/8/1b6/8/N3K3";
+    assert!(targets(&mut from_fen(fen, Color::Black, rules()), "b3").is_empty());
+    assert_eq!(targets(&mut from_fen(fen, Color::Black, Rules::standard()), "b3").len(), 9);
+
+    walk_kiwipete(gallop());
+}
+
+#[test]
+fn gallop_gives_no_second_jump_to_the_camel_jumps_of_long_leap() {
+    let flag_first = SideRules::standard().long_leap().with_atom(Kind::Knight, gallop_atom());
+    let gallop_first = gallop().long_leap();
+    for side in [flag_first, gallop_first] {
+        // The camel jumps of a1 go to b4 and d2. The squares of a second camel jump, c7 and g3,
+        // are not targets.
+        let mut state = from_fen("7k/8/8/8/8/8/8/N3K3", Color::White, white(side.clone()));
+        assert_eq!(targets(&mut state, "a1"), squares(&["b3", "c5", "c2", "e3", "b4", "d2"]));
+        // The knight gives check by one camel jump, and not by two.
+        assert!(in_check(&from_fen("8/8/8/8/1k6/8/8/N3K3", Color::Black, white(side.clone())), Color::Black));
+        assert!(!in_check(&from_fen("8/2k5/8/8/8/8/8/N3K3", Color::Black, white(side.clone())), Color::Black));
+        walk_kiwipete(side);
+    }
+}
+
+#[test]
+fn crusade_lets_a_bishop_slide_forward_on_its_file_for_each_side() {
+    let rules = || Rules::new(crusade(), crusade());
+
+    // White pawns close the four diagonals of the bishop on e3. It slides up the file and
+    // captures the pawn on e6. It does not go down the file to e2.
+    let mut state = from_fen("7k/8/4p3/8/3P1P2/4B3/3P1P2/K7", Color::White, rules());
+    assert_eq!(targets(&mut state, "e3"), squares(&["e4", "e5", "e6"]));
+    // A white pawn on e5 stops the slide.
+    let mut state = from_fen("7k/8/8/4P3/3P1P2/4B3/3P1P2/K7", Color::White, rules());
+    assert_eq!(targets(&mut state, "e3"), squares(&["e4"]));
+    // The mirror for Black: the bishop on e6 slides down the file and captures the pawn on e3.
+    let mut state = from_fen("k7/3p1p2/4b3/3p1p2/8/4P3/8/7K", Color::Black, rules());
+    assert_eq!(targets(&mut state, "e6"), squares(&["e5", "e4", "e3"]));
+
+    // The white bishop gives check up the file. A piece on the file blocks the check.
+    let fen = "4k3/8/8/8/8/4B3/8/K7";
+    assert!(in_check(&from_fen(fen, Color::Black, rules()), Color::Black));
+    assert!(!in_check(&from_fen(fen, Color::Black, Rules::standard()), Color::Black));
+    assert!(!in_check(&from_fen("4k3/8/8/4P3/8/4B3/8/K7", Color::Black, rules()), Color::Black));
+    // The black bishop gives check down the file. A bishop gives no check to a king behind it.
+    assert!(in_check(&from_fen("k7/8/4b3/8/8/8/8/4K3", Color::White, rules()), Color::White));
+    assert!(!in_check(&from_fen("8/8/4B3/8/8/4k3/8/K7", Color::Black, rules()), Color::Black));
+    assert!(!in_check(&from_fen("4K3/8/8/8/8/4b3/8/k7", Color::White, rules()), Color::White));
+
+    // The king on d8 cannot go to the file of the bishop.
+    let fen = "3k4/8/8/8/8/4B3/8/K7";
+    assert_eq!(targets(&mut from_fen(fen, Color::Black, rules()), "d8"), squares(&["c7", "c8", "d7"]));
+    assert_eq!(targets(&mut from_fen(fen, Color::Black, Rules::standard()), "d8").len(), 5);
+    // The evasions: the king leaves the file, or the rook on a5 goes between the bishop and the king.
+    let mut check = from_fen("4k3/8/8/r7/8/4B3/8/7K", Color::Black, rules());
+    assert_eq!(targets(&mut check, "e8"), squares(&["d7", "d8", "f7", "f8"]));
+    assert_eq!(targets(&mut check, "a5"), squares(&["e5"]));
+
+    walk_kiwipete(crusade());
+}
+
+#[test]
+fn royal_march_lets_a_king_go_two_squares_in_each_direction() {
+    let rules = || white(royal_march());
+    let to = |state: &mut State, from: &str| (targets(state, from), targets_from(state, from));
+
+    // The king on d4 goes one or two squares. The white pawn on d5 and the black pawn on d3
+    // block the file after one square. The king captures the pawn on d3, and the pawn on b2 with
+    // a move of two squares. The leap and the slide of the king give the same eight squares
+    // next to it. Each target occurs one time.
+    let mut state = from_fen("7k/8/8/3P4/3K4/3p4/1p6/8", Color::White, rules());
+    let near = ["c3", "c4", "c5", "d3", "e3", "e4", "e5"];
+    let far = ["b2", "b4", "b6", "f2", "f4", "f6"];
+    let expected = squares(&[&near[..], &far[..]].concat());
+    assert_eq!(to(&mut state, "d4"), (expected.clone(), expected));
+
+    // The engine tests only the target square of a king move, except for a castle. The rook on
+    // f8 attacks f1 and f2. The king cannot stop there, but it goes across them to g1 and g3.
+    let mut state = from_fen("5r1k/8/8/8/8/8/8/4K3", Color::White, rules());
+    assert!(is_attacked(&state, square("f1"), Color::Black) && is_attacked(&state, square("f2"), Color::Black));
+    assert_eq!(targets(&mut state, "e1"), squares(&["c1", "c3", "d1", "d2", "e2", "e3", "g1", "g3"]));
+
+    // The king attacks the squares two away, thus the black king cannot go to e6.
+    let fen = "8/4k3/8/8/4K3/8/8/8";
+    let free = ["d6", "d7", "d8", "e8", "f6", "f7", "f8"];
+    assert_eq!(targets(&mut from_fen(fen, Color::Black, rules()), "e7"), squares(&free));
+    assert!(targets(&mut from_fen(fen, Color::Black, Rules::standard()), "e7").contains(&square("e6")));
+    // The king gives check from two squares away. A piece between the kings blocks the check.
+    let fen = "8/8/4k3/8/4K3/8/8/8";
+    assert!(in_check(&from_fen(fen, Color::Black, rules()), Color::Black));
+    assert!(!in_check(&from_fen(fen, Color::Black, Rules::standard()), Color::Black));
+    assert!(!in_check(&from_fen("8/8/4k3/4p3/4K3/8/8/8", Color::Black, rules()), Color::Black));
+    // The evasions: the black king leaves the squares that the white king attacks, or the rook
+    // on a5 goes between the kings. The black king cannot capture a king that is two squares away.
+    let mut check = from_fen("8/8/4k3/r7/4K3/8/8/8", Color::Black, rules());
+    assert_eq!(targets(&mut check, "e6"), squares(&["d6", "d7", "e7", "f6", "f7"]));
+    assert_eq!(targets(&mut check, "a5"), squares(&["e5"]));
+
+    walk_kiwipete(royal_march());
+}
+
+#[test]
+fn royal_march_keeps_the_castles() {
+    let rules = || white(royal_march());
+    let to_wing = |state: &mut State| -> Vec<(Square, Special)> {
+        let mut list: Vec<(Square, Special)> = legal(state)
+            .iter()
+            .filter(|m| m.from == square("e1") && [square("c1"), square("g1")].contains(&m.to))
+            .map(|m| (m.to, m.special))
+            .collect();
+        list.sort_by_key(|&(to, _)| to);
+        list
+    };
+    let (castle, march) = (Special::Castle, Special::None);
+
+    // The king can also go to c1 and g1 by its own move. When the castle is possible, the castle
+    // is the only move to its square.
+    let mut state = from_fen("4k3/7p/8/8/8/8/8/R3K2R", Color::White, rules());
+    assert_eq!(to_wing(&mut state), vec![(square("c1"), castle), (square("g1"), castle)]);
+    // With no rook on h1, the move to g1 is a move of the king alone.
+    let mut state = from_fen("4k3/7p/8/8/8/8/8/R3K3", Color::White, rules());
+    assert_eq!(to_wing(&mut state), vec![(square("c1"), castle), (square("g1"), march)]);
+    // The rook on f8 attacks f1, thus the castle to g1 is not possible. The king still goes to
+    // g1 across f1 by its own move, and the rook stays on h1.
+    let mut state = from_fen("4kr2/8/8/8/8/8/8/R3K2R", Color::White, rules());
+    assert_eq!(to_wing(&mut state), vec![(square("c1"), castle), (square("g1"), march)]);
+    state.make(Move::new(square("e1"), square("g1")));
+    assert_eq!(state.piece_at(square("h1")).map(|piece| piece.kind), Some(Kind::Rook));
+    assert_eq!(state.piece_at(square("f1")), None);
 }

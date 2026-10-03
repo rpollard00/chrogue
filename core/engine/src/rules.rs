@@ -17,6 +17,10 @@ pub const CAMEL: [Offset; 8] = [(1, 3), (3, 1), (3, -1), (1, -3), (-1, -3), (-3,
 pub const KING: [Offset; 8] = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)];
 pub const ORTHO: [Offset; 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
 pub const DIAG: [Offset; 4] = [(1, 1), (-1, 1), (-1, -1), (1, -1)];
+/// Two squares on a file or a rank.
+pub const DABBABA: [Offset; 4] = [(2, 0), (0, 2), (-2, 0), (0, -2)];
+/// Two squares on a diagonal.
+pub const ALFIL: [Offset; 4] = [(2, 2), (-2, 2), (-2, -2), (2, -2)];
 /// One square forward, from the view of the side.
 pub const FORWARD: [Offset; 1] = [(0, 1)];
 /// One square backward, from the view of the side.

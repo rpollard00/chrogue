@@ -229,6 +229,17 @@ The constants are `W_MOVE = 1`, `W_ATTACK = 3`, `P_EMPTY = 0.7`, `VALUE_PER_REAC
 | `kingKnight` | | | | | | 748 |
 | `longLeap` | | 602 | | | | |
 | `sidestep` | | | 411 | | | |
+| `leap(DABBABA, MoveOnly)` for the rook | | | | 514 | | |
+| `leap(DIAG, CaptureOnly)` for the rook | | | | 660 | | |
+| `leap(ORTHO, CaptureOnly)` for the knight | | 495 | | | | |
+| `leap(ALFIL, MoveOrCapture)` for the bishop | | | 369 | | | |
+| `leap(KNIGHT, MoveOnly)` for the queen | | | | | 978 | |
+| `leap(KNIGHT, CaptureOnly)` for the queen | 104 | | | | 1191 | |
+| `slide(KNIGHT, MoveOrCapture).max_steps(2)` for the knight | | 453 | | | | |
+| `slide(FORWARD, MoveOrCapture)` for the bishop | | | 493 | | | |
+| `slide(KING, MoveOrCapture).max_steps(2)` for the king | | | | | | 642 |
+
+The rows after the six flags add one atom to one kind. A more valuable queen also makes the pawn more valuable, because the pawn can promote to the queen.
 
 The value of the king is not a part of the material. The move order uses it.
 

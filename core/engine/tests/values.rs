@@ -1,7 +1,7 @@
 //! The material values that the engine derives from the movement rules.
 
 use chrogue_engine::eval::{FIXED_VALUES, kind_profile, officer_profile, officer_value};
-use chrogue_engine::rules::{CAMEL, DIAG, FLAG_NAMES, KING, KNIGHT, ORTHO};
+use chrogue_engine::rules::{ALFIL, CAMEL, DABBABA, DIAG, FLAG_NAMES, FORWARD, KING, KNIGHT, ORTHO};
 use chrogue_engine::{
     Atom, Color, EvalTables, EvalVariant, Evaluator, Kind, MATE_BOUND, Mode, Offset, Promotion, Promotions, Rules,
     SideRules, fen,
@@ -63,6 +63,50 @@ fn each_rule_flag_for_a_kind_makes_the_value_of_that_kind_higher() {
             }
         }
     }
+}
+
+#[test]
+fn each_relic_atom_makes_the_value_of_its_kind_higher() {
+    let standard = values(SideRules::standard());
+    let with_atoms = |kind, atoms: &[Atom]| {
+        values(atoms.iter().fold(SideRules::standard(), |side, atom| side.with_atom(kind, atom.clone())))
+    };
+    let flight = Atom::leap(&KNIGHT, Mode::MoveOnly);
+    let huntress = Atom::leap(&KNIGHT, Mode::CaptureOnly);
+    let cases = [
+        (Kind::Rook, Atom::leap(&DABBABA, Mode::MoveOnly)),
+        (Kind::Rook, Atom::leap(&DIAG, Mode::CaptureOnly)),
+        (Kind::Knight, Atom::leap(&ORTHO, Mode::CaptureOnly)),
+        (Kind::Bishop, Atom::leap(&ALFIL, Mode::MoveOrCapture)),
+        (Kind::Queen, flight.clone()),
+        (Kind::Queen, huntress.clone()),
+        (Kind::Knight, Atom::slide(&KNIGHT, Mode::MoveOrCapture).max_steps(2)),
+        (Kind::Bishop, Atom::slide(&FORWARD, Mode::MoveOrCapture)),
+        (Kind::King, Atom::slide(&KING, Mode::MoveOrCapture).max_steps(2)),
+    ];
+    for (kind, atom) in cases {
+        let with_atom = with_atoms(kind, std::slice::from_ref(&atom));
+        assert!(with_atom[kind.index()] > standard[kind.index()], "{atom:?} did not make {kind:?} more valuable");
+        for other in Kind::OFFICERS {
+            if other != kind {
+                assert_eq!(with_atom[other.index()], standard[other.index()], "{atom:?} changed {other:?}");
+            }
+        }
+        // The pawn has the value of the queen in its promotion term.
+        assert!(with_atom[Kind::Pawn.index()] >= standard[Kind::Pawn.index()], "{atom:?} made the pawn less valuable");
+        // No atom makes a knight, a bishop, or a rook as valuable as the queen of ordinary chess.
+        if !matches!(kind, Kind::Queen | Kind::King) {
+            assert!(with_atom[kind.index()] < standard[Kind::Queen.index()], "{atom:?} makes {kind:?} a queen");
+        }
+    }
+
+    // A knight jump that only moves is worth less than a knight jump that only captures. The
+    // two atoms together are worth the same as one knight jump that moves and captures.
+    let queen = |atoms: &[Atom]| with_atoms(Kind::Queen, atoms)[Kind::Queen.index()];
+    assert!(queen(std::slice::from_ref(&flight)) < queen(std::slice::from_ref(&huntress)));
+    let both = queen(&[flight, huntress.clone()]);
+    assert!(queen(&[huntress]) < both);
+    assert_eq!(both, queen(&[Atom::leap(&KNIGHT, Mode::MoveOrCapture)]));
 }
 
 #[test]
