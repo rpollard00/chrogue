@@ -126,6 +126,9 @@ layout.camp = {
   reward = rect(1, 8.66, 33.05, 24.5),
   shop = rect(35.05, 8.66, 43.95, 24.5),
   shelfPad = 1, headY = 9.46, headH = 2.4, cardY = 15.14, cardGap = 0.9,
+  -- Each shelf has set slots for its largest content: 3 reward cards and 4 shop items. A card keeps its slot when the
+  -- player takes or buys a different card. A slot with no card stays as an empty slot.
+  rewardSlots = 3, shopSlots = 4,
   skip = rect(24.22, 9.54, 8.83, 2.25),
   reroll = rect(67.62, 9.54, 10.38, 2.25),
   me = {
@@ -141,17 +144,22 @@ layout.camp = {
   },
 }
 
--- The rectangle of a home square of the camp: 0 to 15. Rank 2 is the top row.
-function layout.homeSquare(s)
+-- The home squares of the camp: 0 to 15. Rank 2 is the top row.
+local homes = {}
+do
   local h = layout.camp.me.homes
   local border = layout.boardBorder
   local size = (h.w - 2 * border) / 8
-  local f, r = s % 8, math.floor(s / 8)
-  return rect(h.x + border + f * size, h.y + border + (1 - r) * size, size, size)
+  for s = 0, 15 do
+    local f, r = s % 8, math.floor(s / 8)
+    homes[s] = rect(h.x + border + f * size, h.y + border + (1 - r) * size, size, size)
+  end
 end
 
--- The rectangles of the cards of a shelf. The row of cards is in the center of the shelf.
-function layout.cards(shelf, count)
+function layout.homeSquare(s) return homes[s] end
+
+-- The set slots of the cards of a shelf. The row of slots is in the center of the shelf.
+local function slots(shelf, count)
   local c = layout.camp
   local w, gap = 9.75, c.cardGap
   local total = count * w + math.max(0, count - 1) * gap
@@ -160,6 +168,8 @@ function layout.cards(shelf, count)
   for i = 1, count do list[i] = rect(x + (i - 1) * (w + gap), c.cardY, w, 14.25) end
   return list
 end
+
+layout.camp.slots = { reward = slots(layout.camp.reward, layout.camp.rewardSlots), shop = slots(layout.camp.shop, layout.camp.shopSlots) }
 
 function layout.contains(r, x, y) return x >= r.x and x < r.x + r.w and y >= r.y and y < r.y + r.h end
 

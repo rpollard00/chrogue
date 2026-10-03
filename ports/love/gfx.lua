@@ -66,18 +66,25 @@ function gfx.gradientRect(x, y, w, h, radius, top, bottom, diagonal)
   gfx.gradient(function() lg.rectangle('fill', x, y, w, h, radius, radius, 12) end, x, y, w, h, top, bottom, diagonal)
 end
 
-local disk
+-- The disks of gfx.radial: one mesh of radius 1 for each pair of colors. A color is a stable table (theme.lua).
+local disks = setmetatable({}, { __mode = 'k' })
+
 -- Fills a circle with a radial gradient. The center of the gradient is above the center of the circle, as a light from above.
 function gfx.radial(cx, cy, r, inner, outer)
-  local vertices = { vertex(cx, cy - r * 0.4, inner) }
-  for i = 0, 40 do
-    local a = i / 40 * 2 * math.pi
-    vertices[#vertices + 1] = vertex(cx + math.cos(a) * r, cy + math.sin(a) * r, outer)
+  local byOuter = disks[inner]
+  if not byOuter then byOuter = setmetatable({}, { __mode = 'k' }); disks[inner] = byOuter end
+  local disk = byOuter[outer]
+  if not disk then
+    local vertices = { vertex(0, -0.4, inner) }
+    for i = 0, 40 do
+      local a = i / 40 * 2 * math.pi
+      vertices[#vertices + 1] = vertex(math.cos(a), math.sin(a), outer)
+    end
+    disk = lg.newMesh(vertices, 'fan', 'static')
+    byOuter[outer] = disk
   end
-  disk = disk or lg.newMesh(42, 'fan', 'stream')
-  disk:setVertices(vertices)
   lg.setColor(1, 1, 1, gfx.alpha)
-  lg.draw(disk)
+  lg.draw(disk, cx, cy, 0, r, r)
 end
 
 -- A soft shadow: rectangles that become larger and more transparent. `alpha` is the opacity in the center.
@@ -249,8 +256,22 @@ function gfx.text(text, face, size, x, y, opts)
   return width
 end
 
+-- The lines of each wrapped text, by text, face, size, width, balance, and the size of the unit.
+local wrapped, wrapCount = {}, 0
+
 -- Breaks a text into lines of a width. With `balance`, the lines get almost the same length, as text-wrap: balance.
+-- The result is in a cache. Do not change the list.
 function gfx.wrap(text, face, size, width, balance)
+  local key = table.concat({ text, face, size, width, balance and 1 or 0, gfx.u }, '\0')
+  local lines = wrapped[key]
+  if lines then return lines end
+  if wrapCount > 4000 then wrapped, wrapCount = {}, 0 end
+  lines = gfx.wrapNow(text, face, size, width, balance)
+  wrapped[key], wrapCount = lines, wrapCount + 1
+  return lines
+end
+
+function gfx.wrapNow(text, face, size, width, balance)
   local font = fontOf(face, size)
   local _, lines = font:getWrap(text, width * gfx.u)
   if balance and #lines > 1 then

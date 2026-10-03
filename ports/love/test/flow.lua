@@ -62,7 +62,7 @@ local steps = {
   expect('the promotion picker has four pieces', function(v, c) return same(c.promotion, { 'q', 'n', 'r', 'b' }) and c.status == 'Select the new piece.' end),
   { 'key', 'escape' },
   expect('Escape closes the picker, and the pawn stays selected', function(v, c) return #c.promotion == 0 and c.selected == 47 end),
-  { 'click', 'h7' }, { 'press', 'promo', 1 }, { 'settle' },
+  { 'click', 'h7' }, { 'press', 'promo', 'q' }, { 'settle' },
   expect('the pawn is a queen on h7', function(v, c, app) local p = pieceAt(v, 55) return p and p.kind == 'q' and p.id == 5 end),
   { 'click', 'c1' }, { 'click', 'a3' }, { 'settle' }, { 'wait', 2.2 }, shot('battle-victory'), dump('battle-victory'),
   expect('the rout is a victory', function(v)

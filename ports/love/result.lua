@@ -26,6 +26,9 @@ end
 -- The positions of the parts of the result panel. The panel is above the layout, thus its height comes from its content.
 function result.layout(self)
   if not self.view.result or not self.resultAt then return nil end
+  -- The panel changes only with the view, thus the layout is kept for the next frames.
+  local kept = self.resultCache
+  if kept and kept.view == self.view and kept.u == gfx.u then return kept.c end
   local c = content(self)
   local w = layout.result.w
   local inner = w - 2 * PAD
@@ -53,6 +56,7 @@ function result.layout(self)
   local b = layout.board
   c.x, c.y, c.w, c.h = b.x + (b.w - w) / 2, b.y + (b.h - h) / 2, w, h
   c.key = { x = c.x + (w - keyW) / 2, y = c.y + y, w = keyW, h = 3 }
+  self.resultCache = { view = self.view, u = gfx.u, c = c }
   return c
 end
 

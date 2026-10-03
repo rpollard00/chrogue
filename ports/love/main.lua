@@ -28,32 +28,67 @@ local app = {
   screen = nil, name = nil, view = nil,
   -- The question of the dialog that is open, or nil.
   dialog = nil,
-  pointer = { x = nil, y = nil, hover = nil, pressed = nil },
+  -- `pressed` is the control under the press of the button, and `pressedOn` the screen object of the press.
+  pointer = { x = nil, y = nil, hover = nil, pressed = nil, pressedOn = nil },
   options = {},
   enteredAt = 0,
   -- The responses that the core refused, for the dump.
   refusals = {},
+  -- The warnings about the saved data (save_failed, save_problem). They are above the layout and do not stop the game.
+  notices = {},
   frames = { count = 0, worstMs = 0, started = 0 },
 }
 
 local runner
 local originX, originY = 0, 0
 local TRANSITION = 0.2
+local NOTICE_TIME = 14
 
-function app.send(request) net.send(request) end
+-- The commands that the screens sent, for the test scripts: the last 64.
+app.sent = {}
+
+function app.send(request)
+  app.sent[#app.sent + 1] = request.cmd
+  if #app.sent > 64 then table.remove(app.sent, 1) end
+  net.send(request)
+end
 
 -- True while a request waits for the core. A screen does not send a second action before the first one is done.
 function app.waiting() return net.busy() end
 
 function app.confirm(question, ok) app.dialog = { question = question, ok = ok } end
 
--- Opens the screen of a view.
+-- Opens the screen of a view. A press of the button on the screen before does not become a click on this screen.
 local function enter(view, events)
   local module = assert(SCREENS[view.screen], 'The core sent a screen that the client does not know: ' .. tostring(view.screen))
   app.screen = module.new(app, view, events)
   app.name = view.screen
   app.dialog = nil
   app.enteredAt = love.timer.getTime()
+  app.pointer.pressed, app.pointer.pressedOn = nil, nil
+end
+
+-- False during the fade of a new screen. A second click or key of the player is then for the screen before, thus the
+-- new screen does not take it.
+function app.inputReady() return love.timer.getTime() - app.enteredAt >= TRANSITION end
+
+-- The events that are not for one screen: the problems of the saved data.
+function app.events(events)
+  for _, e in ipairs(events) do
+    local notice = text.notice(e, app.saveDir)
+    if notice then
+      notice.at = love.timer.getTime()
+      notice.key = notice.title .. table.concat(notice.lines, ' ')
+      -- Each save after a failed save can fail again. The same notice then stays longer, and does not come two times.
+      local same
+      for _, n in ipairs(app.notices) do if n.key == notice.key then same = n end end
+      if same then same.at = math.max(same.at, notice.at - 0.2)
+      else
+        app.notices[#app.notices + 1] = notice
+        io.stdout:write(('Notice: %s. %s\n'):format(notice.title, table.concat(notice.lines, ' ')))
+      end
+    end
+  end
 end
 
 local function hasScreenEvent(events)
@@ -73,10 +108,18 @@ net.onResponse = function(response, request)
   app.response = response
   if not view then return end
   local events = response.events or {}
+  app.events(events)
   if not response.ok then
     local err = response.error or {}
-    io.stderr:write(('The core refused %s: %s (%s)\n'):format(request and request.cmd or '?', tostring(err.code), tostring(err.message)))
-    app.refusals[#app.refusals + 1] = { cmd = request and request.cmd, code = err.code }
+    local cmd = request and request.cmd or '?'
+    app.refusals[#app.refusals + 1] = { cmd = cmd, code = err.code }
+    -- A test script lists the refusals that it expects. Each other refusal stops the script.
+    if runner and script.expected(runner, cmd, err.code) then
+      print(('expected: the core does not accept %s (%s)'):format(cmd, tostring(err.code)))
+    else
+      io.stderr:write(('The core refused %s: %s (%s)\n'):format(cmd, tostring(err.code), tostring(err.message)))
+      if runner then error(('The core refused %s (%s), and the script did not expect it'):format(cmd, tostring(err.code))) end
+    end
     if app.screen and app.name == view.screen then app.screen:refused(view, request) else enter(view, {}) end
     return
   end
@@ -107,9 +150,24 @@ end
 
 function app.toWindow(x, y) return shaders.toWindow(x * gfx.u + originX, y * gfx.u + originY) end
 
--- The control at a point of the stage. The dialog is above the screen.
+-- The rectangles of the notices: a column at the top of the stage, above the layout.
+local function noticeRects()
+  local list, y = {}, 0.75
+  for i, notice in ipairs(app.notices) do
+    local r = ui.noticeLayout(notice, layout.stage, y)
+    list[i] = r
+    y = y + r.h + 0.5
+  end
+  return list
+end
+
+-- The control at a point of the stage. A notice is above all. The dialog is above the screen.
 function app.hit(x, y)
-  if not x or net.state ~= 'connected' or not app.screen then return nil end
+  if not x then return nil end
+  for i, r in ipairs(noticeRects()) do
+    if layout.contains(r, x, y) then return 'notice' .. i end
+  end
+  if net.state ~= 'connected' or not app.screen then return nil end
   if app.dialog then
     local d = ui.dialogLayout(layout.stage)
     if layout.contains(d.ok, x, y) then return 'ok' end
@@ -121,6 +179,7 @@ end
 
 -- The rectangle of a named control, for the test script.
 function app.control(name, arg)
+  if name == 'notice' then return assert(noticeRects()[arg or 1], 'No notice ' .. tostring(arg)) end
   if app.dialog then
     local d = ui.dialogLayout(layout.stage)
     return assert(d[name], 'The dialog has no control ' .. tostring(name))
@@ -130,6 +189,10 @@ function app.control(name, arg)
 end
 
 local function activate(name)
+  if name:find('^notice') then
+    table.remove(app.notices, tonumber(name:sub(7)))
+    return
+  end
   if app.dialog then
     local dialog = app.dialog
     app.dialog = nil
@@ -159,6 +222,7 @@ local function parse(args)
     elseif name == '--no-save' then options.noSave = true
     elseif name == '--keep-alive' then options.keepAlive = true
     elseif name == '--novsync' then options.novsync = true
+    elseif name == '--no-auth' then options.noAuth = true
     end
     i = i + 1
   end
@@ -185,6 +249,7 @@ function love.load(args)
     return default(message)
   end
   if options.script then runner = script.load(options.script) end
+  app.saveDir = options.saveDir or love.filesystem.getSaveDirectory()
   net.start(options)
   app.frames.started = love.timer.getTime()
 end
@@ -204,6 +269,10 @@ function love.update(dt)
   if frames.count > 5 then frames.worstMs = math.max(frames.worstMs, love.timer.getDelta() * 1000) end
   -- A long frame (a screenshot, a move of the window) does not skip the motion.
   if app.screen then app.screen:update(math.min(dt, 0.05), app.pointer) end
+  local t = love.timer.getTime()
+  for i = #app.notices, 1, -1 do
+    if t - app.notices[i].at > NOTICE_TIME then table.remove(app.notices, i) end
+  end
   if runner then script.update(runner, app) end
 end
 
@@ -220,18 +289,21 @@ end
 function love.mousepressed(x, y, button)
   if button ~= 1 then return end
   moved(toStage(x, y))
-  app.pointer.pressed = app.pointer.hover
+  local p = app.pointer
+  -- A notice takes a click at each time. The screen takes a click only after its fade.
+  local ready = app.inputReady() or (p.hover and p.hover:find('^notice'))
+  p.pressed, p.pressedOn = ready and p.hover or nil, app.screen
 end
 
--- A click is a press and a release on the same control.
+-- A click is a press and a release on the same control of the same screen.
 function love.mousereleased(x, y, button)
   if button ~= 1 then return end
   local p = app.pointer
-  local pressed = p.pressed
-  p.pressed = nil
+  local pressed, on = p.pressed, p.pressedOn
+  p.pressed, p.pressedOn = nil, nil
   local sx, sy = toStage(x, y)
   moved(sx, sy)
-  if pressed and pressed == p.hover then activate(pressed) end
+  if pressed and pressed == p.hover and on == app.screen then activate(pressed) end
   -- The click can change the controls, thus the control below the pointer can be a different one.
   moved(sx, sy)
 end
@@ -245,6 +317,7 @@ function love.keypressed(key)
     shaders.cycle()
     return
   end
+  if not app.inputReady() then return end
   if app.dialog then
     if key == 'escape' then app.dialog = nil
     elseif key == 'return' or key == 'kpenter' then activate('ok') end
@@ -287,6 +360,11 @@ function love.draw()
     if app.dialog then ui.dialog(layout.stage, app.dialog.question, app.pointer) end
   end
   connection()
+  local t = love.timer.getTime()
+  for i, r in ipairs(noticeRects()) do
+    local notice = app.notices[i]
+    ui.notice(notice, r, app.pointer.hover == 'notice' .. i, t - notice.at, NOTICE_TIME)
+  end
   lg.pop()
   shaders.endScene()
   -- The name of the effects mode, in the corner of the window.
@@ -311,7 +389,7 @@ function app.settled()
     and love.timer.getTime() - app.enteredAt > TRANSITION
 end
 
--- The set areas of each screen, in stage units, for the test of the layout (test/layout.py).
+-- The set areas of each screen, in stage units, for the dump.
 local AREAS = {
   title = layout.title, upgrades = layout.upgrades, camp = layout.camp, over = layout.over,
   battle = { board = layout.board, foe = layout.foe, me = layout.me },
@@ -336,9 +414,15 @@ function app.dump()
     view = app.view,
     client = app.screen and app.screen:state() or json.null,
     dialog = app.dialog and app.dialog.question or json.null,
+    notices = (function()
+      local list = {}
+      for i, n in ipairs(app.notices) do list[i] = { kind = n.kind, title = n.title, lines = n.lines } end
+      return list
+    end)(),
     hover = app.pointer.hover or json.null,
     refusals = app.refusals,
-    net = { state = net.state, address = net.address or json.null, stats = net.stats, pid = net.pid() or json.null },
+    net = { state = net.state, address = net.address or json.null, stats = net.stats, pid = net.pid() or json.null,
+      authenticated = net.authenticated, problem = net.problem or json.null },
     areas = app.name and rects(AREAS[app.name], '') or json.null,
     origin = { x = originX, y = originY },
     measurements = app.measurements or {},

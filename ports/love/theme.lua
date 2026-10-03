@@ -1,21 +1,60 @@
 -- The colors and the typefaces. The colors are the custom properties of :root in style.css.
 local theme = {}
 
+--[[
+  A color is a table { r, g, b, a }. The functions below give the same table for the same arguments, thus a drawing in
+  each frame does not parse or mix a color again, and a mesh can keep a color table as its key. Do not change a color table.
+]]
+local parsed = {}
 local function hex(text, alpha)
-  local r, g, b = text:match('^#(%x%x)(%x%x)(%x%x)$')
-  return { tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255, alpha or 1 }
+  local key = text .. (alpha and ('/' .. alpha) or '')
+  local c = parsed[key]
+  if not c then
+    local r, g, b = text:match('^#(%x%x)(%x%x)(%x%x)$')
+    c = { tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255, alpha or 1 }
+    parsed[key] = c
+  end
+  return c
 end
 local function rgba(r, g, b, a) return { r / 255, g / 255, b / 255, a } end
 
 theme.hex = hex
 
--- color-mix(in srgb, a p%, b)
-function theme.mix(a, p, b)
+-- A cache with weak keys: an entry goes when no other table has the color.
+local function weak() return setmetatable({}, { __mode = 'k' }) end
+local mixes, alphas = weak(), weak()
+
+-- color-mix(in srgb, a p%, b), as a new table. For a mix that changes in each frame (an animation).
+function theme.mixNow(a, p, b)
   local q = 1 - p
   return { a[1] * p + b[1] * q, a[2] * p + b[2] * q, a[3] * p + b[3] * q, (a[4] or 1) * p + (b[4] or 1) * q }
 end
 
-function theme.alpha(c, a) return { c[1], c[2], c[3], (c[4] or 1) * a } end
+-- color-mix(in srgb, a p%, b), from the cache. For a mix with a set `p`.
+function theme.mix(a, p, b)
+  local byP = mixes[a]
+  if not byP then byP = {}; mixes[a] = byP end
+  local byB = byP[p]
+  if not byB then byB = weak(); byP[p] = byB end
+  local c = byB[b]
+  if not c then
+    local q = 1 - p
+    c = { a[1] * p + b[1] * q, a[2] * p + b[2] * q, a[3] * p + b[3] * q, (a[4] or 1) * p + (b[4] or 1) * q }
+    byB[b] = c
+  end
+  return c
+end
+
+function theme.alpha(c, a)
+  local byA = alphas[c]
+  if not byA then byA = {}; alphas[c] = byA end
+  local out = byA[a]
+  if not out then
+    out = { c[1], c[2], c[3], (c[4] or 1) * a }
+    byA[a] = out
+  end
+  return out
+end
 
 theme.color = {
   bg = hex('#15171c'), panel = hex('#1f232b'), line = hex('#333a47'), text = hex('#e8e6e1'), dim = hex('#9aa0ab'),

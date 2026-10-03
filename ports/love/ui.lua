@@ -238,6 +238,45 @@ function ui.tallyRow(x, y, w, label, value, since, total)
   end)
 end
 
+--[[
+  A notice about the saved data: a panel above the layout at the top left corner of the stage. There the battle has an
+  empty column, and the camp has only text. Its height comes from its text. `y` is its top. The rectangle has the lines.
+]]
+local NOTICE = { x = 0.75, w = 22, pad = 1, title = 1.05, size = 0.85, line = 0.85 * 1.4, detail = 0.75, detailLine = 0.75 * 1.4 }
+
+function ui.noticeLayout(notice, stage, y)
+  local N = NOTICE
+  local inner = N.w - 2 * N.pad
+  local body = {}
+  for _, sentence in ipairs(notice.lines) do
+    for _, l in ipairs(gfx.wrap(sentence, 'body', N.size, inner)) do body[#body + 1] = l end
+  end
+  local detail = notice.detail and gfx.wrap(notice.detail, 'body', N.detail, inner) or {}
+  local h = N.pad + N.title + 0.3 + #body * N.line + (#detail > 0 and 0.3 + #detail * N.detailLine or 0) + N.pad
+  return { x = N.x, y = y, w = N.w, h = h, body = body, detail = detail }
+end
+
+-- Draws a notice. `since` is the time since it came, and `life` the time that it stays.
+function ui.notice(notice, r, hover, since, life)
+  local N = NOTICE
+  local alpha = math.min(1, since / 0.2, (life - since) / 0.6)
+  if alpha <= 0 then return end
+  local flair = notice.kind == 'failed' and C.danger or C.accent
+  gfx.withAlpha(alpha, function()
+    gfx.shadow(r.x, r.y, r.w, r.h, px(10), px(10), px(30), 0, 0.6)
+    gfx.rect(r.x, r.y, r.w, r.h, px(10), C.panel)
+    gfx.rect(r.x + px(1), r.y + px(8), px(3), r.h - px(16), 0, flair)
+    gfx.outline(r.x, r.y, r.w, r.h, px(10), px(1), hover and flair or C.line)
+    local x, y = r.x + N.pad, r.y + N.pad
+    gfx.text(notice.title:upper(), 'bold', 0.75, x, y, { color = flair, tracking = 0.08, line = N.title })
+    gfx.text('CLOSE', 'bold', 0.62, x, y, { color = hover and C.text or C.dim, tracking = 0.1, align = 'right', width = r.w - 2 * N.pad, line = N.title })
+    y = y + N.title + 0.3
+    gfx.lines(r.body, 'body', N.size, x, y, N.line, { color = C.text })
+    y = y + #r.body * N.line
+    if #r.detail > 0 then gfx.lines(r.detail, 'body', N.detail, x, y + 0.3, N.detailLine, { color = C.dim }) end
+  end)
+end
+
 -- The question before an action that ends a run. The web game uses the dialog of the browser for it.
 function ui.dialogLayout(stage)
   local w, h = 20, 7.4

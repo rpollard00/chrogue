@@ -122,8 +122,8 @@ function over:draw(pointer)
     if r.y[i] then ui.tallyRow(r.x, r.y[i], r.w, text.overRow(row), row.crowns, since - TALLY_START - (i - 1) * ui.ROW_STEP) end
   end
   if #rows > 1 then
-    local total = 0
-    for _, row in ipairs(rows) do total = total + row.crowns end
+    -- The core gives the total. The client does not add the rows.
+    local total = s.crowns
     local start = since - TALLY_START - #rows * ui.ROW_STEP
     if start > 0 then gfx.rect(r.x, r.total, r.w, px(1), 0, C.line, math.min(1, start / 0.3)) end
     ui.tallyRow(r.x, r.total + 0.5, r.w, 'Total crowns', total, start, true)

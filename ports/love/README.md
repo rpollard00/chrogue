@@ -25,7 +25,8 @@ The options come after the game folder. The client gives `--seed`, `--debug`, `-
 - `--no-save`: the core keeps the saved data in memory only.
 - `--save-dir PATH`: the core keeps the saved data in `PATH`, not in the save folder of LÖVE.
 - `--keep-alive`: the core continues after the game stops. The game prints the address of the core.
-- `--connect HOST:PORT`: the client connects to a core that runs, and does not start a core.
+- `--connect HOST:PORT`: the client connects to a core that runs, and does not start a core. Set `CHROGUE_TOKEN` to the token of that core.
+- `--no-auth`: the client accepts a core that does not check the token of a connection. See "The token".
 - `--script FILE`: a Lua file of test steps. See "Test scripts".
 - `--novsync`: no limit for the frames per second, for a measurement.
 
@@ -35,21 +36,37 @@ The options come after the game folder. The client gives `--seed`, `--debug`, `-
 - `Escape` closes the dialog, the promotion picker, and a pinned paper tip. Then it clears the selection of a piece.
 - `Enter` does the function of the primary key: Continue run or New run on the title, Continue after a battle, Start the battle in the camp, Buy on the upgrades, and New run at the end of a run. In a dialog, `Enter` is OK.
 
+A new screen takes no click and no key (other than `F1`) during its fade of 0.2 seconds. Thus the second click of a double click, or a second `Enter`, does not act on the next screen. A press of the button on one screen and its release on a different screen is not a click.
+
 ## The connection to the core
 
 The client starts the core with `--listen 127.0.0.1:0`. It reads the address from the first line of the core, and connects with TCP. The socket does not block: the client reads and writes in each frame. Thus the window continues to draw while the core selects the enemy move.
 
 The client sends one request at a time. The other requests wait in a queue. After each connection, the client sends `view` and opens the screen of the response.
 
-- After the move of the player, the client waits 350 ms, then it sends `enemy_move`. While it waits, the lamp shows "The enemy thinks".
+- After the move of the player, the client waits 350 ms, then it sends `enemy_move`. While it waits, the lamp shows "The enemy thinks". If the player gives up during the pause, the client does not send `enemy_move`.
+- If the core refuses `enemy_move`, the client sends it again one time. After a second refusal, the lamp shows "The enemy move failed.", and Give up stays available.
+- A request has 5 seconds for its response (`enemy_move` has 15 seconds). After this time, the client closes the connection, as for a lost connection.
 - If the connection is lost, the window shows a panel, and the client tries again each second. If the core that the client started stopped, the client starts a new core with the same save folder.
 - When the game stops, it sends `quit` to the core that it started. With `--keep-alive`, the core continues. If the game stops with an error, the core stops when no client connects for 5 seconds.
+- Before the game stops its core with `kill`, it checks that the process number is still the core: `/proc/PID/cmdline` on Linux, `ps -p PID -o comm=` on macOS. It does not stop a different process.
+- A `save_failed` or `save_problem` event gives a notice at the top left corner of the window. The notice does not stop the game. It goes after 14 seconds, or when the player clicks it. The notice of `save_problem` gives the path of the file that the core kept aside.
+
+### The token
+
+Each connection starts with a token, thus a different program on the computer cannot send commands to the core.
+
+1. When the client starts the core, it makes a token of 64 hex digits from `/dev/urandom` (if it can read it) and from `love.math.newRandomGenerator` with the time as its seed.
+2. The client gives the token to the core only in the environment variable `CHROGUE_TOKEN`. The shell reads the token from its input, thus the token is not in the command line of a process.
+3. The first line of each connection is `{"auth":"TOKEN"}`. The client waits for `{"ok":true,"auth":true}` before it sends a command. If the core answers with an error, the client stops with a panel that shows the error.
+4. With `--connect`, the client reads the token from its own `CHROGUE_TOKEN`.
+5. With `--no-auth`, the client continues when the core answers the token with an error. Use it only with a core that does not check tokens. With `--no-auth` and no `CHROGUE_TOKEN`, the client sends no token.
 
 To continue a battle in a new window:
 
 1. Start the game with `--keep-alive`. Play, then close the window.
-2. Read the address in the output, for example `127.0.0.1:43201`.
-3. Start the game with `--connect 127.0.0.1:43201`. The same battle continues.
+2. Read the address and the token in the output, for example `127.0.0.1:43201` and `CHROGUE_TOKEN=3f9a…`.
+3. Start the game with `CHROGUE_TOKEN=3f9a…` in its environment and `--connect 127.0.0.1:43201`. The same battle continues.
 
 ## Test scripts
 
@@ -59,7 +76,12 @@ To continue a battle in a new window:
 |---|---|
 | `{ 'click', 'e2' }` | A square of the battle board, or a home square of the camp (`a1` to `h2`). An index from 0 is also correct. |
 | `{ 'press', NAME, ARG }` | A named control of the screen or of the dialog. |
-| `{ 'play', FUNCTION }` | The function gets the view and gives a move of `view.moves`. The step clicks its two squares, and the first piece of the promotion picker. |
+| `{ 'play', FUNCTION }` | The function gets the view and gives a move of `view.moves`. The step clicks its two squares. In the promotion picker, it clicks the piece of the move (`promo`). |
+| `{ 'again' }` | A click at the point of the last click, for a double click. |
+| `{ 'down', NAME, ARG }`, `{ 'up' }` | A press of the button on a named control, and its release at the same point. |
+| `{ 'refusal', 'enemy_move', 'internal', 2 }` | The core can refuse this command with this code (here 2 times). Each other refusal stops the script with an error. |
+| `{ 'events', LIST }` | Events as in a response, for the events that the core cannot make in a test. |
+| `{ 'respond', FUNCTION }` | The function gets the app and gives a response and its request, as from the core. |
 | `{ 'hover', 'medal', 'player', 2 }` | The pointer on a medal of a fan: `player` or `enemy`, and the number of the medal. |
 | `{ 'hover', 'stash', 'player' }` | The pointer on a stash. |
 | `{ 'hover', 'control', NAME, ARG }` | The pointer on a named control. |
@@ -82,12 +104,15 @@ The named controls are in the `control` function of each screen module:
 
 - Title: `continueRun`, `newRun`, `upgrades`.
 - Upgrades: `slot` (a number from 1 to 16, or an upgrade id), `buy`, `back`.
-- Battle: `continue`, `giveUp`, `promo` (1 to 4: queen, knight, rook, bishop), `square`, `stash`, `medal`.
+- Battle: `continue`, `giveUp`, `promo` (1 to 4, or a kind: `'q'`, `'n'`, `'r'`, `'b'`), `square`, `stash`, `medal`.
 - Camp: `take` (1 to 3), `buy` (an item of the shop), `card` and `info` (`{ 'shop', 3 }` or `{ 'reward', 1 }`), `skip`, `reroll`, `start`, `home`, `medal`.
 - End of a run: `newRun`, `upgrades`, `title`.
 - Dialog: `ok`, `cancel`.
+- Notice: `notice` (the number of the notice, from 1).
 
-`test/run.sh [folder]` runs all the scripts of `test/`. It writes the screenshots, the dumps, and the log to the folder (default `/tmp/chrogue-love4/run`). Each run opens a window for some seconds.
+`test/run.sh [folder]` runs all the scripts of `test/`. It writes the screenshots, the dumps, and the log to the folder (default `/tmp/chrogue-love4/run`). Each run opens a window for some seconds. With `CHROGUE_NO_AUTH=1`, each run has `--no-auth`.
+
+The run fails if a game stops with an error, if the core refused a command that a script did not expect, or if a core of this game continues after the tests.
 
 - `test/flow.lua`: a full session from the title to the title, at 1280 by 720 and 1920 by 1080.
 - `test/showcase.lua`: the largest content (the last boss, a full army, each relic) and a won run.
@@ -95,6 +120,10 @@ The named controls are in the `control` function of each screen module:
 - `test/reconnect-a.lua`, `test/reconnect-b.lua`: the reconnection with `--keep-alive` and `--connect`.
 - `test/lost.lua`: the core stops, and the client starts a new core.
 - `test/fps.lua`: the frames per second on the camp and the battle, in each effects mode.
+- `test/input.lua`: a double click on Continue and on Buy, two presses of `Enter` after a draw, and a release on a new screen. The shop cards keep their slots after a purchase.
+- `test/battle.lua`: a battle that starts with no legal move, Give up during the pause before the enemy move, refusals of `enemy_move`, and a promotion to a knight.
+- `test/saves.lua`: the notices of `save_failed` (a save folder that cannot take a file) and of `save_problem`.
+- `test/icons.lua`: the SVG path reader of `icons.lua`.
 
 With `CHROGUE_EFFECTS=off`, `flow.lua` and `showcase.lua` start with the effects off. Use this setting for screenshots that you compare pixel by pixel.
 
@@ -126,6 +155,7 @@ Where the web game gives an area the size of its content, the client gives the a
 - The wells of the title and the purses have the width of their largest value.
 - The well of the next enemy in the camp has space for 16 pieces. The fan of traits has a set place before it.
 - The start key of the camp stays in place when the text below it goes.
+- The reward shelf has 3 set card slots, and the shop has 4. A card keeps its slot when the player buys a different card, and a bought card leaves an empty slot. In the web game, the other cards move to the center. After a new connection, the cards fill the slots from the left. When a shelf has no card, its heading line tells it, as the text of the web game does.
 - The end of a run has the positions of a won run. The tally well keeps its height when a lost run has one row.
 - The text of the upgrade panel has a slot for three lines, and the ladder has a slot for three levels.
 - On the battle, the name "You" stays in its row when the lamp goes after the result.
@@ -135,7 +165,8 @@ Other differences:
 - The relic medals, the relic cards, and the relic cards on the shelves have the foil shader. The background and the post pass are also only in this client.
 - Body text uses Fira Sans. The web game uses the typeface of the system.
 - The dialogs (Give up, a new run over a saved run) are in the game window. The web game uses the dialog of the browser.
-- A screen comes into view with a fade of 0.2 seconds.
+- A screen comes into view with a fade of 0.2 seconds. During the fade, the screen takes no input.
+- A battle that starts with no legal move for the player shows "No legal move. Give up." in the lamp (core/PROTOCOL.md, "Open issues").
 - The keyboard has no focus ring and no Tab order. Only `Escape` and `Enter` work.
 
 ## What this change removed

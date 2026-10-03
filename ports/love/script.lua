@@ -9,7 +9,14 @@
   { 'hover', 'stash', 'player' }          the pointer on a stash
   { 'hover', 'control', NAME, ARG }       the pointer on a named control
   { 'hover', 'none' }                     the pointer leaves the window
-  { 'play', function(view) return move end }   clicks the two squares of a move that the function selects from view.moves
+  { 'play', function(view) return move end }   clicks the two squares of a move that the function selects from view.moves.
+                                          If the move has `promo`, the step selects that piece in the promotion picker.
+  { 'again' }                             a click at the point of the last click, for a double click
+  { 'down', NAME, ARG }, { 'up' }         a press of the button on a named control, and its release at the same point
+  { 'refusal', 'enemy_move', 'wrong_phase', 2 }   the core can refuse this command with this code (2 times). Each
+                                          refusal that the script does not expect stops the game with an error.
+  { 'events', { { type = 'save_problem', ... } } }   events as in a response, for the events that the core cannot make
+  { 'respond', function(app) return response, request end }   a response as from the core, for a state that it cannot make
   { 'key', 'f1' }                         a key
   { 'wait', 0.5 }                         seconds
   { 'settle' }                            until no request waits for the core, the enemy moved, and no piece moves
@@ -55,7 +62,24 @@ end
 
 function script.load(path)
   local chunk = assert(loadfile(path))
-  return { steps = chunk(), at = 1, waitUntil = nil, pending = false, since = nil, path = path }
+  return { steps = chunk(), at = 1, waitUntil = nil, pending = false, since = nil, path = path, allowed = {}, last = nil }
+end
+
+-- True if the script expects that the core refuses `cmd` with `code`. The count of the refusal becomes one smaller.
+function script.expected(self, cmd, code)
+  for _, a in ipairs(self.allowed) do
+    if a.cmd == cmd and a.code == code and a.left > 0 then
+      a.left = a.left - 1
+      return true
+    end
+  end
+  return false
+end
+
+local function click(x, y)
+  love.mousemoved(x, y, 0, 0, false)
+  love.mousepressed(x, y, 1, false, 1)
+  love.mousereleased(x, y, 1, false, 1)
 end
 
 local function describe(step)
@@ -87,26 +111,34 @@ function script.update(self, app)
       self.since = nil
     elseif kind == 'click' or kind == 'press' then
       local x, y = app.toWindow(target(app, step))
+      self.last = { x, y }
+      click(x, y)
+    elseif kind == 'again' then
+      local p = assert(self.last, 'The step again needs a click before it')
+      click(p[1], p[2])
+    elseif kind == 'down' then
+      local x, y = app.toWindow(target(app, { 'press', step[2], step[3] }))
+      self.last = { x, y }
       love.mousemoved(x, y, 0, 0, false)
       love.mousepressed(x, y, 1, false, 1)
-      love.mousereleased(x, y, 1, false, 1)
+    elseif kind == 'up' then
+      local p = assert(self.last, 'The step up needs a step down before it')
+      love.mousereleased(p[1], p[2], 1, false, 1)
+    elseif kind == 'refusal' then
+      self.allowed[#self.allowed + 1] = { cmd = step[2], code = step[3], left = step[4] or 1 }
+    elseif kind == 'events' then
+      app.events(step[2])
+    elseif kind == 'respond' then
+      -- A response that the core cannot make in this state: the function gets the app and gives the response and the request.
+      local response, request = step[2](app)
+      net.onResponse(response, request)
     elseif kind == 'play' then
       -- The function selects a move of view.moves. The step clicks its two squares, and the first piece of the picker.
       -- After the end of the battle, the step does nothing.
       local move = app.view.phase == 'player' and step[2](app.view)
       if app.view.phase == 'player' and not move then error(('Step %d: the play function gave no move'):format(self.at)) end
-      for _, s in ipairs(move and { move.from, move.to } or {}) do
-        local x, y = app.toWindow(center(app.control('square', s)))
-        love.mousemoved(x, y, 0, 0, false)
-        love.mousepressed(x, y, 1, false, 1)
-        love.mousereleased(x, y, 1, false, 1)
-      end
-      if app.screen.promotion then
-        local x, y = app.toWindow(center(app.control('promo', 1)))
-        love.mousemoved(x, y, 0, 0, false)
-        love.mousepressed(x, y, 1, false, 1)
-        love.mousereleased(x, y, 1, false, 1)
-      end
+      for _, s in ipairs(move and { move.from, move.to } or {}) do click(app.toWindow(center(app.control('square', s)))) end
+      if app.screen.promotion then click(app.toWindow(center(app.control('promo', move.promo or 1)))) end
     elseif kind == 'hover' then
       if step[2] == 'none' then love.mousefocus(false)
       else
@@ -164,7 +196,8 @@ function script.update(self, app)
     end
     self.at = self.at + 1
     -- A step that changes the picture ends the frame, thus the next screenshot shows the change.
-    if kind ~= 'wait' and kind ~= 'settle' and kind ~= 'screen' and kind ~= 'expect' and kind ~= 'log' and kind ~= 'dump' then return end
+    if kind ~= 'wait' and kind ~= 'settle' and kind ~= 'screen' and kind ~= 'expect' and kind ~= 'log' and kind ~= 'dump'
+      and kind ~= 'refusal' then return end
   end
 end
 

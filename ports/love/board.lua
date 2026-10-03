@@ -14,7 +14,7 @@ local INNER = layout.board.w - 2 * layout.boardBorder
 local PIECE = 0.095 * INNER
 local COORD = 0.019 * INNER
 local FLOATER = 0.05 * INNER
-local PROMOS = { 'q', 'n', 'r', 'b' }
+local GRAY = theme.hex('#6f6f6f')
 
 local function boardPoint(col, row)
   return layout.board.x + layout.boardBorder + col * SQ, layout.board.y + layout.boardBorder + row * SQ
@@ -32,7 +32,7 @@ local function squares(self)
     if s == check then
       local mark = C.markCheck
       local t = self.alarmAt and self.time - self.alarmAt or self.ALARM_TIME
-      if t < self.ALARM_TIME then mark = theme.mix(C.markAlarm, math.sin(math.pi * t / (self.ALARM_TIME / 2)) ^ 2, C.markCheck) end
+      if t < self.ALARM_TIME then mark = theme.mixNow(C.markAlarm, math.sin(math.pi * t / (self.ALARM_TIME / 2)) ^ 2, C.markCheck) end
       gfx.rect(x, y, SQ, SQ, 0, mark)
     elseif s == self.selected then
       gfx.rect(x, y, SQ, SQ, 0, scouting and C.scoutSelected or C.markSelected)
@@ -120,7 +120,7 @@ local function promotion(self, ui)
   gfx.gradientRect(x, y, SQ, h, 0, C.liningLo, C.lining)
   for i, r in ipairs(rects) do
     if ui.hover == 'promo' .. i then gfx.rect(r.x, r.y, r.w, r.h, 0, C.accent, 0.45) end
-    gfx.piece(self.promotion[i].promo or PROMOS[i], 'w', r.x + SQ / 2, r.y + SQ / 2, PIECE)
+    gfx.piece(self.promotion[i].promo, 'w', r.x + SQ / 2, r.y + SQ / 2, PIECE)
   end
 end
 
@@ -163,7 +163,7 @@ function board.draw(self, ui)
     -- The board becomes dark below the result. After a defeat, it also loses its color.
     local t = math.min(1, (self.time - self.resultAt) / 0.4)
     local lost = self.view.result.winner == 'b'
-    if lost then gfx.rect(b.x, b.y, b.w, b.h, px(4), theme.hex('#6f6f6f'), 0.55 * t) end
+    if lost then gfx.rect(b.x, b.y, b.w, b.h, px(4), GRAY, 0.55 * t) end
     gfx.rect(b.x, b.y, b.w, b.h, px(4), C.black, (lost and 0.5 or 0.4) * t)
   end
   intro(self)

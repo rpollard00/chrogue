@@ -25,16 +25,11 @@ battle.ALARM_TIME = 0.76
 battle.INTRO_TIME = 1.9
 battle.PROMOTE_TIME = 0.65
 battle.PROMOTE_DELAY = 0.18
-battle.PIP_TIME = 0.5
 battle.COUNT_TIME = 0.6
+-- The client sends enemy_move again one time after the core refused it. After a second refusal, the lamp tells it.
+battle.ENEMY_RETRIES = 1
 
 local function place(s) return s % 8, 7 - math.floor(s / 8) end
-
-local function sameList(a, b)
-  if #a ~= #b then return false end
-  for i = 1, #a do if a[i].id ~= b[i].id then return false end end
-  return true
-end
 
 -- Gives each piece a sprite. A sprite keeps its piece id for the full battle, thus a move is a tween.
 function battle:syncPieces(animate)
@@ -48,10 +43,8 @@ function battle:syncPieces(animate)
     if not sprite then
       self.sprites[p.id] = { id = p.id, kind = p.kind, color = p.color, col = col, row = row, fromCol = col, fromRow = row, movedAt = -1 }
     else
-      if sprite.kind ~= p.kind then
-        sprite.kind = p.kind
-        if animate then sprite.promotedAt = self.time end
-      end
+      -- The light of a promotion comes from the promote event (battle:events), not from this change of kind.
+      sprite.kind = p.kind
       if sprite.col ~= col or sprite.row ~= row then
         sprite.fromCol, sprite.fromRow = sprite.col, sprite.row
         sprite.col, sprite.row, sprite.movedAt = col, row, animate and self.time or -1
@@ -73,7 +66,7 @@ function battle.new(app, view, events)
   local self = setmetatable({
     app = app, view = view,
     selected = -1, promotion = nil, pending = false,
-    time = 0, enemyAt = nil, enemySent = nil,
+    time = 0, enemyAt = nil, enemySent = nil, enemyRefusals = 0, enemyFailed = false, givenUp = false,
     sprites = {}, gone = {}, floaters = {}, flashes = {},
     alarmAt = nil, resultAt = nil, introAt = nil,
     stashAt = { w = nil, b = nil },
@@ -82,18 +75,13 @@ function battle.new(app, view, events)
     enemy = { count = 0, worstFrameMs = 0, lastMs = 0, worstMs = 0 },
   }, battle)
   self:syncPieces(false)
-  self:fans()
+  -- The relics and the traits do not change in a battle. A debug command that changes them starts a new battle screen.
+  self.myFan = fan.new(view.relics, 'player', layout.me.fan)
+  self.foeFan = fan.new(view.traits, 'enemy', layout.foe.fan)
   if view.result then self.resultAt = -10 end
   self:events(events or {})
   self:schedule()
   return self
-end
-
--- The fans of relics and traits. They change only when the relics change (a debug command starts the battle again).
-function battle:fans()
-  local v = self.view
-  if not self.myFan or not sameList(self.myFan.items, v.relics) then self.myFan = fan.new(v.relics, 'player', layout.me.fan) end
-  if not self.foeFan or not sameList(self.foeFan.items, v.traits) then self.foeFan = fan.new(v.traits, 'enemy', layout.foe.fan) end
 end
 
 -- Starts the motion of the events of a response.
@@ -109,6 +97,9 @@ function battle:events(list)
         local col, row = place(e.square)
         self.floaters[#self.floaters + 1] = { col = col, row = row, text = ('+%g'):format(math.floor(e.gold * 10 + 0.5) / 10), at = self.time }
       end
+    elseif kind == 'promote' then
+      local sprite = self.sprites[e.id]
+      if sprite then sprite.promotedAt = self.time end
     elseif kind == 'check' then
       self.alarmAt = self.time
     elseif kind == 'relic' then
@@ -121,7 +112,7 @@ end
 
 -- After the move of the player, the enemy waits, then the client asks for the enemy move.
 function battle:schedule()
-  if self.view.phase == 'enemy' then
+  if self.view.phase == 'enemy' and not self.givenUp and not self.enemyFailed then
     if not self.enemyAt then self.enemyAt = self.time + battle.ENEMY_DELAY end
   else
     self.enemyAt, self.enemySent = nil, nil
@@ -132,9 +123,9 @@ end
 function battle:apply(view, events, request)
   self.view = view
   self:syncPieces(true)
-  self:fans()
   self:events(events)
   if request and (request.cmd == 'move' or request.cmd == 'enemy_move') then self.pending = false end
+  if request and request.cmd == 'enemy_move' then self.enemyRefusals = 0 end
   if request and request.cmd == 'enemy_move' and self.enemySent then
     local ms = (love.timer.getTime() - self.enemySent) * 1000
     local e = self.enemy
@@ -154,8 +145,20 @@ function battle:refused(view, request)
   self:syncPieces(false)
   self.enemySent = nil
   self.enemyAt = nil
-  -- If the enemy still has the move, the client asks again after the pause.
+  -- If the enemy still has the move, the client asks again after the pause, one time. After a second refusal, the lamp
+  -- tells that the enemy cannot move, and Give up stays available.
+  if request and request.cmd == 'give_up' then self.givenUp = false end
+  if request and request.cmd == 'enemy_move' then
+    self.enemyRefusals = self.enemyRefusals + 1
+    if self.enemyRefusals > battle.ENEMY_RETRIES then self.enemyFailed = true end
+  end
   self:schedule()
+end
+
+-- True if the player has the move and no legal move: a battle that starts in checkmate or in stalemate.
+function battle:stuck()
+  local v = self.view
+  return v.phase == 'player' and not v.result and #v.moves == 0
 end
 
 -- The square of the king in check, or -1.
@@ -164,6 +167,8 @@ function battle:checkSquare() return self.view.check or -1 end
 -- The text of the lamp, and true if the lamp is lit. The lamp is lit when the player can move.
 function battle:status()
   local v = self.view
+  if self:stuck() then return text.STATUS.stuck, false end
+  if self.enemyFailed and v.phase == 'enemy' then return text.STATUS.enemyFailed, false end
   local status = text.STATUS.move
   if self.promotion then status = text.STATUS.promotion
   elseif v.phase == 'enemy' then status = text.STATUS.enemy
@@ -171,7 +176,7 @@ function battle:status()
   return status, v.phase == 'player' and not v.result
 end
 
-function battle:busy() return self.view.phase == 'enemy' end
+function battle:busy() return self.view.phase == 'enemy' and not self.enemyFailed end
 
 -- True if the player selected an enemy piece with Scout.
 function battle:scouting()
@@ -179,20 +184,32 @@ function battle:scouting()
   return p ~= nil and p.color == 'b'
 end
 
--- The moves of the selected piece. The moves of an enemy piece come from enemy_moves (Scout) and are marks only.
-function battle:targets()
-  local list = {}
-  if self.selected < 0 then return list end
-  local source = self:scouting() and (self.view.enemy_moves or {}) or self.view.moves
-  for _, m in ipairs(source) do if m.from == self.selected then list[#list + 1] = m end end
-  return list
+local NONE = {}
+
+-- The moves of the selected piece, and the same moves by target square. The moves of an enemy piece come from
+-- enemy_moves (Scout) and are marks only. The lists change only with the view and the selection, thus they are kept.
+function battle:targetSet()
+  local cache = self.targetCache
+  if cache and cache.view == self.view and cache.selected == self.selected then return cache end
+  cache = { view = self.view, selected = self.selected, list = {}, to = {} }
+  if self.selected >= 0 then
+    local source = self:scouting() and (self.view.enemy_moves or NONE) or self.view.moves
+    for _, m in ipairs(source) do
+      if m.from == self.selected then
+        cache.list[#cache.list + 1] = m
+        local at = cache.to[m.to]
+        if not at then at = {}; cache.to[m.to] = at end
+        at[#at + 1] = m
+      end
+    end
+  end
+  self.targetCache = cache
+  return cache
 end
 
-function battle:targetsTo(s)
-  local list = {}
-  for _, m in ipairs(self:targets()) do if m.to == s then list[#list + 1] = m end end
-  return list
-end
+function battle:targets() return self:targetSet().list end
+
+function battle:targetsTo(s) return self:targetSet().to[s] or NONE end
 
 function battle:commit(move)
   self.selected, self.promotion, self.pending = -1, nil, true
@@ -231,7 +248,11 @@ end
 
 function battle:giveUp()
   if self.view.result then return end
-  self.app.confirm(text.GIVE_UP, function() self.app.send({ cmd = 'give_up' }) end)
+  self.app.confirm(text.GIVE_UP, function()
+    -- The pause before the enemy move stops here, thus no enemy_move follows give_up.
+    self.givenUp, self.enemyAt = true, nil
+    self.app.send({ cmd = 'give_up' })
+  end)
 end
 
 function battle:update(dt, pointer)
@@ -306,7 +327,15 @@ end
 function battle:control(name, index)
   if name == 'continue' then return (assert(result.layout(self), 'The battle has no result')).key end
   if name == 'giveUp' then return layout.me.giveUp end
-  if name == 'promo' then return (assert(board.promotionRects(self), 'The promotion picker is not open'))[index] end
+  if name == 'promo' then
+    local rects = assert(board.promotionRects(self), 'The promotion picker is not open')
+    -- The argument is the number of the item (1 to 4), or the kind of the piece ('q', 'n', 'r', 'b').
+    if type(index) == 'string' then
+      for i, m in ipairs(self.promotion) do if m.promo == index then return rects[i] end end
+      error('The promotion picker has no piece ' .. index)
+    end
+    return rects[index]
+  end
   if name == 'square' then
     local x, y = layout.squareAt(index)
     return { x = x, y = y, w = layout.square, h = layout.square }
@@ -365,7 +394,8 @@ function battle:state()
     selected = self.selected, targets = targets, scouting = self:scouting(), promotion = promo,
     status = status, lamp = lit, pending = self.pending, waitingForEnemy = self.enemyAt ~= nil,
     shownGold = self:shownGold(), playerMedal = self.myFan.hovered or 0, enemyMedal = self.foeFan.hovered or 0,
-    resultShown = result.layout(self) ~= nil, enemyMove = self.enemy,
+    resultShown = result.layout(self) ~= nil, enemyMove = self.enemy, enemyRefusals = self.enemyRefusals,
+    enemyFailed = self.enemyFailed, givenUp = self.givenUp, stuck = self:stuck(),
   }
 end
 

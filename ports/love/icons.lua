@@ -142,6 +142,9 @@ local function parse(path)
   return lines
 end
 
+icons.PATHS = PATHS
+icons.parse = parse
+
 local parsed = {}
 
 -- Draws an icon with its center at a point. `size` is the width of the 24 unit grid. The line has a width of 2 grid units

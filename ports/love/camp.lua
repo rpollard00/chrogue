@@ -25,11 +25,27 @@ local function sameList(a, b)
   return true
 end
 
+-- The text of the items of the shop, to see a change of the items that is not a purchase (a debug command).
+local function signature(offers)
+  local parts = {}
+  for i, o in ipairs(offers) do parts[i] = tostring(o.kind) .. ':' .. tostring(o.name) end
+  return table.concat(parts, '|')
+end
+
+-- The slot of each item of the shop: 1, 2, 3, ... When the player buys an item, the core removes it from the list, and
+-- the other items keep their slots.
+local function packed(offers)
+  local list = {}
+  for i = 1, math.min(#offers, L.shopSlots) do list[i] = i end
+  return list
+end
+
 function camp.new(app, view, events)
   local self = setmetatable({
     app = app, view = view, time = 0, selected = -1,
     dealAt = nil, flipAt = nil, flashes = {}, newUnits = {}, pinned = nil,
     gold = { from = view.gold, to = view.gold, at = -10 },
+    shopSlots = packed(view.shop.offers),
   }, camp)
   self:fans()
   self:events(events or {})
@@ -55,8 +71,17 @@ function camp:events(list)
   end
 end
 
-function camp:apply(view, events)
+function camp:apply(view, events, request)
+  local before = self.view
   self.view = view
+  self.cardCache = nil
+  local offers = view.shop.offers
+  if request and request.cmd == 'buy' and #offers == #before.shop.offers - 1 then
+    -- The bought item leaves an empty slot.
+    table.remove(self.shopSlots, request.index + 1)
+  elseif signature(offers) ~= signature(before.shop.offers) then
+    self.shopSlots = packed(offers)
+  end
   self:fans()
   self:events(events)
   -- A change of the gold with no camp action (a debug command) also counts to the new value.
@@ -65,7 +90,10 @@ function camp:apply(view, events)
   end
 end
 
-function camp:refused(view) self.view = view end
+function camp:refused(view)
+  self.view = view
+  self.cardCache = nil
+end
 
 function camp:update(dt, pointer)
   self.time = self.time + dt
@@ -80,14 +108,25 @@ function camp:settled()
   return (not self.dealAt or t - self.dealAt > 0.7) and (not self.flipAt or t - self.flipAt > 0.7) and t - self.gold.at > 0.7
 end
 
--- The cards of a shelf: a list of { rect, face, offer, name of the key, name of the info button }.
+-- The cards of a shelf: a list of { rect, face, offer, name of the key, name of the info button }. The list changes only
+-- with the view, thus it is kept until the next view.
 function camp:cards(shelf)
+  self.cardCache = self.cardCache or {}
+  local list = self.cardCache[shelf]
+  if not list then
+    list = self:makeCards(shelf)
+    self.cardCache[shelf] = list
+  end
+  return list
+end
+
+function camp:makeCards(shelf)
   local v = self.view
   local list = {}
   if shelf == 'reward' then
     local reward = v.reward
     if not reward then return list end
-    local rects = layout.cards(L.reward, #reward.offers)
+    local rects = L.slots.reward
     for i, offer in ipairs(reward.offers) do
       local face = { kind = offer.kind, art = ui.offerArt(offer), name = offer.name, text = offer.text }
       if reward.open then
@@ -97,26 +136,39 @@ function camp:cards(shelf)
         local taken = reward.taken ~= nil and reward.taken + 1 == i
         face.verb, face.settled, face.disabled = taken and 'Taken' or 'Take', taken and 'chosen' or 'passed', true
       end
-      list[i] = { rect = rects[i], face = face, offer = offer, key = 'take' .. i, info = 'infoR' .. i }
+      if rects[i] then list[i] = { rect = rects[i], slot = i, face = face, offer = offer, key = 'take' .. i, info = 'infoR' .. i } end
     end
   else
     local offers = v.shop.offers
-    local rects = layout.cards(L.shop, #offers)
     for i, offer in ipairs(offers) do
+      local slot = self.shopSlots[i]
       local face = { kind = offer.kind, art = ui.offerArt(offer), name = offer.name, text = offer.text, verb = 'Buy',
         cost = { value = offer.price, currency = 'gold' }, stamp = offer.blocked and text.BLOCKED[offer.blocked] or nil }
       face.disabled = offer.blocked ~= nil or not offer.affordable
-      list[i] = { rect = rects[i], face = face, offer = offer, key = 'buy' .. i, info = 'infoS' .. i }
+      if slot then
+        list[i] = { rect = L.slots.shop[slot], slot = slot, face = face, offer = offer, key = 'buy' .. i, info = 'infoS' .. i }
+      end
     end
   end
   return list
 end
 
 local function allCards(self)
+  local cache = self.cardCache and self.cardCache.all
+  if cache then return cache end
   local list = {}
   for _, c in ipairs(self:cards('reward')) do list[#list + 1] = c end
   for _, c in ipairs(self:cards('shop')) do list[#list + 1] = c end
+  self.cardCache.all = list
   return list
+end
+
+-- True if a slot of a shelf has no card.
+local function emptySlot(self, shelf, slot)
+  for _, c in ipairs(self:cards(shelf)) do
+    if c.slot == slot then return false end
+  end
+  return true
 end
 
 -- Input
@@ -276,7 +328,18 @@ local function cardMotion(self, shelf, i)
   return 1, 0, 1
 end
 
+-- A slot with no card: a recessed place of the size of a card.
+local function emptySlots(self, shelf)
+  for slot, r in ipairs(L.slots[shelf]) do
+    if emptySlot(self, shelf, slot) then
+      gfx.well(r.x, r.y, r.w, r.h, px(10))
+      gfx.outline(r.x, r.y, r.w, r.h, px(10), px(1), C.line, 0.45)
+    end
+  end
+end
+
 local function shelfCards(self, shelf, pointer)
+  emptySlots(self, shelf)
   for i, c in ipairs(self:cards(shelf)) do
     local alpha, dy, sx = cardMotion(self, shelf, i)
     if alpha > 0 then
@@ -311,21 +374,22 @@ local function shelves(self, pointer)
   gfx.shelf(r.x, r.y, r.w, r.h, px(12))
   local reward = v.reward
   local head = reward and text.REWARD_HEAD[reward.state] or 'Reward'
-  gfx.text(head:upper(), 'display', 1.2, r.x + L.shelfPad, L.headY, { tracking = 0.04, line = L.headH })
+  local hw = gfx.text(head:upper(), 'display', 1.2, r.x + L.shelfPad, L.headY, { tracking = 0.04, line = L.headH })
   if reward and reward.open then ui.key(L.skip, 'Skip the reward', 'key', ui.state(pointer, 'skip')) end
-  if reward then shelfCards(self, 'reward', pointer)
-  else
-    gfx.text('No reward to select.', 'body', 1, r.x, L.cardY, { color = C.dim, align = 'center', width = r.w, line = 14.25 })
+  -- With no card, the slots stay empty, and the line of the heading tells why.
+  if not reward then
+    gfx.text('No reward to select.', 'body', 0.85, r.x + L.shelfPad + hw + 0.8, L.headY, { color = C.dim, line = L.headH })
   end
+  shelfCards(self, 'reward', pointer)
   local s = L.shop
   gfx.shelf(s.x, s.y, s.w, s.h, px(12))
-  gfx.text('SHOP', 'display', 1.2, s.x + L.shelfPad, L.headY, { tracking = 0.04, line = L.headH })
+  local sw = gfx.text('SHOP', 'display', 1.2, s.x + L.shelfPad, L.headY, { tracking = 0.04, line = L.headH })
   ui.key(L.reroll, 'Get new items', 'key', ui.state(pointer, 'reroll', not v.shop.can_reroll),
     { cost = { value = v.shop.reroll_cost, currency = 'gold' } })
-  if #v.shop.offers > 0 then shelfCards(self, 'shop', pointer)
-  else
-    gfx.text('The shop is empty.', 'body', 1, s.x, L.cardY, { color = C.dim, align = 'center', width = s.w, line = 14.25 })
+  if #v.shop.offers == 0 then
+    gfx.text('The shop is empty.', 'body', 0.85, s.x + L.shelfPad + sw + 0.8, L.headY, { color = C.dim, line = L.headH })
   end
+  shelfCards(self, 'shop', pointer)
 end
 
 local function homes(self)
@@ -404,7 +468,7 @@ function camp:state()
     if self.pinned == c.info or self.app.pointer.hover == c.info then tip = c.face.name end
   end
   return { selected = self.selected, tip = tip or false, shownGold = tonumber(ui.counted(self.gold.from, self.gold.to, self.time - self.gold.at)),
-    playerMedal = self.myFan.hovered or 0, enemyMedal = self.foeFan.hovered or 0 }
+    playerMedal = self.myFan.hovered or 0, enemyMedal = self.foeFan.hovered or 0, shopSlots = self.shopSlots }
 end
 
 return camp
