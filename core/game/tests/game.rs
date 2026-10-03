@@ -173,7 +173,7 @@ fn a_win_gives_gold_keeps_the_army_and_opens_the_camp() {
     play(&mut battle, &run, "a1", "a2");
     let result = battle.result.clone().unwrap();
     assert_eq!(result.outcome, Outcome::Rout { winner: Color::White });
-    assert_eq!(result.reward, BattleReward { captures: 1, clear: 4, bonuses: vec![] });
+    assert_eq!(result.reward, BattleReward { captures: 1, clear: 4, ..BattleReward::default() });
     assert_eq!(battle.settle(&mut run, &defaults()), Some(Next::Camp));
     assert_eq!((run.floor, run.gold, run.phase), (2, 5, Phase::Camp));
     assert_eq!(run.army.len(), 7);
@@ -192,7 +192,8 @@ fn bounty_and_interest_add_gold() {
     assert_eq!(report.relics, vec![relic("bounty"), relic("interest")]);
     // Captures: 5 * 1.5 = 7.5, which rounds to 8. Interest: floor((20 + 8 + 4) / 5) = 6.
     let reward = battle.result.unwrap().reward;
-    assert_eq!(reward, BattleReward { captures: 8, clear: 4, bonuses: vec![Bonus { id: relic("interest"), gold: 6 }] });
+    let bonuses = vec![Bonus { id: relic("interest"), gold: 6 }];
+    assert_eq!(reward, BattleReward { captures: 8, clear: 4, bonuses, recruits: vec![] });
 }
 
 #[test]

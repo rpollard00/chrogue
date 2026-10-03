@@ -42,7 +42,7 @@ With `--listen`, the core reads a token from the environment variable `CHROGUE_T
 - The WebAssembly build has no lock. A page of a browser has a file system of its own, with no file locks and no second process. Two pages of the same game each keep their own copy of the saved data, and the page that saves last sets the data that the browser keeps.
 - A save writes a temporary file with a name of its own (`meta.json.<pid>-<n>.tmp`), syncs it to the disk, and renames it over the document. On Unix, the core then syncs the directory. A start of the core removes the temporary files that a crash left.
 - A saved file that the core cannot use is never deleted or written over. That is a file that the core cannot read, that is not JSON (for example, a file that a crash cut, or JSON nested too deep), that is not a document of its format, whose data is not valid as a whole (see below), or that has a version newer than the version of the core. Before it writes anything, the core renames such a file to `<name>.bad-<unix time>` (for example `meta.json.bad-1759420800`; `-2`, `-3`, ... if that name is taken), loads no data from it, and puts a `save_problem` event in its first successful response. If the rename fails, the core does not write or remove that document in the session; each save of it then gives `save_failed`.
-- The checks of saved data: a count (a floor, gold, an id, a level, an amount) is at most 2^53 - 1; a unit id is at most 19999 and appears one time; the `seed` of a run is at most 999999999, and its `rolls` is at most 4294967295; a relic id counts one time in a list; the enemy has at most 64 pieces; no two pieces are on one square (two enemy pieces, an enemy piece on the home square of a unit, or two units with one home); and each side has exactly one king. A start with the enemy king in check is valid (see [Open issues](#open-issues)). A run that fails a check is not valid as a whole. A run with no `seed` or no `rolls` loads with 0 for that field. A field of the meta that is not valid counts as 0, and an unknown relic id, upgrade id, or offer is dropped.
+- The checks of saved data: a count (a floor, gold, an id, a level, an amount) is at most 2^53 - 1; a unit id is at most 19999 and appears one time; the `seed` of a run is at most 999999999, and its `rolls` is at most 4294967295; a relic id counts one time in a list; the enemy has at most 64 pieces; no two pieces are on one square (two enemy pieces, an enemy piece on the home square of a unit, or two units with one home); and each side has exactly one king. A start with the enemy king in check is valid (see [Open issues](#open-issues)). A run that fails a check is not valid as a whole. A run with no `seed` or no `rolls` loads with 0 for that field. A field of the meta that is not valid counts as 0, and an unknown relic id, upgrade id, or offer is dropped. A run keeps the first 10 relics of its list (`relics_max`). The enemy keeps the first 2 traits of its list (`traits_max`), and a relic that a boss cannot have is dropped from that list.
 
 ## Requests and responses
 
@@ -162,7 +162,7 @@ A command that changes the pieces or their rules (`debug_set_army`, `debug_set_e
 | `debug_add_unit` | `kind`: `p`, `n`, `b`, `r`, `q` | Adds a unit on a free home square. Error `blocked` if the army is full. |
 | `debug_remove_unit` | `unit`: a unit id | Removes a unit. Error `blocked` for the king. |
 | `debug_set_army` | `units`: a list of `{"id"?, "kind", "home"}` | Replaces the army. One king, distinct ids and homes. A unit with no id gets its position in the list plus 1. |
-| `debug_set_relic` | `relic`, `on` | Adds or removes a relic of the player. |
+| `debug_set_relic` | `relic`, `on` | Adds or removes a relic of the player. The run has at most `relics_max` relics (error `blocked`). |
 | `debug_set_trait` | `relic`, `on` | Adds or removes a trait of the enemy. The relic must have a text for the enemy. The enemy has at most `traits_max` traits (error `blocked`). |
 | `debug_set_enemy` | `pieces`: a list of `{"kind", "square"}`, `traits` (optional) | Replaces the enemy army. One king, distinct squares. |
 | `debug_bar_relic` | `relic`, `barred` | A barred relic is not a reward, not a shop item, and not a boss trait. The tuning keeps this set. A battle does not start again. |
@@ -223,8 +223,9 @@ Each view has `screen`. The other fields depend on the screen.
   - `outcome`: `victory`, `defeat`, or `draw`.
   - `next`: what `continue` does: `camp`, `won` (the run is won), or `lost` (the run ends).
   - `reward`: `captures`, `clear`, `bonuses` (each with `id`, `label`, `gold`), and `total`.
-  - `rows`: the rows of the result panel, in order. A row has `row` (`captures`, `clear`, or `bonus`) and `gold`. A `bonus` row also has `id` and `label` (the name of the relic). A defeat has no rows.
+  - `rows`: the rows of the result panel, in order. A row has `row` (`captures`, `clear`, or `bonus`) and `gold`. A `bonus` row also has `id` and `label` (the name of the relic). A draw has no `clear` row. A defeat has no rows.
   - `total`: the sum of the gold. `rescued`: the number of units that return (0 on a defeat).
+  - `recruits`: the kind of each unit that a relic adds to the army after the battle (`["p"]` for the pawn of Apprenticeship), or an empty list.
 
 ### `camp`
 
@@ -232,7 +233,7 @@ Each view has `screen`. The other fields depend on the screen.
 - `enemy`: the next enemy: `name`, `traits` (as in the battle view), `pieces` (`kind`, `square`), and `kinds` (the kinds in the order of the camp screen: the king first, then by value).
 - `reward`: `null` if this visit has no reward (after a draw, or after a reload when the reward was taken). Else `offers`, `taken` (the index of the card that the player took, or `null`), `open` (true while the player can take or skip), and `state`: `open`, `taken`, or `skipped`.
 - `shop`: `offers`, `reroll_cost`, and `can_reroll`. A shop offer also has `price` and `affordable`.
-- An offer has `kind` (`piece`, `relic`, or `gold`), `name`, `text` (`null` when the name tells all), and `blocked` (`army_full`, `owned`, or `null`). A piece offer has `piece` (the kind). A relic offer has `id`. A gold offer has `amount`.
+- An offer has `kind` (`piece`, `relic`, or `gold`), `name`, `text` (`null` when the name tells all), and `blocked` (`army_full`, `owned`, `relics_full`, or `null`). `relics_full`: the run has the most relics that a run can have (`relics_max` of `hello`). A piece offer has `piece` (the kind). A relic offer has `id`. A gold offer has `amount`.
 - `army`: the units: `id`, `kind`, `home` (a square from 0 to 15), in the order of the squares. `army_max`: 16.
 - `relics`, `gold`, and `can_start` (false while the reward is open).
 
@@ -258,7 +259,7 @@ Each event is an object with `type`. The other fields depend on the type.
 | `unit_lost` | `id` | The enemy captured a unit. It leaves the army after the battle. |
 | `unit_rescued` | `id` | The enemy captured a unit, and a relic returns it after the battle. |
 | `promote` | `id`, `square`, `kind` | A pawn promoted. |
-| `relic` | `ids` | These relics of the player had an effect. The client flashes them. |
+| `relic` | `ids` | These relics of the player had an effect. The client flashes them. The move that ends a battle has the relics that give gold or a unit after the battle. |
 | `check` | `square`, `color` | The king of the side to move is in check. |
 | `result` | `winner`, `reason` | The battle ended. The view has the full result. |
 | `camp_enter` | `floor`, `reward` (true if the visit has a reward) | The camp opened. The client deals the cards here. |
@@ -278,7 +279,7 @@ The client has the interface text (key labels, status lines, result sentences). 
 - `phase`: `player`, `enemy`, `over`.
 - `reason`: `checkmate`, `stalemate` (the side that has no legal move loses), `rout` (the loser has only its king), `bare` (only the kings remain, a draw), `clock` (50 moves with no capture, a draw).
 - `outcome`: `victory`, `defeat`, `draw`. `next`: `camp`, `won`, `lost`.
-- `blocked`: `army_full` (the browser text is "Army full"), `owned` ("Owned").
+- `blocked`: `army_full` (the browser text is "Army full"), `owned` ("Owned"), `relics_full` ("Relics full").
 - reward `state`: `open`, `taken`, `skipped`. Result `row`: `captures`, `clear`, `bonus`. Over `row`: `floors`, `win`.
 
 The content text (the names and texts of relics, upgrades, floors, pieces, and offers) comes from the core in the views and in `hello`.
@@ -318,7 +319,7 @@ The content text (the names and texts of relics, upgrades, floors, pieces, and o
   - `floors`: `number`, `name`, `budget` (the value of the enemy army), `traits` (the number of boss traits), `boss`, `level` (the name of the AI level), and `draft_gold` (the gold card of the reward before this floor).
   - `pieces`: `kind`, `name`, `value` (the gold of a capture), and `price` (in the shop, before upgrades).
   - `recruits`: `kind`, `weight`, `min_floor` of the pieces in rewards and in the shop.
-  - `relic_price`, `reroll_cost`, `win_crowns`, `army_max`, `upgrade_slots`, `upgrade_name_max`, `traits_max`, `relic_count`.
+  - `relic_price`, `relics_max` (the most relics of a run), `reroll_cost`, `win_crowns`, `army_max`, `upgrade_slots`, `upgrade_name_max`, `traits_max`, `relic_count`.
 
 The content of `hello` is the default content. The tuning of a debug session does not change it.
 
@@ -364,7 +365,7 @@ A won battle and a camp action (from the test `the_camp_example_is_real`: the ar
 < …"events":[{"type":"move",…},{"type":"capture","color":"b","id":30001,"kind":"r","square":8,"gold":7.5},{"type":"relic","ids":["bounty","interest"]},{"type":"result","winner":"w","reason":"rout"}],
    "view":{…,"phase":"over","result":{"winner":"w","reason":"rout","outcome":"victory","next":"camp",
      "reward":{"captures":8,"clear":4,"bonuses":[{"id":"interest","label":"Interest","gold":6}],"total":18},
-     "rows":[{"row":"captures","gold":8},{"row":"clear","gold":4},{"row":"bonus","id":"interest","label":"Interest","gold":6}],"total":18,"rescued":0}}
+     "rows":[{"row":"captures","gold":8},{"row":"clear","gold":4},{"row":"bonus","id":"interest","label":"Interest","gold":6}],"total":18,"rescued":0,"recruits":[]}}
 > {"cmd":"continue"}
 < …"events":[{"type":"screen","name":"camp"},{"type":"camp_enter","floor":2,"reward":true}],"view":{"screen":"camp",…}
 > {"cmd":"take_reward","index":1}

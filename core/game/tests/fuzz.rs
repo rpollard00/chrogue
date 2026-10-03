@@ -264,17 +264,32 @@ fn a_seed_and_the_requests_give_the_same_transcript() {
 
 // ---- Saved files and debug boards ----
 
-const RELIC_IDS: [&str; 10] = [
+/// The number of ids at the start of `RELIC_IDS` that a boss can have as a trait.
+const TRAITS: usize = 15;
+
+const RELIC_IDS: [&str; 22] = [
     "forcedMarch",
     "backpedal",
     "earlyPromo",
     "kingKnight",
     "longLeap",
     "sidestep",
+    "vault",
+    "crossfire",
+    "closeQuarters",
+    "pilgrimLeap",
+    "queenFlight",
+    "gallop",
+    "crusade",
+    "royalMarch",
+    "huntress",
     "bounty",
     "secondWind",
     "conscription",
     "interest",
+    "apprenticeship",
+    "coup",
+    "gambit",
 ];
 
 /// A huge or odd number for a count of saved data.
@@ -309,7 +324,7 @@ fn run_doc(g: &mut Gen) -> String {
         })
         .collect();
     let relics: Vec<&str> = (0..g.below(6)).map(|_| *g.pick(&RELIC_IDS)).collect();
-    let traits: Vec<&str> = (0..g.below(4)).map(|_| *g.pick(&RELIC_IDS[..6])).collect();
+    let traits: Vec<&str> = (0..g.below(4)).map(|_| *g.pick(&RELIC_IDS[..TRAITS])).collect();
     let gold = if g.chance(0.8) { json!(g.below(50)) } else { big(g) };
     let floor = if g.chance(0.9) { json!(1 + g.below(8)) } else { big(g) };
     let next_id = if g.chance(0.9) { json!(17 + g.below(20_000)) } else { big(g) };
@@ -387,7 +402,7 @@ fn saved_files_and_debug_boards_that_are_not_valid_are_refused() {
                             json!({ "kind": kind, "square": if g.chance(0.5) { (i * 13 + g.below(3)) % 64 } else { g.below(64) } })
                         })
                         .collect();
-                    json!({ "cmd": "debug_set_enemy", "pieces": pieces, "traits": [*g.pick(&RELIC_IDS[..6])] })
+                    json!({ "cmd": "debug_set_enemy", "pieces": pieces, "traits": [*g.pick(&RELIC_IDS[..TRAITS])] })
                 }
                 11 => {
                     let units: Vec<Value> = (0..1 + g.below(16))

@@ -5,6 +5,9 @@
 //! counts as 0, and an offer that is not valid is dropped. These rules also apply:
 //!
 //! - A relic id counts one time in a list. The core removes the second copy.
+//! - A run has at most `RELICS_MAX` relics. The core keeps the first ones.
+//! - The enemy has at most `TRAITS_MAX` traits, and each one is a relic that a boss can have.
+//!   The core keeps the first ones.
 //! - A count (a floor, gold, an id, a level, an amount) is at most 2^53 - 1, the largest whole
 //!   number that a JSON reader in a browser keeps exactly.
 //! - A unit id is at most `UNIT_ID_MAX` and appears one time, `nextId` is at most
@@ -29,7 +32,7 @@ use serde_json::{Value, json};
 
 use crate::battle::Battle;
 use crate::chess::{self, Kind, Square};
-use crate::content::{FLOORS, RelicId, UpgradeId};
+use crate::content::{FLOORS, RELICS_MAX, RelicId, TRAITS_MAX, UpgradeId};
 use crate::run::{ENEMY_PIECES_MAX, Enemy, EnemyPiece, Meta, Offer, Phase, Run, SEED_MAX, UNIT_ID_MAX, Unit, UnitId};
 
 /// The version of the saved documents.
@@ -580,6 +583,11 @@ fn parse_run_shape(raw: &Value) -> Option<Run> {
         return None;
     }
 
+    let mut owned = relics(data.get("relics").unwrap_or(&Value::Null));
+    owned.truncate(RELICS_MAX);
+    let mut traits = relics(enemy.get("traits").unwrap_or(&Value::Null));
+    traits.retain(|id| id.is_trait());
+    traits.truncate(TRAITS_MAX);
     let draft = match data.get("draft") {
         None | Some(Value::Null) => None,
         Some(value) => Some(offers(value)),
@@ -590,8 +598,8 @@ fn parse_run_shape(raw: &Value) -> Option<Run> {
         gold,
         army,
         next_id: next_id as UnitId,
-        relics: relics(data.get("relics").unwrap_or(&Value::Null)),
-        enemy: Enemy { pieces, traits: relics(enemy.get("traits").unwrap_or(&Value::Null)) },
+        relics: owned,
+        enemy: Enemy { pieces, traits },
         phase: if data.get("phase").and_then(Value::as_str) == Some("camp") { Phase::Camp } else { Phase::Battle },
         draft,
         shop: offers(data.get("shop").unwrap_or(&Value::Null)),

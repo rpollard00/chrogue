@@ -46,6 +46,7 @@ The Emscripten SDK and the Rust target `wasm32-unknown-emscripten` are also nece
 
 A run has 8 floors. Floor 4 and floor 8 are boss floors, and a boss has traits that change its moves.
 After each battle, you select one of three rewards, buy pieces and relics, and arrange your first two ranks.
+A run has at most 10 relics.
 Each run gives crowns. Crowns buy permanent upgrades on the title screen.
 
 ## Structure
@@ -68,7 +69,7 @@ The content is in `core/game/src/content.rs`.
 
 - Relic: Add one entry to `RELICS`. Its movement rules are a list of `RuleEdit`. Its effect is one kind of `Effect`.
 - Relic effect at a new point of a battle: Add a kind to `Effect`, and use it in `core/game/src/battle.rs`.
-- Movement rule: Write the rule as an edit of `SideRules` in the engine (`core/README.md`, "Add a movement rule"), and add a kind to `RuleEdit` for it.
+- Movement rule: `RuleEdit::Leap` gives a jump to a kind. `RuleEdit::Slide` gives it a slide of 1 to `steps` steps. For another rule, write the rule as an edit of `SideRules` in the engine (`core/README.md`, "Add a movement rule"), and add a kind to `RuleEdit` for it.
 - Upgrade: Add one entry to `UPGRADES`.
 - Floor: Add one entry to `FLOORS`.
 

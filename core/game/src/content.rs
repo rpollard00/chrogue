@@ -6,7 +6,7 @@
 //! - Upgrade: add one entry to `UPGRADES`. A new kind of effect needs a kind in `UpgradeEffect`.
 //! - Floor: add one entry to `FLOORS`.
 
-use crate::chess::{Atom, CAMEL, KNIGHT, Kind, Mode, ORTHO, Offset, SideRules};
+use crate::chess::{ALFIL, Atom, CAMEL, DABBABA, DIAG, FORWARD, KING, KNIGHT, Kind, Mode, ORTHO, Offset, SideRules};
 
 /// An edit of `SideRules::standard()` that a relic gives to its side. The engine builds its
 /// tables and the AI its piece values from the result, thus the AI sees each relic.
@@ -18,11 +18,11 @@ pub enum RuleEdit {
     EarlyPromo,
     /// Pawns can move one square backward to an empty square.
     Backpedal,
-    Leap {
-        kind: Kind,
-        offsets: &'static [Offset],
-        mode: Mode,
-    },
+    /// The kind can also jump by each offset.
+    Leap { kind: Kind, offsets: &'static [Offset], mode: Mode },
+    /// The kind can also go 1 to `steps` steps along each offset. Each step before the last one
+    /// must end on an empty square.
+    Slide { kind: Kind, offsets: &'static [Offset], mode: Mode, steps: u8 },
 }
 
 impl RuleEdit {
@@ -32,6 +32,9 @@ impl RuleEdit {
             RuleEdit::EarlyPromo => rules.early_promo(),
             RuleEdit::Backpedal => rules.backpedal(),
             RuleEdit::Leap { kind, offsets, mode } => rules.with_atom(kind, Atom::leap(offsets, mode)),
+            RuleEdit::Slide { kind, offsets, mode, steps } => {
+                rules.with_atom(kind, Atom::slide(offsets, mode).max_steps(steps))
+            }
         }
     }
 }
@@ -47,6 +50,13 @@ pub enum Effect {
     ExtraPawn,
     /// After a win: 1 gold for each `per` gold of the run and the other rewards, at most `max`.
     VictoryGold { per: u64, max: u64 },
+    /// After a win: one more pawn in the army, if a pawn of the army promoted in the battle and is
+    /// on the board.
+    PromotionRecruit,
+    /// After a win by checkmate: the gold value of each enemy piece on the board.
+    CheckmateGold,
+    /// After a win or a draw: half of the shop price of each piece that the enemy captured.
+    LossGold,
 }
 
 pub struct RelicDef {
@@ -74,7 +84,7 @@ const fn hook(key: &'static str, name: &'static str, text: &'static str, effect:
     RelicDef { key, name, text, foe_text: None, rules: &[], effect: Some(effect) }
 }
 
-pub static RELICS: [RelicDef; 10] = [
+pub static RELICS: [RelicDef; 22] = [
     rule(
         "forcedMarch",
         "Forced March",
@@ -135,6 +145,87 @@ pub static RELICS: [RelicDef; 10] = [
         "Interest",
         "After each battle that you win, you get 1 gold for each 5 gold that you have. The maximum is 6 gold.",
         Effect::VictoryGold { per: 5, max: 6 },
+    ),
+    rule(
+        "vault",
+        "Rampart Vault",
+        "Your rooks can jump two squares up, down, left, or right to an empty square. A piece between does not stop the jump.",
+        "Enemy rooks can jump two squares up, down, left, or right to an empty square. A piece between does not stop the jump.",
+        &[RuleEdit::Leap { kind: Kind::Rook, offsets: &DABBABA, mode: Mode::MoveOnly }],
+    ),
+    rule(
+        "crossfire",
+        "Crossfire",
+        "Your rooks can capture a piece that is one square away diagonally.",
+        "Enemy rooks can capture a piece that is one square away diagonally.",
+        &[RuleEdit::Leap { kind: Kind::Rook, offsets: &DIAG, mode: Mode::CaptureOnly }],
+    ),
+    rule(
+        "closeQuarters",
+        "Close Quarters",
+        "Your knights can capture a piece that is one square up, down, left, or right.",
+        "Enemy knights can capture a piece that is one square up, down, left, or right.",
+        &[RuleEdit::Leap { kind: Kind::Knight, offsets: &ORTHO, mode: Mode::CaptureOnly }],
+    ),
+    rule(
+        "pilgrimLeap",
+        "Pilgrim's Leap",
+        "Your bishops can jump two squares diagonally. A piece between does not stop the jump.",
+        "Enemy bishops can jump two squares diagonally. A piece between does not stop the jump.",
+        &[RuleEdit::Leap { kind: Kind::Bishop, offsets: &ALFIL, mode: Mode::MoveOrCapture }],
+    ),
+    rule(
+        "queenFlight",
+        "Queen's Flight",
+        "Your queens can jump as a knight to an empty square.",
+        "Enemy queens can jump as a knight to an empty square.",
+        &[RuleEdit::Leap { kind: Kind::Queen, offsets: &KNIGHT, mode: Mode::MoveOnly }],
+    ),
+    rule(
+        "gallop",
+        "Gallop",
+        "Your knights can make a second jump in the same direction if the first square is empty.",
+        "Enemy knights can make a second jump in the same direction if the first square is empty.",
+        &[RuleEdit::Slide { kind: Kind::Knight, offsets: &KNIGHT, mode: Mode::MoveOrCapture, steps: 2 }],
+    ),
+    rule(
+        "crusade",
+        "Crusade",
+        "Your bishops can also move straight forward, as a rook does.",
+        "Enemy bishops can also move straight forward, as a rook does.",
+        &[RuleEdit::Slide { kind: Kind::Bishop, offsets: &FORWARD, mode: Mode::MoveOrCapture, steps: Atom::MAX_STEPS }],
+    ),
+    rule(
+        "royalMarch",
+        "Royal March",
+        "Your king can move two squares in a straight line if the first square is empty.",
+        "The enemy king can move two squares in a straight line if the first square is empty.",
+        &[RuleEdit::Slide { kind: Kind::King, offsets: &KING, mode: Mode::MoveOrCapture, steps: 2 }],
+    ),
+    rule(
+        "huntress",
+        "Huntress",
+        "Your queens can capture as a knight.",
+        "Enemy queens can capture as a knight.",
+        &[RuleEdit::Leap { kind: Kind::Queen, offsets: &KNIGHT, mode: Mode::CaptureOnly }],
+    ),
+    hook(
+        "apprenticeship",
+        "Apprenticeship",
+        "After each battle that you win, you get a pawn if one of your pawns promoted in the battle and is still on the board.",
+        Effect::PromotionRecruit,
+    ),
+    hook(
+        "coup",
+        "Coup de Grace",
+        "When you win a battle by checkmate, you get the gold value of each enemy piece that is still on the board.",
+        Effect::CheckmateGold,
+    ),
+    hook(
+        "gambit",
+        "Gambit",
+        "When the enemy captures one of your pieces, you get half of its shop price in gold after the battle.",
+        Effect::LossGold,
     ),
 ];
 

@@ -3,7 +3,7 @@
 
 use chrogue_engine as engine;
 pub use engine::rng::{Rng, mix};
-pub use engine::rules::{CAMEL, KNIGHT, ORTHO};
+pub use engine::rules::{ALFIL, CAMEL, DABBABA, DIAG, FORWARD, KING, KNIGHT, ORTHO};
 pub use engine::{Atom, Color, Kind, Mode, Move, Offset, Outcome, Piece, Placement, SideRules, Special, Square};
 
 /// The state of a battle in the engine.

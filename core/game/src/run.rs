@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use crate::chess::{Kind, Square};
 use crate::content::{
-    self, ARMY_MAX, DRAFT_GOLD_WEIGHT, DRAFT_RELIC_WEIGHT, FLOORS, RECRUIT_KINDS, RECRUITS, RELIC_PRICE, REROLL_COST,
-    RelicId, UpgradeEffect, UpgradeId, WIN_CROWNS,
+    self, ARMY_MAX, DRAFT_GOLD_WEIGHT, DRAFT_RELIC_WEIGHT, FLOORS, RECRUIT_KINDS, RECRUITS, RELIC_PRICE, RELICS_MAX,
+    REROLL_COST, RelicId, UpgradeEffect, UpgradeId, WIN_CROWNS,
 };
 use crate::protocol::{Code, Fail, fail};
 use crate::random::{Dice, Stream};
@@ -58,6 +58,8 @@ pub enum Offer {
 pub enum Blocked {
     ArmyFull,
     Owned,
+    /// The run has `RELICS_MAX` relics.
+    RelicsFull,
 }
 
 impl Blocked {
@@ -65,6 +67,7 @@ impl Blocked {
         match self {
             Blocked::ArmyFull => "army_full",
             Blocked::Owned => "owned",
+            Blocked::RelicsFull => "relics_full",
         }
     }
 }
@@ -82,7 +85,8 @@ impl Offer {
     pub fn blocked(self, run: &Run) -> Option<Blocked> {
         match self {
             Offer::Piece(_) => (!run.can_add_unit()).then_some(Blocked::ArmyFull),
-            Offer::Relic(id) => run.relics.contains(&id).then_some(Blocked::Owned),
+            Offer::Relic(id) if run.relics.contains(&id) => Some(Blocked::Owned),
+            Offer::Relic(_) => (!run.can_add_relic()).then_some(Blocked::RelicsFull),
             Offer::Gold(_) => None,
         }
     }
@@ -291,6 +295,10 @@ impl Run {
 
     pub fn can_add_unit(&self) -> bool {
         self.army.len() < ARMY_MAX && self.next_id <= UNIT_ID_MAX
+    }
+
+    pub fn can_add_relic(&self) -> bool {
+        self.relics.len() < RELICS_MAX
     }
 
     /// Adds a unit on a free home square. Returns its id, or None if the army is full.

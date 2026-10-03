@@ -1,9 +1,9 @@
 //! One battle of a run. This module connects the chess engine to the run and its relics.
 
 use crate::chess::{self, Color, Kind, Move, Outcome, Piece, Placement, Special, Square, State};
-use crate::content::{self, Effect, FLOORS, RelicId};
+use crate::content::{self, ARMY_MAX, Effect, FLOORS, RelicId};
 use crate::random::{Dice, Stream};
-use crate::run::{CONSCRIPT_ID, ENEMY_ID_BASE, Run, UnitId};
+use crate::run::{CONSCRIPT_ID, ENEMY_ID_BASE, Run, UNIT_ID_MAX, UnitId};
 use crate::tuning::Tuning;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -12,12 +12,21 @@ pub struct Bonus {
     pub gold: u64,
 }
 
+/// A unit that a relic adds to the army after the battle.
+#[derive(Clone, PartialEq, Debug)]
+pub struct Recruit {
+    pub id: RelicId,
+    pub kind: Kind,
+}
+
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct BattleReward {
     pub captures: u64,
     pub clear: u64,
     /// Extra gold from relics.
     pub bonuses: Vec<Bonus>,
+    /// The units that join the army.
+    pub recruits: Vec<Recruit>,
 }
 
 impl BattleReward {
@@ -234,7 +243,8 @@ impl Battle {
         }
         if let Some(outcome) = chess::outcome(&mut self.state) {
             let reward = self.reward_for(run, outcome);
-            report.relics.extend(reward.bonuses.iter().map(|bonus| bonus.id));
+            let used = |id| reward.bonuses.iter().any(|b| b.id == id) || reward.recruits.iter().any(|r| r.id == id);
+            report.relics.extend(run.relics.iter().copied().filter(|&id| used(id)));
             self.result = Some(BattleResult { outcome, reward });
         }
         report
@@ -246,20 +256,48 @@ impl Battle {
             return reward;
         }
         // Math.round of a number that is 0 or more.
-        reward.captures = (self.gold + 0.5).floor() as u64;
-        if outcome.winner().is_none() {
-            return reward;
+        let round = |gold: f64| (gold + 0.5).floor() as u64;
+        reward.captures = round(self.gold);
+        let won = outcome.winner() == Some(Color::White);
+        if won {
+            reward.clear = 3 + run.floor as u64;
         }
-        reward.clear = 3 + run.floor as u64;
         for (id, effect) in effects(&run.relics) {
-            if let Effect::VictoryGold { per, max } = effect {
-                let gold = (run.gold.saturating_add(reward.total()) / per).min(max);
-                if gold > 0 {
-                    reward.bonuses.push(Bonus { id, gold });
+            let gold = match effect {
+                Effect::VictoryGold { per, max } if won => (run.gold.saturating_add(reward.total()) / per).min(max),
+                Effect::CheckmateGold if outcome == (Outcome::Checkmate { winner: Color::White }) => {
+                    let enemy = chess::pieces(&self.state).into_iter().filter(|(_, p)| p.color == Color::Black);
+                    enemy.map(|(_, p)| content::gold_value(p.kind) as u64).sum()
                 }
+                Effect::LossGold => {
+                    let prices: u64 =
+                        self.taken[Color::Black.index()].iter().map(|&kind| content::piece_price(kind)).sum();
+                    round(prices as f64 / 2.0)
+                }
+                Effect::PromotionRecruit if won && self.has_promoted_unit(run) && self.army_has_space(run) => {
+                    reward.recruits.push(Recruit { id, kind: Kind::Pawn });
+                    0
+                }
+                _ => 0,
+            };
+            if gold > 0 {
+                reward.bonuses.push(Bonus { id, gold });
             }
         }
         reward
+    }
+
+    /// True if a unit that was a pawn at the start of the battle is on the board with another
+    /// kind. A captured unit is not on the board, and the pawn of Conscription is not a unit.
+    fn has_promoted_unit(&self, run: &Run) -> bool {
+        let pieces = chess::pieces(&self.state);
+        let mut pawns = run.army.iter().filter(|unit| unit.kind == Kind::Pawn);
+        pawns.any(|unit| pieces.iter().any(|(_, p)| p.id == unit.id && p.kind != Kind::Pawn))
+    }
+
+    /// True if the army after the battle can take one more unit.
+    fn army_has_space(&self, run: &Run) -> bool {
+        run.army.len() - self.lost.len() < ARMY_MAX && run.next_id <= UNIT_ID_MAX
     }
 
     /// The move of an AI level. The seed of the AI comes from the seed of the run, the floor, and
@@ -293,6 +331,9 @@ impl Battle {
             if let Some(unit) = run.army.iter_mut().find(|u| u.id == p.id) {
                 unit.kind = p.kind;
             }
+        }
+        for recruit in &result.reward.recruits {
+            run.add_unit(recruit.kind);
         }
         if next == Next::Camp {
             run.enter_camp(result.outcome.winner() == Some(Color::White), tuning);

@@ -13,7 +13,7 @@ use crate::content::{self, FLOORS, RECRUIT_KINDS, RelicId, UpgradeId};
 use crate::protocol::{Code, Command, EventKind, Fail, MAX_REQUEST_BYTES, event, fail, gold_number};
 use crate::random::Dice;
 use crate::run::{
-    ENEMY_PIECES_MAX, EnemyPiece, Meta, Offer, Phase, Run, RunSummary, SEED_MAX, UNIT_ID_MAX, Unit, UnitId,
+    Blocked, ENEMY_PIECES_MAX, EnemyPiece, Meta, Offer, Phase, Run, RunSummary, SEED_MAX, UNIT_ID_MAX, Unit, UnitId,
     generate_enemy,
 };
 use crate::save::{self, Doc, Storage};
@@ -894,7 +894,11 @@ fn debug_run(run: &mut Run, command: Command, args: &Args, tuning: &Tuning) -> R
         }
         Command::DebugSetRelic => {
             let id = relic(args, "relic")?;
-            set_relic(&mut run.relics, id, boolean(args, "on")?);
+            let on = boolean(args, "on")?;
+            if on && Offer::Relic(id).blocked(run) == Some(Blocked::RelicsFull) {
+                return fail(Code::Blocked, format!("The run has at most {} relics", content::RELICS_MAX));
+            }
+            set_relic(&mut run.relics, id, on);
         }
         Command::DebugSetTrait => {
             let id = relic(args, "relic")?;

@@ -93,6 +93,7 @@ fn result_view(battle: &Battle, run: &Run) -> Value {
         "rows": rows,
         "total": reward.total(),
         "rescued": rescued,
+        "recruits": reward.recruits.iter().map(|r| letter(r.kind)).collect::<Vec<_>>(),
     })
 }
 
@@ -387,6 +388,7 @@ pub fn hello(debug: bool) -> Value {
             "pieces": pieces,
             "recruits": recruits,
             "relic_price": RELIC_PRICE,
+            "relics_max": RELICS_MAX,
             "reroll_cost": REROLL_COST,
             "win_crowns": WIN_CROWNS,
             "army_max": ARMY_MAX,
