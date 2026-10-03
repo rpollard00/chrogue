@@ -59,6 +59,16 @@ Reason: with Tactical Retreat, a pawn can step back and forward again and again.
 
 The game saves the result of a battle with the move that ends the battle. If the player starts the game again on the result screen, the game continues after the battle. The player cannot play the battle a second time.
 
+## Work on the project
+
+### The suite of the client runs only on request
+
+The suite of the client (`ports/love/test/run.sh`) runs only when the user tells.
+
+Reason: it takes some minutes, opens many windows, and loads the workstation for that time.
+
+Decision source: the user gave this decision on 3 October 2026.
+
 ## Deferred
 
 The user decided to wait on these items.

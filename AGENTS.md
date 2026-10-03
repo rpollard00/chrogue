@@ -35,6 +35,6 @@ The client has only the wide layout at this time. `ports/love/layout.lua` has th
 - The game does not show a rules screen or a list of relics. The player finds these in a run.
 - Use `jj`, not `git`. Make one change for each feature, with a Conventional Commit description.
 - Core: In `core/`, run `cargo test --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check` before you finish.
-- Client: Run `ports/love/test/run.sh` before you finish. Look at the result in the client at 1440×900 (`love . --size 1440x900` in `ports/love/`).
-- Web build: If you change `ports/web/`, the library `core/embed`, or how the client draws, run `ports/web/build.sh` and `bun ports/web/test/run.ts` before you finish. Look at the result in a browser at 1440×900.
+- Client: Look at the result in the client at 1440×900 (`love . --size 1440x900` in `ports/love/`). Run `ports/love/test/run.sh` only when the user tells you to: it opens many windows and takes some minutes.
+- Web build: If you change `ports/web/`, the library `core/embed`, or how the client draws, run `ports/web/build.sh` before you finish, and look at the result in a browser at 1440×900. `bun ports/web/test/run.ts` uses the graphics card for some minutes. Ask the user before you run it.
 - Browser game: If you must change the deprecated game, use Bun and Vite. Run `bun run check` and `bun test`, and look at the result in a browser at 1440×900 and at 390×844. `gallery.html` has each screen with prepared data.

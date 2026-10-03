@@ -32,8 +32,8 @@ The Emscripten SDK and the Rust target `wasm32-unknown-emscripten` are also nece
 ## Run the tests
 
 - Core: In `core/`, run `cargo test --release`. `core/README.md` has the other commands: the lint, the speed of the engine, and the self-play matches of the AI.
-- Client: Build the core, then run `ports/love/test/run.sh`. Each test opens a window for some seconds.
-- Web build: Run `ports/web/build.sh`, then run `bun ports/web/test/run.ts`. The test runs scripts of the client in a Chromium with no window.
+- Client: Build the core, then run `ports/love/test/run.sh`. Each test opens a window for some seconds, and the full suite takes some minutes.
+- Web build: Run `ports/web/build.sh`, then run `bun ports/web/test/run.ts`. The test runs scripts of the client in a Chromium with no window. It takes some minutes and uses the graphics card.
 
 ## Rules
 
