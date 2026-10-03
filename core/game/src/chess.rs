@@ -9,9 +9,6 @@ pub use engine::{Atom, Color, Kind, Mode, Move, Offset, Outcome, Piece, Placemen
 /// The state of a battle in the engine.
 pub type State = engine::State;
 
-/// The names of the rule flags, in the order of the engine.
-pub const FLAG_NAMES: [&str; 6] = engine::rules::FLAG_NAMES;
-
 /// Makes a battle with White to move. Returns an error if the rules are not valid.
 pub fn new_state(pieces: &[Placement], white: SideRules, black: SideRules) -> Result<State, String> {
     let rules = engine::Rules::new(white, black);
@@ -91,17 +88,6 @@ pub fn ai_move(state: &mut State, floor: usize, seed: u64) -> Option<Move> {
 /// The name of the AI level of a floor.
 pub fn level_name(floor: usize) -> &'static str {
     engine::Level::LADDER[floor.clamp(1, engine::Level::LADDER.len()) - 1].name
-}
-
-/// The rule flags that give these rules, or None if no set of flags gives them. The protocol
-/// reports the flags of each relic in the content of `hello`.
-pub fn flags_of(rules: &SideRules) -> Option<Vec<&'static str>> {
-    (0u32..1 << FLAG_NAMES.len()).find_map(|mask| {
-        let names: Vec<&'static str> =
-            FLAG_NAMES.iter().enumerate().filter(|(i, _)| mask & (1 << i) != 0).map(|(_, &name)| name).collect();
-        let flagged = SideRules::from_flags(names.iter().copied()).ok()?;
-        (flagged == *rules).then_some(names)
-    })
 }
 
 pub const fn kind_letter(kind: Kind) -> char {

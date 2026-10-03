@@ -274,16 +274,12 @@ pub fn hello(debug: bool) -> Value {
                 "text": def.text,
                 "foe_text": def.foe_text,
                 "trait": id.is_trait(),
-                "rule_flags": content::relic_flags(id),
-                "hooks": def.effect.map(|e| vec![e.hook_name()]).unwrap_or_default(),
             })
         })
         .collect();
     let upgrades: Vec<Value> = UPGRADES
         .iter()
-        .map(|def| {
-            json!({ "id": def.key, "name": def.name, "text": def.text, "costs": def.costs, "hooks": [def.effect.hook_name()] })
-        })
+        .map(|def| json!({ "id": def.key, "name": def.name, "text": def.text, "costs": def.costs }))
         .collect();
     let floors: Vec<Value> = FLOORS
         .iter()

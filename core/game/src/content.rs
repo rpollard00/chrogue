@@ -6,7 +6,7 @@
 //! - Upgrade: add one entry to `UPGRADES`. A new kind of effect needs a kind in `UpgradeEffect`.
 //! - Floor: add one entry to `FLOORS`.
 
-use crate::chess::{self, Atom, CAMEL, KNIGHT, Kind, Mode, ORTHO, Offset, SideRules};
+use crate::chess::{Atom, CAMEL, KNIGHT, Kind, Mode, ORTHO, Offset, SideRules};
 
 /// An edit of `SideRules::standard()` that a relic gives to its side. The engine builds its
 /// tables and the AI its piece values from the result, thus the AI sees each relic.
@@ -47,18 +47,6 @@ pub enum Effect {
     ExtraPawn,
     /// After a win: 1 gold for each `per` gold of the run and the other rewards, at most `max`.
     VictoryGold { per: u64, max: u64 },
-}
-
-impl Effect {
-    /// The name of the effect in the content of `hello` (`hooks`).
-    pub const fn hook_name(self) -> &'static str {
-        match self {
-            Effect::CaptureGold { .. } => "captureGold",
-            Effect::RescueFirst => "rescueUnit",
-            Effect::ExtraPawn => "setupBattle",
-            Effect::VictoryGold { .. } => "victoryGold",
-        }
-    }
 }
 
 pub struct RelicDef {
@@ -191,11 +179,6 @@ pub fn rules_for(ids: &[RelicId]) -> SideRules {
     rules
 }
 
-/// The rule flags that a relic gives, or None for rules that no set of flags gives.
-pub fn relic_flags(id: RelicId) -> Option<Vec<&'static str>> {
-    chess::flags_of(&rules_for(&[id]))
-}
-
 // ---- Upgrades ----
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -210,19 +193,6 @@ pub enum UpgradeEffect {
     PriceCut { per_level: f64 },
     /// In a battle, the player can see the moves of each enemy piece.
     Scout,
-}
-
-impl UpgradeEffect {
-    /// The name of the effect in the content of `hello` (`hooks`).
-    pub const fn hook_name(self) -> &'static str {
-        match self {
-            UpgradeEffect::RecruitEachLevel(_) | UpgradeEffect::Recruit(_) | UpgradeEffect::GoldEachLevel(_) => {
-                "startRun"
-            }
-            UpgradeEffect::PriceCut { .. } => "priceFactor",
-            UpgradeEffect::Scout => "scout",
-        }
-    }
 }
 
 pub struct UpgradeDef {

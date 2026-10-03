@@ -289,8 +289,8 @@ The content text (the names and texts of relics, upgrades, floors, pieces, and o
 - `protocol`: the version. `debug`: true if the debug commands work.
 - `commands`, `events`, `errors`: the names in this file.
 - `content`:
-  - `relics`: `id`, `name`, `text`, `foe_text` (`null` if a boss cannot have it), `trait`, `rule_flags`, and `hooks`. `rule_flags` are the names of the rule flags of the engine that give the movement rules of the relic (`null` if no set of flags gives them). `hooks` are the names of the effects of the relic.
-  - `upgrades`: `id`, `name`, `text`, `costs`, `hooks`.
+  - `relics`: `id`, `name`, `text`, `foe_text` (`null` if a boss cannot have it), and `trait`.
+  - `upgrades`: `id`, `name`, `text`, `costs`.
   - `floors`: `number`, `name`, `budget` (the value of the enemy army), `traits` (the number of boss traits), `boss`, `level` (the name of the AI level), and `draft_gold` (the gold card of the reward before this floor).
   - `pieces`: `kind`, `name`, `value` (the gold of a capture), and `price` (in the shop, before upgrades).
   - `recruits`: `kind`, `weight`, `min_floor` of the pieces in rewards and in the shop.
