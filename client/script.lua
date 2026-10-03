@@ -21,7 +21,7 @@
   { 'wait', 0.5 }                         seconds
   { 'settle' }                            until no request waits for the core, the enemy moved, and no piece moves
   { 'screen', 'camp' }                    until the screen is camp, and settled
-  { 'send', { cmd = 'debug_set_floor', floor = 8 } }   a request to the core, to prepare a test (debug commands need --debug)
+  { 'send', { cmd = 'debug_set_floor', floor = 8 } }   a request to the core, to prepare a test (--no-debug stops the debug commands)
   { 'expect', function(view, client, app) return ok, detail end, 'label' }   stops the game with an error if not ok
   { 'size', 1920, 1080 }                  the size of the window
   { 'screenshot', '/absolute/path.png' }

@@ -1,5 +1,5 @@
 --[[
-  The boss of floor 8, with each relic: the banner, the fans, and 12 moves by clicks. The dump has the longest frame while the
+  The boss of floor 8, with 10 relics: the banner, the fans, and 12 moves by clicks. The dump has the longest frame while the
   core selects each enemy move (client.enemyMove.worstFrameMs) and the time of each enemy_move request.
   Run with: --seed 7 --debug --no-save --script test/floor8.lua
 ]]
@@ -33,7 +33,7 @@ local rest = {
   { 'hover', 'medal', 'enemy', 2 }, { 'wait', 0.4 }, { 'screenshot', out .. 'boss-trait-card' .. size .. '.png' },
   { 'hover', 'medal', 'player', 10 }, { 'wait', 0.4 }, { 'screenshot', out .. 'boss-relic-card' .. size .. '.png' },
   { 'hover', 'none' },
-  { 'expect', function(v) return v.floor.number == 8 and v.floor.boss and #v.relics == 10 and #v.traits == 2 end, 'floor 8 with each relic and two traits' },
+  { 'expect', function(v) return v.floor.number == 8 and v.floor.boss and #v.relics == 10 and #v.traits == 2 end, 'floor 8 with 10 relics and two traits' },
 }
 for _, s in ipairs(rest) do steps[#steps + 1] = s end
 for _ = 1, 12 do

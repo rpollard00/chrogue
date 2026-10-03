@@ -17,11 +17,11 @@ The core keeps the saved data in the save folder of LÖVE (`~/.local/share/love/
 
 ## Command line
 
-The options come after the game folder. The client gives `--seed`, `--debug`, `--no-save`, and `--keep-alive` to the core.
+The options come after the game folder. The client gives `--seed`, `--no-save`, and `--keep-alive` to the core. It also gives `--debug` to the core, unless the command line has `--no-debug`.
 
 - `--size 1440x900`: the size of the window. The default is 1280 by 720.
 - `--seed 7`: the seed of the core. The same seed and the same clicks give the same game.
-- `--debug`: the core accepts the debug commands of `PROTOCOL.md`. The test scripts use them to prepare positions.
+- `--no-debug`: the core does not accept the debug commands of `PROTOCOL.md`. Without this option, the core accepts them. The test scripts use them to prepare positions. `--debug` has no effect.
 - `--no-save`: the core keeps the saved data in memory only.
 - `--save-dir PATH`: the core keeps the saved data in `PATH`, not in the save folder of LÖVE.
 - `--keep-alive`: the core continues after the game stops. The game prints the address of the core.
@@ -62,7 +62,7 @@ With `--embed`, the client loads the library of the core (`../core/embed`) with 
 
 The client looks for the library at `../core/target/release/libchrogue_core.so`, from this folder (`libchrogue_core.dylib` on macOS, `chrogue_core.dll` on Windows). To use a different file, set `CHROGUE_CORE_LIB` to its path.
 
-- `--seed`, `--debug`, `--no-save`, and `--save-dir` have the same function. `--connect`, `--keep-alive`, and `--no-auth` have no function.
+- `--seed`, `--no-debug`, `--no-save`, and `--save-dir` have the same function. `--connect`, `--keep-alive`, and `--no-auth` have no function.
 - The client sends one request in each frame, and the core answers in the call. No token, no time limit, and no reconnection are necessary.
 - While the core selects the enemy move, the window does not draw. On floor 8, this time is 0.1 to 0.2 seconds.
 - If the library is missing, or if another core holds the lock of the save folder, the window shows the reason.
@@ -130,7 +130,7 @@ The named controls are in the `control` function of each screen module:
 The run fails if a game stops with an error, if the core refused a command that a script did not expect, or if a core of this game continues after the tests.
 
 - `test/flow.lua`: a full session from the title to the title, at 1280 by 720 and 1920 by 1080, and one time with `--embed`.
-- `test/showcase.lua`: the largest content (the last boss, a full army, each relic) and a won run.
+- `test/showcase.lua`: the largest content (the last boss, a full army, 10 relics) and a won run.
 - `test/floor8.lua`: 12 moves against the boss of floor 8. It prints the longest frame while the core selects the enemy move.
 - `test/reconnect-a.lua`, `test/reconnect-b.lua`: the reconnection with `--keep-alive` and `--connect`.
 - `test/lost.lua`: the core stops, and the client starts a new core.

@@ -1,6 +1,6 @@
 --[[
-  The states with the largest content: the camp before the last boss (16 enemy pieces, two traits), a full army, each
-  relic, blocked shop cards, the relic cards in the camp, and a won run. The debug commands prepare the positions;
+  The states with the largest content: the camp before the last boss (16 enemy pieces, two traits), a full army, 10
+  relics, blocked shop cards, the relic cards in the camp, and a won run. The debug commands prepare the positions;
   each move is a click. Run with: --seed 7 --debug --no-save --script test/showcase.lua
 ]]
 local w, h = love.graphics.getDimensions()
@@ -35,12 +35,12 @@ for _, s in ipairs({
   expect('floor 7 is won', function(v) return v.result.outcome == 'victory' and v.result.next == 'camp' end),
   { 'press', 'continue' }, { 'screen', 'camp' },
   { 'send', FULL },
-  { 'send', { cmd = 'debug_set_draft', offers = { { kind = 'piece', type = 'n' }, { kind = 'relic', id = 'interest' }, { kind = 'gold', amount = 26 } } } },
+  { 'send', { cmd = 'debug_set_draft', offers = { { kind = 'piece', type = 'n' }, { kind = 'relic', id = 'huntress' }, { kind = 'gold', amount = 26 } } } },
   { 'send', { cmd = 'debug_set_shop', offers = { { kind = 'piece', type = 'b' }, { kind = 'relic', id = 'bounty' }, { kind = 'gold', amount = 12 } } } },
   { 'settle' }, { 'wait', 0.5 }, shot('camp-boss'), dump('camp-boss'),
   expect('the camp before the last boss', function(v)
     return v.floor.number == 8 and #v.enemy.kinds == 16 and #v.enemy.traits == 2 and #v.army == 16 and #v.relics == 10
-      and v.shop.offers[1].blocked == 'army_full' and v.shop.offers[2].blocked == 'owned' and v.reward.offers[1].blocked == 'army_full' and v.reward.offers[2].blocked == 'owned'
+      and v.shop.offers[1].blocked == 'army_full' and v.shop.offers[2].blocked == 'owned' and v.reward.offers[1].blocked == 'army_full' and v.reward.offers[2].blocked == 'relics_full'
   end),
   { 'hover', 'medal', 'player', 10 }, { 'wait', 0.4 }, shot('camp-relic-card'),
   { 'hover', 'medal', 'enemy', 1 }, { 'wait', 0.4 }, shot('camp-trait-card'),

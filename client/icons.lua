@@ -19,7 +19,28 @@ local PATHS = {
   chest = 'M4 19v-9a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v9zM4 12h16M12 11v4',
   tag = 'M3 12V4h8l10 10-8 8zM7.5 8.5h.01',
   eye = 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6z',
+  vault = 'M3 20v-7h5v3h8v-3h5v7zM5.5 9a8 8 0 0 1 13 0M15 8.5l3.5.5.5-3.5',
+  crossfire = 'M5 19L19 5M19 19L5 5M5 10V5h5M14 5h5v5',
+  closeQuarters = 'M12 3l-2.5 4v8h5V7zM7 15h10M12 15v6',
+  pilgrimLeap = 'M3 15h6v6H3zM15 3h6v6h-6zM6 15a9 9 0 0 1 9-9',
+  queenFlight = 'M19 5c-7 0-12 4-12 12c7 0 12-5 12-12zM4 20L14 10',
+  gallop = 'M4 7h7M4 12h5M4 17h7M14 6l6 6-6 6',
+  crusade = 'M12 3l8 3v6c0 5-3.5 8-8 9c-4.5-1-8-4-8-9V6zM12 8v8M8.5 11h7',
+  royalMarch = 'M5 12h14M5 12L4 4l4.5 3.5L12 3l3.5 4.5L20 4l-1 8M5 18h13M15 15l3 3-3 3',
+  huntress = 'M8 3a10.5 10.5 0 0 1 0 18M8 3v18M3 12h18M18 9l3 3-3 3',
+  apprenticeship = 'M9 4a3 3 0 1 0 0 6a3 3 0 0 0 0-6M5 20c0-4 2-6 4-9c2 3 4 5 4 9zM18 5v6M15 8h6',
+  coup = 'M13 2L5 13h6l-1 9l8-12h-6z',
+  gambit = 'M12 4v16M7 20h10M5 7h14M5 7l-3 7h6zM19 7l-3 7h6z',
+  gem = 'M6 4h12l4 6-10 11L2 10zM2 10h20',
+  vase = 'M9 3h6M10 3c0 3-4 5-4 10a6 6 0 0 0 12 0c0-5-4-7-4-10M12 19v2M9 21h6',
+  die = 'M5 5h14v14H5zM9 9h.01M15 9h.01M12 12h.01M9 15h.01M15 15h.01',
+  letter = 'M3 6h18v12H3zM3 6l9 7 9-7',
+  troops = 'M9 5a3 3 0 1 0 0 6a3 3 0 0 0 0-6M3 20v-1a6 6 0 0 1 12 0v1M16 5.2a3 3 0 0 1 0 5.6M18 14a6 6 0 0 1 3 5v1',
+  frame = 'M4 4h16v16H4zM12 8l4 4-4 4-4-4z',
 }
+
+-- The mark of an id that has no path: a plain ring. Content of the core can come before its icon.
+local FALLBACK = 'M12 6a6 6 0 1 0 0 12a6 6 0 0 0 0-12'
 
 -- The art of each upgrade: a piece, or an icon.
 icons.UPGRADE_ART = {
@@ -28,6 +49,13 @@ icons.UPGRADE_ART = {
   bishop = { kind = 'piece', type = 'b' },
   haggle = { kind = 'icon', id = 'tag' },
   scout = { kind = 'icon', id = 'eye' },
+  knight = { kind = 'piece', type = 'n' },
+  heirloom = { kind = 'icon', id = 'gem' },
+  antiquary = { kind = 'icon', id = 'vase' },
+  fixer = { kind = 'icon', id = 'die' },
+  envoy = { kind = 'icon', id = 'letter' },
+  muster = { kind = 'icon', id = 'troops' },
+  curator = { kind = 'icon', id = 'frame' },
 }
 
 -- Reads the numbers and the command letters of a path. A number can start with '-' or '.' with no space before it.
@@ -148,11 +176,11 @@ icons.parse = parse
 local parsed = {}
 
 -- Draws an icon with its center at a point. `size` is the width of the 24 unit grid. The line has a width of 2 grid units
--- and round ends. Set the color before the call.
+-- and round ends. An id with no path gets the plain ring. Set the color before the call.
 function icons.draw(id, cx, cy, size)
   local lines = parsed[id]
   if not lines then
-    lines = parse(assert(PATHS[id], 'No icon for ' .. tostring(id)))
+    lines = parse(PATHS[id] or FALLBACK)
     parsed[id] = lines
   end
   local scale = size / 24

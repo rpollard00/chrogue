@@ -103,7 +103,8 @@ function upgrades:key(key)
   return false
 end
 
-local function art(id) return icons.UPGRADE_ART[id] or { kind = 'icon', id = 'crown' } end
+-- An upgrade with no art gets the plain mark of icons.lua.
+local function art(id) return icons.UPGRADE_ART[id] or { kind = 'icon', id = id } end
 
 local function flairOf(s) return s.next_cost == nil and C.accent or C.upgrade end
 

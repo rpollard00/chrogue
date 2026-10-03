@@ -1,6 +1,6 @@
 --[[
   The frames per second on the camp and the battle, in each effects mode. The camp has its largest content (the last
-  boss, a full army, each relic) and a relic card under the pointer; the battle has each relic and the boss.
+  boss, a full army, 10 relics) and a relic card under the pointer; the battle has 10 relics and the boss.
   Run with: --size 1920x1080 --novsync --seed 7 --debug --no-save --script test/fps.lua
 ]]
 local RELICS = { 'forcedMarch', 'backpedal', 'earlyPromo', 'kingKnight', 'longLeap', 'sidestep', 'bounty', 'secondWind', 'conscription', 'interest' }

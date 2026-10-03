@@ -40,7 +40,7 @@ function text.overRow(row)
   return 'Crowns for the floors'
 end
 
-text.BLOCKED = { army_full = 'Army full', owned = 'Owned' }
+text.BLOCKED = { army_full = 'Army full', owned = 'Owned', relics_full = 'Relics full' }
 text.KIND = { piece = 'Unit', relic = 'Relic', gold = 'Gold' }
 text.REWARD_HEAD = { open = 'Select one reward', taken = 'Reward taken', skipped = 'Reward skipped' }
 

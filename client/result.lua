@@ -13,14 +13,18 @@ local ROW_STEP = 0.26
 local ROW = 1.5
 local PAD = layout.result.pad
 
--- The rows of the gold tally, and the number of the pieces that return. The core gives the rows in their order.
+-- The rows of the gold tally, and the lines about the army: the number of the pieces that return, and the number of
+-- the pieces that join. The core gives the rows in their order.
 local function content(self)
   local res = self.view.result
   local rows = {}
   for _, row in ipairs(res.rows or {}) do rows[#rows + 1] = { label = text.resultRow(row), value = row.gold } end
   local title = text.OUTCOME[res.outcome] or res.outcome
+  local army = {}
+  if (res.rescued or 0) > 0 then army[#army + 1] = 'Pieces that return to your army: ' .. res.rescued end
+  if #(res.recruits or {}) > 0 then army[#army + 1] = 'Pieces that join your army: ' .. #res.recruits end
   return { title = title, cause = text.cause(res), rows = rows, total = #rows > 1 and res.total or nil,
-    rescued = res.rescued or 0, winner = res.winner }
+    army = army, winner = res.winner }
 end
 
 -- The positions of the parts of the result panel. The panel is above the layout, thus its height comes from its content.
@@ -47,9 +51,9 @@ function result.layout(self)
     end
     y = y + 1
   end
-  if c.rescued > 0 then
-    c.rescuedY = y
-    y = y + ROW + 0.75
+  if #c.army > 0 then
+    c.armyY = y
+    y = y + #c.army * ROW + 0.75
   end
   local keyW = gfx.textWidth('CONTINUE', 'display', 1.3, 0.05) + 3
   local h = y + 3 + px(4) + PAD
@@ -94,9 +98,7 @@ function result.draw(self, pointer)
       gfx.rect(x, c.y + c.totalY, inner, px(1), 0, C.line)
       ui.tallyRow(x, c.y + c.totalY + 0.5, inner, 'Total gold', c.total, since - #c.rows * ROW_STEP, true)
     end
-    if c.rescuedY then
-      gfx.text('Pieces that return to your army: ' .. c.rescued, 'body', 1, x, c.y + c.rescuedY, { color = C.dim, align = 'center', width = inner, line = ROW })
-    end
+    if c.armyY then gfx.lines(c.army, 'body', 1, x, c.y + c.armyY, ROW, { color = C.dim, align = 'center', width = inner }) end
     local k = c.key
     ui.key(k, 'Continue', 'primary', ui.state(pointer, 'continue'))
     if c.winner == 'w' then ui.burst(c.x + c.w / 2, c.y + c.titleY + 0.96, since, 16, 0.15) end

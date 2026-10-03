@@ -30,7 +30,7 @@ layout.me = {
   -- The purse has the size of its largest content: the gold, and the gold from captures.
   purse = rect(42.75, 37.65, 13, 2.6),
   stash = rect(24.25, 41.1, 4.4, 2.6),
-  -- The fan has space for the 10 relics of the game.
+  -- The fan has space for 10 relics. A run has at most 10 relics.
   fan = rect(29.55, 41.25, 20.68, 2.3),
   giveUp = rect(51.3, 41.45, 4.45, 1.9),
 }

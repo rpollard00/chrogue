@@ -204,6 +204,8 @@ end
 
 local function parse(args)
   local options = app.options
+  -- The core accepts the debug commands unless the player gives --no-debug.
+  options.debug = true
   local i = 1
   local function value()
     i = i + 1
@@ -219,6 +221,7 @@ local function parse(args)
     elseif name == '--connect' then options.connect = value()
     elseif name == '--save-dir' then options.saveDir = value()
     elseif name == '--debug' then options.debug = true
+    elseif name == '--no-debug' then options.debug = false
     elseif name == '--no-save' then options.noSave = true
     elseif name == '--keep-alive' then options.keepAlive = true
     elseif name == '--novsync' then options.novsync = true
