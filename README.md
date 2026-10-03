@@ -45,6 +45,7 @@ Each run gives crowns. Crowns buy permanent upgrades on the title screen.
 - `core/engine/`: Chess. It has the movement rules as data, the move generation, the result of a battle, and the enemy AI. It does not know about runs or relics.
 - `core/game/`: The roguelite. It has runs, battles, relics, upgrades, offers, floors, saved data, and the session that runs the commands of a client.
 - `core/server/`: The program `chrogue-core`. It gives the commands of `core/PROTOCOL.md` on stdio or on a local TCP socket.
+- `core/embed/`: The library `chrogue_core`. It gives the same commands as a C interface, for a client that loads the core into its own process.
 - `core/tools/`: Tools for the engine: a timer, self-play matches, and the move of the AI for one position.
 - `ports/love/`: The client. It has the screens, the motion, and the shaders. It has no game rules.
 

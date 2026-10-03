@@ -1,0 +1,15 @@
+[package]
+name = "chrogue-embed"
+description = "The C interface of the Chrogue core, for a client that loads the core into its own process."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+name = "chrogue_core"
+# cdylib: a client loads it (LuaJIT FFI). staticlib: a build links it (the WebAssembly build of LÖVE). rlib: the tests.
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+chrogue-game = { path = "../game" }
+serde_json = "1"

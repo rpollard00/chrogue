@@ -5,6 +5,7 @@ This directory has the Rust core of Chrogue. It has these parts:
 - The chess rules: the move generation, the functions that make and unmake a move, and the result of a battle.
 - The enemy AI: a search with an evaluation that comes from the movement rules of the battle.
 - The game layer and the command server: the runs, the saved data, and the commands of a client. See "Game layer and command server".
+- The library for a client that loads the core into its own process. See "Game layer and command server".
 
 The core is the source of truth for the rules of the game. The TypeScript game in `src/` is deprecated. The core came from it, and the scripts in `difftest/` and `gametest/` compare the two while the TypeScript game is in the repository.
 
@@ -327,6 +328,8 @@ The script uses its own random numbers, thus the same seed gives the same run.
 
 The crate `game/` (`chrogue-game`) has the roguelite layer of `src/game/`: runs, relics, upgrades, offers, floors, battles, and saved data. The crate `server/` has the binary `chrogue-core`. A client, a test, or an agent plays the full game through one JSON protocol with no interface. `PROTOCOL.md` documents the protocol.
 
+The crate `embed/` (`chrogue-embed`) gives the same protocol as a C interface. A client loads this library into its own process and needs no socket. The WebAssembly build of the game (`ports/web`) links it into LÖVE.
+
 The TypeScript game in `src/game/` is the reference. `gametest/parity.ts` proves that the two give the same content and the same results.
 
 ### Commands
@@ -335,6 +338,8 @@ Run the commands from the `core/` directory, unless the command shows a differen
 
 - Server on stdio: `cargo run --release --bin chrogue-core -- --stdio --no-save`
 - Server on TCP: `CHROGUE_TOKEN=$(openssl rand -hex 32) cargo run --release --bin chrogue-core -- --listen 127.0.0.1:0 --save-dir /path/to/saves`. The first line of a client is `{"auth":"<the token>"}` (see "Authentication" in `PROTOCOL.md`). Exit codes: 2 for a usage error or a bad token, 3 if another core holds the lock of the save directory.
+- Library for a client: `cargo build --release -p chrogue-embed`. The result is `target/release/libchrogue_core.so` (`.dylib` on macOS, `chrogue_core.dll` on Windows) and the static library `libchrogue_core.a`.
+- Library for the WebAssembly build: `cargo build --release -p chrogue-embed --target wasm32-unknown-emscripten`. `ports/web/build.sh` runs this command.
 - Tests of the game layer and of the server: `cargo test --release -p chrogue-game -p chrogue-server`. With `-- --nocapture`, the fuzz test prints the error codes and the TCP test prints the round-trip times.
 - Parity with the TypeScript game, from the repository root: `bun core/gametest/parity.ts [--seed N] [--battles N]`
 - Whole runs with a bot, two times, with a comparison of the transcripts, from the repository root: `bun core/gametest/play.ts [--sessions N] [--runs N] [--seed N]`. The default (36 runs, two passes) takes about four minutes.
@@ -352,6 +357,8 @@ Run the commands from the `core/` directory, unless the command shows a differen
 - `game/src/chess.rs`: The one module that calls the engine. A change of the engine API changes only this file.
 - `game/tests/`: The cases of `test/game.test.ts` (`game.rs`), saved data (`saved.rs`), random requests (`fuzz.rs`), and the check of `PROTOCOL.md` (`protocol_doc.rs`).
 - `server/src/main.rs`: The line transport: the command line, the auth line, the takeover by a newer client, the timeouts, and the idle exit. `server/tests/tcp.rs` starts the binary and tests TCP, stdio, the lock, and the command line.
+- `embed/include/chrogue_core.h`: The C interface: `chrogue_open`, `chrogue_open_error`, `chrogue_command`, and `chrogue_close`.
+- `embed/src/lib.rs`: The functions of the C interface. They move text to `Session::command` and back, as the server does for a socket. `embed/tests/c_interface.rs` calls the functions as a client does.
 - `gametest/`: The Bun scripts `parity.ts` and `play.ts`, and the client `core.ts` that they share.
 
 ### Relics as data

@@ -200,6 +200,9 @@ impl FileStorage {
         };
         match lock.try_lock() {
             Ok(()) => {}
+            // A page of a browser has a file system of its own, with no file locks and no second process.
+            #[cfg(target_os = "emscripten")]
+            Err(TryLockError::Error(e)) if e.kind() == ErrorKind::Unsupported => {}
             Err(TryLockError::WouldBlock) => {
                 let holder = fs::read_to_string(&path).ok().map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
                 return Err(OpenError::Locked { path, holder });
