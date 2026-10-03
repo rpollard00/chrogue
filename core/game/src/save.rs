@@ -9,6 +9,8 @@
 //!   number that a JSON reader in a browser keeps exactly.
 //! - A unit id is at most `UNIT_ID_MAX` and appears one time, `nextId` is at most
 //!   `UNIT_ID_MAX + 1`, and the enemy has at most `ENEMY_PIECES_MAX` pieces.
+//! - The `seed` of a run is at most `SEED_MAX`, and its `rolls` is at most `u32::MAX`. A run with
+//!   no `seed` or no `rolls` loads with 0 for that field.
 //! - The board of a run must be valid (`Battle::new`): no two enemy pieces on one square, no
 //!   enemy piece on the home square of a unit, and one king on each side. A start with the enemy king in check
 //!   is valid: normal play can make it, and the core saves the run at the start of the battle.
@@ -28,7 +30,7 @@ use serde_json::{Value, json};
 use crate::battle::Battle;
 use crate::chess::{self, Kind, Square};
 use crate::content::{FLOORS, RelicId, UpgradeId};
-use crate::run::{ENEMY_PIECES_MAX, Enemy, EnemyPiece, Meta, Offer, Phase, Run, UNIT_ID_MAX, Unit, UnitId};
+use crate::run::{ENEMY_PIECES_MAX, Enemy, EnemyPiece, Meta, Offer, Phase, Run, SEED_MAX, UNIT_ID_MAX, Unit, UnitId};
 
 /// The version of the saved documents.
 pub const SAVE_VERSION: u64 = 1;
@@ -432,6 +434,7 @@ pub fn offer_json(offer: Offer) -> Value {
 pub fn run_json(run: &Run) -> Value {
     let letter = |kind: Kind| chess::kind_letter(kind).to_string();
     json!({
+        "seed": run.seed,
         "floor": run.floor,
         "gold": run.gold,
         "army": run.army.iter().map(|u| json!({ "id": u.id, "type": letter(u.kind), "home": u.home })).collect::<Vec<_>>(),
@@ -444,6 +447,7 @@ pub fn run_json(run: &Run) -> Value {
         "phase": match run.phase { Phase::Battle => "battle", Phase::Camp => "camp" },
         "draft": run.draft.as_ref().map(|d| d.iter().map(|&o| offer_json(o)).collect::<Vec<_>>()),
         "shop": run.shop.iter().map(|&o| offer_json(o)).collect::<Vec<_>>(),
+        "rolls": run.rolls,
     })
 }
 
@@ -541,6 +545,13 @@ fn parse_run_shape(raw: &Value) -> Option<Run> {
     if floor < 1 || floor > FLOORS.len() as u64 || next_id > UNIT_ID_MAX as u64 + 1 {
         return None;
     }
+    // A field that the data does not have is 0. A field that is not valid makes the run not valid.
+    let or_zero = |name: &str, max: u64| match data.get(name) {
+        None => Some(0),
+        Some(value) => count(value).filter(|&n| n <= max),
+    };
+    let seed = or_zero("seed", SEED_MAX)?;
+    let rolls = or_zero("rolls", u32::MAX as u64)? as u32;
 
     let mut army = Vec::new();
     let mut ids = HashSet::new();
@@ -574,6 +585,7 @@ fn parse_run_shape(raw: &Value) -> Option<Run> {
         Some(value) => Some(offers(value)),
     };
     Some(Run {
+        seed,
         floor: floor as usize,
         gold,
         army,
@@ -583,5 +595,6 @@ fn parse_run_shape(raw: &Value) -> Option<Run> {
         phase: if data.get("phase").and_then(Value::as_str) == Some("camp") { Phase::Camp } else { Phase::Battle },
         draft,
         shop: offers(data.get("shop").unwrap_or(&Value::Null)),
+        rolls,
     })
 }

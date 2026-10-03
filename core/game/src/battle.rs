@@ -2,7 +2,7 @@
 
 use crate::chess::{self, Color, Kind, Move, Outcome, Piece, Placement, Special, Square, State};
 use crate::content::{self, Effect, FLOORS, RelicId};
-use crate::random::Dice;
+use crate::random::{Dice, Stream};
 use crate::run::{CONSCRIPT_ID, ENEMY_ID_BASE, Run, UnitId};
 
 #[derive(Clone, PartialEq, Debug)]
@@ -80,6 +80,8 @@ pub struct Battle {
     pub taken: [Vec<Kind>; 2],
     pub result: Option<BattleResult>,
     pub last: Option<Move>,
+    /// The number of moves that the battle played.
+    pub plies: u32,
 }
 
 /// The effects of one move.
@@ -168,6 +170,7 @@ impl Battle {
             taken: [Vec::new(), Vec::new()],
             result: None,
             last: None,
+            plies: 0,
         })
     }
 
@@ -197,6 +200,7 @@ impl Battle {
         let mover = chess::piece_at(&self.state, mv.from).unwrap_or(piece(0, Kind::Pawn, mover_color));
         let played = chess::play(&mut self.state, mv);
         self.last = Some(mv);
+        self.plies = self.plies.saturating_add(1);
         let mut report = MoveReport { mover, mv, capture: None, relics: Vec::new(), unit_lost: None };
         if let Some((captured, square)) = played.captured {
             self.taken[mover_color.index()].push(captured.kind);
@@ -257,9 +261,11 @@ impl Battle {
         reward
     }
 
-    /// The move of the AI of the floor of the run.
-    pub fn ai_move(&mut self, floor: usize, dice: &mut Dice) -> Option<Move> {
-        chess::ai_move(&mut self.state, floor, dice.seed())
+    /// The move of an AI level. The seed of the AI comes from the seed of the run, the floor, and
+    /// the number of moves that the battle played.
+    pub fn ai_move(&mut self, run: &Run, level: usize) -> Option<Move> {
+        let seed = Dice::stream(run.seed, Stream::Ai, run.floor as u64, self.plies as u64).seed();
+        chess::ai_move(&mut self.state, level, seed)
     }
 
     /// What `settle` will do.
@@ -273,7 +279,7 @@ impl Battle {
     }
 
     /// Applies a completed battle to the run (`settleBattle`). Returns None if the battle has no result.
-    pub fn settle(&self, run: &mut Run, dice: &mut Dice, barred: &[RelicId]) -> Option<Next> {
+    pub fn settle(&self, run: &mut Run, barred: &[RelicId]) -> Option<Next> {
         let next = self.next(run)?;
         let result = self.result.as_ref()?;
         if next == Next::Lost {
@@ -288,7 +294,7 @@ impl Battle {
             }
         }
         if next == Next::Camp {
-            run.enter_camp(result.outcome.winner() == Some(Color::White), dice, barred);
+            run.enter_camp(result.outcome.winner() == Some(Color::White), barred);
         }
         Some(next)
     }

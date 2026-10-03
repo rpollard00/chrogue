@@ -312,6 +312,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
 
 - `game/src/content.rs`: The relics, upgrades, floors, prices, and constants as data.
 - `game/src/run.rs`: `Meta`, `Run`, `Unit`, `Enemy`, `Offer`, the enemy of each floor, rewards, the shop, and upgrades.
+- `game/src/random.rs`: The dice, and the streams of random numbers of a run.
 - `game/src/battle.rs`: One battle on the engine: relic effects, gold, lost and rescued units, the reward, and `settle`.
 - `game/src/save.rs`: The `Storage` trait, a file storage (with the lock of the directory and safe writes) and a memory storage, and the check of saved data. A file that the core cannot use is set aside as `<name>.bad-<unix time>`, never written over.
 - `game/src/session.rs`: `Screen`, `Session::command`, and the commands.
@@ -332,6 +333,7 @@ To add a relic, add one entry to `RELICS` in `game/src/content.rs`. A new kind o
 ### Details of the behavior of the game layer
 
 - The AI of floor `n` is `Level::floor(n)` of the engine.
-- Saved data: a unit id is at most 19999 and appears one time, a relic id appears one time in a list, a count is at most 2^53 - 1, and the board must be valid (no two pieces on one square, and one king on each side). A file that the core cannot use is kept as `<name>.bad-<unix time>`. The comment of `game/src/save.rs` has the list.
+- A run has a seed from 0 to 999999999. Each random result of the run has dice of its own (`Dice::stream`) from the seed, the kind of the result, and two numbers: the enemy of a floor (the floor), the reward before a floor (the floor), the shop before a floor (the floor and the number of rerolls), and the move of the AI (the floor and the number of moves that the battle played). Thus the same run seed gives the same armies, rewards, and shop items, also when the battles have different numbers of moves. The dice of the session (`--seed`) make only the seed of each new run.
+- Saved data: a unit id is at most 19999 and appears one time, the seed of a run is at most 999999999, a relic id appears one time in a list, a count is at most 2^53 - 1, and the board must be valid (no two pieces on one square, and one king on each side). A file that the core cannot use is kept as `<name>.bad-<unix time>`. The comment of `game/src/save.rs` has the list.
 - The pawn of Conscription does not go to the square of an enemy piece (only a debug enemy can be on rank 2 or 3).
 - The debug commands refuse two pieces on one square and a side with no king or two kings (see `PROTOCOL.md`).

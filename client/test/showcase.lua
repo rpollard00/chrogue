@@ -15,6 +15,8 @@ local start = os.getenv('CHROGUE_EFFECTS') == 'off' and { { 'key', 'f1' }, { 'ke
 local RELICS = { 'forcedMarch', 'backpedal', 'earlyPromo', 'kingKnight', 'longLeap', 'sidestep', 'bounty', 'secondWind', 'conscription', 'interest' }
 -- Conscription puts a pawn on a free home square (a2), thus the mate is on the h-file: Rh1-h8.
 local MATE = { cmd = 'debug_set_enemy', pieces = { { kind = 'k', square = 56 }, { kind = 'p', square = 48 }, { kind = 'p', square = 49 } } }
+-- The boss has two traits that do not change the mate: it has no knight and no bishop.
+local BOSS_MATE = { cmd = 'debug_set_enemy', pieces = MATE.pieces, traits = { 'longLeap', 'sidestep' } }
 local ROOK = { cmd = 'debug_set_army', units = { { kind = 'k', home = 4 }, { kind = 'r', home = 7 } } }
 local FULL = { cmd = 'debug_set_army', units = {} }
 for s = 0, 15 do
@@ -33,11 +35,12 @@ for _, s in ipairs({
   expect('floor 7 is won', function(v) return v.result.outcome == 'victory' and v.result.next == 'camp' end),
   { 'press', 'continue' }, { 'screen', 'camp' },
   { 'send', FULL },
+  { 'send', { cmd = 'debug_set_draft', offers = { { kind = 'piece', type = 'n' }, { kind = 'relic', id = 'interest' }, { kind = 'gold', amount = 26 } } } },
   { 'send', { cmd = 'debug_set_shop', offers = { { kind = 'piece', type = 'b' }, { kind = 'relic', id = 'bounty' }, { kind = 'gold', amount = 12 } } } },
   { 'settle' }, { 'wait', 0.5 }, shot('camp-boss'), dump('camp-boss'),
   expect('the camp before the last boss', function(v)
     return v.floor.number == 8 and #v.enemy.kinds == 16 and #v.enemy.traits == 2 and #v.army == 16 and #v.relics == 10
-      and v.shop.offers[1].blocked == 'army_full' and v.shop.offers[2].blocked == 'owned' and v.reward.offers[1].blocked == 'army_full'
+      and v.shop.offers[1].blocked == 'army_full' and v.shop.offers[2].blocked == 'owned' and v.reward.offers[1].blocked == 'army_full' and v.reward.offers[2].blocked == 'owned'
   end),
   { 'hover', 'medal', 'player', 10 }, { 'wait', 0.4 }, shot('camp-relic-card'),
   { 'hover', 'medal', 'enemy', 1 }, { 'wait', 0.4 }, shot('camp-trait-card'),
@@ -49,7 +52,7 @@ for _, s in ipairs({
   expect('Escape clears the selection', function(v, c) return c.selected == -1 end),
   { 'press', 'skip' }, { 'settle' }, { 'press', 'start' }, { 'screen', 'battle' },
   { 'wait', 0.5 }, shot('battle-boss-banner'), { 'wait', 1.6 },
-  { 'send', ROOK }, { 'send', MATE }, { 'settle' }, { 'wait', 2 },
+  { 'send', ROOK }, { 'send', BOSS_MATE }, { 'settle' }, { 'wait', 2 },
   { 'click', 'h1' }, { 'click', 'h8' }, { 'settle' }, { 'wait', 1.5 },
   expect('floor 8 is won and the run is won', function(v) return v.result.outcome == 'victory' and v.result.next == 'won' end),
   { 'press', 'continue' }, { 'screen', 'over' }, shot('over-won'), dump('over-won'),

@@ -12,7 +12,9 @@ use crate::chess::{self, Kind, Move, Special, Square};
 use crate::content::{self, FLOORS, RECRUIT_KINDS, RelicId, UpgradeId};
 use crate::protocol::{Code, Command, EventKind, Fail, MAX_REQUEST_BYTES, event, fail, gold_number};
 use crate::random::Dice;
-use crate::run::{ENEMY_PIECES_MAX, EnemyPiece, Meta, Offer, Phase, Run, RunSummary, UNIT_ID_MAX, Unit, UnitId};
+use crate::run::{
+    ENEMY_PIECES_MAX, EnemyPiece, Meta, Offer, Phase, Run, RunSummary, SEED_MAX, UNIT_ID_MAX, Unit, UnitId,
+};
 use crate::save::{self, Doc, Storage};
 use crate::view;
 
@@ -115,6 +117,7 @@ impl Screen {
 struct Game {
     meta: Meta,
     screen: Screen,
+    /// The dice of the session. They make only the seed of each new run.
     dice: Dice,
     /// The relics that the game does not offer (the Offers section of the debug menu).
     barred: Vec<RelicId>,
@@ -430,10 +433,10 @@ fn show_over(game: &mut Game, summary: RunSummary, run: &Run, debug: bool, done:
 /// Applies a battle to the saved data when it gets its result: the run goes to the camp before
 /// its next floor, or the run ends. The screen does not change until `continue`.
 fn settle(game: &mut Game, done: &mut Done) {
-    let Game { meta, screen, dice, barred, .. } = game;
+    let Game { meta, screen, barred, .. } = game;
     let Screen::Battle { run, battle, settled: settled @ None } = screen else { return };
     let mut after = run.clone();
-    let Some(next) = battle.settle(&mut after, dice, barred) else { return };
+    let Some(next) = battle.settle(&mut after, barred) else { return };
     *settled = Some(Box::new(match next {
         Next::Camp => Settled::Camp(after),
         next => {
@@ -537,12 +540,12 @@ fn camp_action(
     game: &mut Game,
     command: Command,
     done: &mut Done,
-    action: impl FnOnce(&mut Run, &mut Option<Reward>, &Meta, &mut Dice, &[RelicId]) -> Result<(), Fail>,
+    action: impl FnOnce(&mut Run, &mut Option<Reward>, &Meta, &[RelicId]) -> Result<(), Fail>,
 ) -> Result<(), Fail> {
-    let Game { meta, screen, dice, barred, .. } = game;
+    let Game { meta, screen, barred, .. } = game;
     let Screen::Camp { run, reward } = screen else { return wrong_screen(command, screen) };
     let (gold_before, units, relics) = (run.gold, run.army.clone(), run.relics.clone());
-    action(run, reward, meta, dice, barred)?;
+    action(run, reward, meta, barred)?;
     let added: Vec<Value> = run
         .army
         .iter()
@@ -579,7 +582,8 @@ fn apply(game: &mut Game, command: Command, args: &Args, debug: bool) -> Result<
             if !matches!(game.screen, Screen::Title { .. } | Screen::Over { .. }) {
                 return wrong_screen(command, &game.screen);
             }
-            let run = Run::new(&game.meta, &mut game.dice, &game.barred);
+            let seed = game.dice.below(SEED_MAX as usize + 1) as u64;
+            let run = Run::new(&game.meta, seed, &game.barred);
             d.push(EventKind::RunStart, json!({}));
             start_battle(game, run, d)?;
         }
@@ -626,13 +630,12 @@ fn apply(game: &mut Game, command: Command, args: &Args, debug: bool) -> Result<
             play(game, command, BattlePhase::Enemy, mv, d)?;
         }
         Command::EnemyMove => {
-            let floor = game.screen.run().map_or(1, |run| run.floor);
-            let Game { screen, dice, .. } = game;
-            let Screen::Battle { battle, .. } = screen else { return wrong_screen(command, screen) };
+            let screen = &mut game.screen;
+            let Screen::Battle { run, battle, .. } = screen else { return wrong_screen(command, screen) };
             if battle.phase() != BattlePhase::Enemy {
                 return fail(Code::WrongPhase, "The enemy does not have the move");
             }
-            let Some(mv) = battle.ai_move(floor, dice) else {
+            let Some(mv) = battle.ai_move(run, run.floor) else {
                 return fail(Code::Internal, "The enemy has no legal move");
             };
             play(game, command, BattlePhase::Enemy, mv, d)?;
@@ -642,15 +645,14 @@ fn apply(game: &mut Game, command: Command, args: &Args, debug: bool) -> Result<
                 None | Some(Value::Null) => None,
                 Some(_) => Some(uint(args, "level", FLOORS.len() as u64)?.max(1) as usize),
             };
-            let floor = game.screen.run().map_or(1, |run| run.floor);
-            let Game { screen, dice, .. } = game;
-            let Screen::Battle { battle, .. } = screen else { return wrong_screen(command, screen) };
+            let screen = &mut game.screen;
+            let Screen::Battle { run, battle, .. } = screen else { return wrong_screen(command, screen) };
             let phase = battle.phase();
             if phase == BattlePhase::Over {
                 return fail(Code::WrongPhase, "The battle is over");
             }
             // A battle can start with no legal move for the player (see PROTOCOL.md).
-            let Some(mv) = battle.ai_move(level.unwrap_or(floor), dice) else {
+            let Some(mv) = battle.ai_move(run, level.unwrap_or(run.floor)) else {
                 return fail(Code::IllegalMove, "The side to move has no legal move");
             };
             play(game, command, phase, mv, d)?;
@@ -681,7 +683,7 @@ fn apply(game: &mut Game, command: Command, args: &Args, debug: bool) -> Result<
         }
         Command::TakeReward => {
             let i = index(args)?;
-            camp_action(game, command, d, |run, reward, _, _, _| {
+            camp_action(game, command, d, |run, reward, _, _| {
                 run.take_draft(i)?;
                 if let Some(reward) = reward {
                     reward.taken = Some(i);
@@ -689,7 +691,7 @@ fn apply(game: &mut Game, command: Command, args: &Args, debug: bool) -> Result<
                 Ok(())
             })?;
         }
-        Command::SkipReward => camp_action(game, command, d, |run, _, _, _, _| {
+        Command::SkipReward => camp_action(game, command, d, |run, _, _, _| {
             if run.draft.take().is_none() {
                 return fail(Code::RewardClosed, "The camp has no reward to skip");
             }
@@ -697,9 +699,9 @@ fn apply(game: &mut Game, command: Command, args: &Args, debug: bool) -> Result<
         })?,
         Command::Buy => {
             let i = index(args)?;
-            camp_action(game, command, d, |run, _, meta, _, _| run.buy_offer(meta, i).map(|_| ()))?;
+            camp_action(game, command, d, |run, _, meta, _| run.buy_offer(meta, i).map(|_| ()))?;
         }
-        Command::Reroll => camp_action(game, command, d, |run, _, _, dice, barred| run.reroll_shop(dice, barred))?,
+        Command::Reroll => camp_action(game, command, d, |run, _, _, barred| run.reroll_shop(barred))?,
         Command::Place => {
             let unit = uint(args, "unit", u16::MAX as u64)? as UnitId;
             let to = uint(args, "square", 15)? as Square;
@@ -756,9 +758,9 @@ fn debug_command(game: &mut Game, command: Command, args: &Args, d: &mut Done) -
     if changed_meta {
         d.save_meta = true;
     } else {
-        let Game { screen, dice, barred, .. } = game;
+        let Game { screen, barred, .. } = game;
         let Some(run) = screen.run_mut() else { return fail(Code::NoRun, "No run is in progress") };
-        debug_run(run, command, args, dice, barred)?;
+        debug_run(run, command, args, barred)?;
         // A command that changes the pieces or their rules must leave a board that the engine
         // takes as it is: no two pieces on one square, one king on each side. A check of the
         // enemy king at the start is permitted here, as in the camp.
@@ -794,7 +796,7 @@ fn debug_command(game: &mut Game, command: Command, args: &Args, d: &mut Done) -
     Ok(())
 }
 
-fn debug_run(run: &mut Run, command: Command, args: &Args, dice: &mut Dice, barred: &[RelicId]) -> Result<(), Fail> {
+fn debug_run(run: &mut Run, command: Command, args: &Args, barred: &[RelicId]) -> Result<(), Fail> {
     match command {
         Command::DebugSetFloor => {
             let floor = uint(args, "floor", FLOORS.len() as u64)? as usize;
@@ -802,7 +804,7 @@ fn debug_run(run: &mut Run, command: Command, args: &Args, dice: &mut Dice, barr
                 return bad(format!("\"floor\" must be from 1 to {}", FLOORS.len()));
             }
             run.floor = floor;
-            run.enemy = crate::run::generate_enemy(floor, dice, barred);
+            run.enemy = crate::run::generate_enemy(run.seed, floor, barred);
         }
         Command::DebugSetGold => run.gold = uint(args, "gold", 1_000_000_000)?,
         Command::DebugAddUnit => {
@@ -919,8 +921,7 @@ mod tests {
     /// Each command has a handler on each screen: a refusal is never `internal`.
     #[test]
     fn each_command_has_a_handler() {
-        let mut dice = Dice::new(1);
-        let run = Run::new(&Meta::default(), &mut dice, &[]);
+        let run = Run::new(&Meta::default(), 1, &[]);
         let battle = Box::new(Battle::new(&run).unwrap());
         let screens = [
             Screen::Title { run: None },

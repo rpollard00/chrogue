@@ -1,7 +1,35 @@
-//! The random numbers of a session. All randomness of the game comes from one `Dice`, thus the
-//! same seed and the same commands give the same game.
+//! The random numbers of the game. Each random result of a run comes from a stream of its own:
+//! a `Dice` from the seed of the run, the kind of the result, and two numbers. Thus a result
+//! does not depend on the results before it, and the same run seed gives the same run.
 
-use crate::chess::Rng;
+use crate::chess::{Rng, mix};
+
+/// The kind of a random result of a run. Each kind has its own streams.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Stream {
+    /// The enemy of a floor: `(floor, 0)`.
+    Enemy,
+    /// The reward before a floor: `(floor, 0)`.
+    Draft,
+    /// The shop before a floor: `(floor, the number of rerolls)`.
+    Shop,
+    /// The start of the run: `(0, 0)`.
+    Start,
+    /// The move of the AI: `(floor, the number of moves that the battle played)`.
+    Ai,
+}
+
+impl Stream {
+    const fn salt(self) -> u64 {
+        match self {
+            Stream::Enemy => 0x454E_454D_5900_0001,
+            Stream::Draft => 0x4452_4146_5400_0002,
+            Stream::Shop => 0x5348_4F50_0000_0003,
+            Stream::Start => 0x5354_4152_5400_0004,
+            Stream::Ai => 0x4149_0000_0000_0005,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Dice(Rng);
@@ -9,6 +37,11 @@ pub struct Dice(Rng);
 impl Dice {
     pub fn new(seed: u64) -> Dice {
         Dice(Rng::new(seed))
+    }
+
+    /// The dice of one random result of a run. The same four numbers give the same dice.
+    pub fn stream(seed: u64, stream: Stream, a: u64, b: u64) -> Dice {
+        Dice::new(mix(mix(mix(seed, stream.salt()), a), b))
     }
 
     /// A number from 0.0 to 1.0, 1.0 not included.

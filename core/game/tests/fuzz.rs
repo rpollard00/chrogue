@@ -280,12 +280,17 @@ fn run_doc(g: &mut Gen) -> String {
     } else {
         json!([{ "kind": "piece", "type": "q" }, { "kind": "relic", "id": "bounty" }, { "kind": "gold", "amount": big(g) }])
     };
-    json!({ "format": "chrogue.run", "version": if g.chance(0.95) { json!(1) } else { big(g) }, "data": {
+    let mut doc = json!({ "format": "chrogue.run", "version": if g.chance(0.95) { json!(1) } else { big(g) }, "data": {
         "floor": floor, "gold": gold, "army": army, "nextId": next_id, "relics": relics,
         "enemy": { "pieces": pieces, "traits": traits }, "phase": if g.chance(0.5) { "camp" } else { "battle" },
         "draft": draft, "shop": [{ "kind": "piece", "type": "p" }, { "kind": "relic", "id": *g.pick(&RELIC_IDS) }, { "kind": "gold", "amount": big(g) }],
-    } })
-    .to_string()
+    } });
+    // A file of an older core has no seed and no rolls.
+    if g.chance(0.7) {
+        doc["data"]["seed"] = if g.chance(0.8) { json!(g.below(1_000_000_000)) } else { big(g) };
+        doc["data"]["rolls"] = if g.chance(0.8) { json!(g.below(5)) } else { big(g) };
+    }
+    doc.to_string()
 }
 
 fn meta_doc(g: &mut Gen) -> String {

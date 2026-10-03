@@ -2,7 +2,7 @@
 //! types only, thus a change of the engine API changes this file only.
 
 use chrogue_engine as engine;
-pub use engine::rng::Rng;
+pub use engine::rng::{Rng, mix};
 pub use engine::rules::{CAMEL, KNIGHT, ORTHO};
 pub use engine::{Atom, Color, Kind, Mode, Move, Offset, Outcome, Piece, Placement, SideRules, Special, Square};
 
@@ -79,9 +79,9 @@ pub fn in_check(state: &State, color: Color) -> bool {
     engine::in_check(state, color)
 }
 
-/// The move of the AI of a floor (1 to 8) for the side that has the move.
-pub fn ai_move(state: &mut State, floor: usize, seed: u64) -> Option<Move> {
-    let level = engine::Level::LADDER[floor.clamp(1, engine::Level::LADDER.len()) - 1];
+/// The move of an AI level (1 to 8) for the side that has the move.
+pub fn ai_move(state: &mut State, level: usize, seed: u64) -> Option<Move> {
+    let level = engine::Level::LADDER[level.clamp(1, engine::Level::LADDER.len()) - 1];
     engine::choose_move(state, &level, seed).map(|result| result.mv)
 }
 

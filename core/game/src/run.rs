@@ -9,7 +9,7 @@ use crate::content::{
     RelicId, UpgradeEffect, UpgradeId, WIN_CROWNS,
 };
 use crate::protocol::{Code, Fail, fail};
-use crate::random::Dice;
+use crate::random::{Dice, Stream};
 
 /// The id of a unit of the army. Units have the ids from 1 to `UNIT_ID_MAX`.
 pub type UnitId = u16;
@@ -20,6 +20,8 @@ pub const CONSCRIPT_ID: u16 = 20_000;
 pub const ENEMY_ID_BASE: u16 = 30_000;
 /// The most pieces in an enemy army.
 pub const ENEMY_PIECES_MAX: usize = 64;
+/// The largest seed of a run. A person can type such a number, and Lua keeps it exactly.
+pub const SEED_MAX: u64 = 999_999_999;
 
 /// A piece of the player army. `home` is its start square on the first two ranks.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -117,6 +119,8 @@ pub enum Phase {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Run {
+    /// The seed of the random numbers of the run, from 0 to `SEED_MAX`.
+    pub seed: u64,
     /// The floor of the current or the next battle, from 1 to `FLOORS.len()`.
     pub floor: usize,
     pub gold: u64,
@@ -128,6 +132,8 @@ pub struct Run {
     /// The reward choices. None when the player has no reward to take.
     pub draft: Option<Vec<Offer>>,
     pub shop: Vec<Offer>,
+    /// The number of shop rerolls in this camp visit.
+    pub rolls: u32,
 }
 
 /// The data that stays from one run to the next run.
@@ -243,18 +249,20 @@ pub fn free_home(army: &[Unit], kind: Kind) -> Option<Square> {
 }
 
 impl Run {
-    pub fn new(meta: &Meta, dice: &mut Dice, barred: &[RelicId]) -> Run {
+    pub fn new(meta: &Meta, seed: u64, barred: &[RelicId]) -> Run {
         let army = base_army();
         let mut run = Run {
+            seed,
             floor: 1,
             gold: 0,
             next_id: army.len() as UnitId + 1,
             army,
             relics: Vec::new(),
-            enemy: generate_enemy(1, dice, barred),
+            enemy: generate_enemy(seed, 1, barred),
             phase: Phase::Battle,
             draft: None,
             shop: Vec::new(),
+            rolls: 0,
         };
         for (id, level) in meta.owned() {
             match id.def().effect {
@@ -311,11 +319,12 @@ impl Run {
     /// Moves the run to the camp before its next floor.
     ///
     /// A draw on the last floor stays on the last floor.
-    pub fn enter_camp(&mut self, with_draft: bool, dice: &mut Dice, barred: &[RelicId]) {
+    pub fn enter_camp(&mut self, with_draft: bool, barred: &[RelicId]) {
         self.floor = (self.floor + 1).min(FLOORS.len());
-        self.enemy = generate_enemy(self.floor, dice, barred);
-        self.draft = if with_draft { Some(roll_draft(self, dice, barred)) } else { None };
-        self.shop = roll_shop(self, dice, barred);
+        self.enemy = generate_enemy(self.seed, self.floor, barred);
+        self.draft = if with_draft { Some(roll_draft(self, barred)) } else { None };
+        self.rolls = 0;
+        self.shop = roll_shop(self, barred);
         self.phase = Phase::Camp;
     }
 
@@ -349,12 +358,13 @@ impl Run {
         Ok(offer)
     }
 
-    pub fn reroll_shop(&mut self, dice: &mut Dice, barred: &[RelicId]) -> Result<(), Fail> {
+    pub fn reroll_shop(&mut self, barred: &[RelicId]) -> Result<(), Fail> {
         if self.gold < REROLL_COST {
             return fail(Code::NotAffordable, format!("New items cost {REROLL_COST} gold"));
         }
         self.gold -= REROLL_COST;
-        self.shop = roll_shop(self, dice, barred);
+        self.rolls = self.rolls.saturating_add(1);
+        self.shop = roll_shop(self, barred);
         Ok(())
     }
 }
@@ -371,7 +381,9 @@ pub fn trait_pool(barred: &[RelicId]) -> Vec<RelicId> {
     relic_pool(barred).into_iter().filter(|id| id.is_trait()).collect()
 }
 
-pub fn generate_enemy(floor: usize, dice: &mut Dice, barred: &[RelicId]) -> Enemy {
+/// The enemy of a floor of the run with this seed.
+pub fn generate_enemy(seed: u64, floor: usize, barred: &[RelicId]) -> Enemy {
+    let dice = &mut Dice::stream(seed, Stream::Enemy, floor as u64, 0);
     let spec = content::floor_def(floor);
     let mut counts = [0u32; 5];
     let mut budget = spec.budget;
@@ -428,14 +440,17 @@ fn new_relics(run: &Run, n: usize, dice: &mut Dice, barred: &[RelicId]) -> Vec<O
 }
 
 /// The three free rewards after a win. `run.floor` is the floor that comes next.
-pub fn roll_draft(run: &Run, dice: &mut Dice, barred: &[RelicId]) -> Vec<Offer> {
+pub fn roll_draft(run: &Run, barred: &[RelicId]) -> Vec<Offer> {
+    let dice = &mut Dice::stream(run.seed, Stream::Draft, run.floor as u64, 0);
     let mut pool = piece_pool(run.floor);
     pool.extend(new_relics(run, 2, dice, barred).into_iter().map(|offer| (offer, DRAFT_RELIC_WEIGHT)));
     pool.push((Offer::Gold(content::draft_gold(run.floor)), DRAFT_GOLD_WEIGHT));
     dice.pick_weighted(pool, 3)
 }
 
-pub fn roll_shop(run: &Run, dice: &mut Dice, barred: &[RelicId]) -> Vec<Offer> {
+/// The shop items of the camp before `run.floor`, after `run.rolls` rerolls.
+pub fn roll_shop(run: &Run, barred: &[RelicId]) -> Vec<Offer> {
+    let dice = &mut Dice::stream(run.seed, Stream::Shop, run.floor as u64, run.rolls as u64);
     let mut shop = dice.pick_weighted(piece_pool(run.floor), 2);
     shop.extend(new_relics(run, 2, dice, barred));
     shop

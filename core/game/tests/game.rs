@@ -5,10 +5,9 @@ use std::collections::HashSet;
 use chrogue_game::battle::{Battle, BattleResult, BattleReward, Bonus, MoveReport, Next};
 use chrogue_game::chess::{self, Color, Kind, Outcome, SideRules, Square};
 use chrogue_game::content::{FLOORS, RelicId, UPGRADE_NAME_MAX, UPGRADE_SLOTS, UPGRADES, UpgradeId, gold_value};
-use chrogue_game::random::Dice;
 use chrogue_game::run::{
-    CONSCRIPT_ID, Enemy, EnemyPiece, Meta, Offer, Phase, Run, RunSummary, generate_enemy, relic_pool, roll_draft,
-    roll_shop, trait_pool,
+    CONSCRIPT_ID, Enemy, EnemyPiece, Meta, Offer, Phase, Run, RunSummary, SEED_MAX, generate_enemy, relic_pool,
+    roll_draft, roll_shop, trait_pool,
 };
 use chrogue_game::save::{parse_meta, parse_run, run_json};
 use chrogue_game::{MemoryStorage, Session};
@@ -36,7 +35,7 @@ fn meta_with(upgrades: &[(&str, u64)], crowns: u64) -> Meta {
 }
 
 fn new_run(meta: &Meta) -> Run {
-    Run::new(meta, &mut Dice::new(1), &[])
+    Run::new(meta, 1, &[])
 }
 
 /// A run against an enemy that the test selects. The army is: Ke1, Ra1, Ng1, and pawns on c2, d2, e2, f2.
@@ -61,10 +60,9 @@ fn clock_draw() -> Option<BattleResult> {
 
 #[test]
 fn each_floor_makes_an_enemy_army_that_uses_the_budget() {
-    let mut dice = Dice::new(7);
     for (i, spec) in FLOORS.iter().enumerate() {
-        for _ in 0..50 {
-            let Enemy { pieces, traits } = generate_enemy(i + 1, &mut dice, &[]);
+        for seed in 0..50 {
+            let Enemy { pieces, traits } = generate_enemy(seed, i + 1, &[]);
             // The piece limits can leave up to 4 points of the budget.
             let total: u32 = pieces.iter().map(|p| gold_value(p.kind)).sum();
             assert!(total <= spec.budget && total + 4 >= spec.budget, "floor {} total {total}", i + 1);
@@ -73,6 +71,59 @@ fn each_floor_makes_an_enemy_army_that_uses_the_budget() {
             assert!(traits.iter().all(|id| id.def().foe_text.is_some()));
         }
     }
+}
+
+#[test]
+fn the_same_seed_gives_the_same_run_after_battles_with_different_numbers_of_moves() {
+    for seed in [0, 7, SEED_MAX] {
+        for floor in 1..=FLOORS.len() {
+            assert_eq!(generate_enemy(seed, floor, &[]), generate_enemy(seed, floor, &[]));
+        }
+    }
+    assert!((1..=FLOORS.len()).any(|floor| generate_enemy(7, floor, &[]) != generate_enemy(8, floor, &[])));
+
+    // The enemy pawn on a2 cannot move. With `wait`, the player and the AI make one move each
+    // before the rook captures the pawn.
+    let camp = |wait: bool| {
+        let mut run = run_against(&[(Kind::King, "h8"), (Kind::Pawn, "a2")], |r| r.seed = 7);
+        let mut battle = Battle::new(&run).unwrap();
+        if wait {
+            play(&mut battle, &run, "e2", "e3");
+            let reply = battle.ai_move(&run, 1).expect("The enemy has no move");
+            battle.play(&run, reply);
+        }
+        play(&mut battle, &run, "a1", "a2");
+        assert_eq!(battle.settle(&mut run, &[]), Some(Next::Camp));
+        (battle.plies, run)
+    };
+    let ((short, first), (long, second)) = (camp(false), camp(true));
+    assert_eq!((short, long), (1, 3));
+    assert_eq!(first, second);
+    assert_eq!(first.enemy, generate_enemy(7, 2, &[]));
+    assert_eq!(first.draft, Some(roll_draft(&first, &[])));
+    assert_eq!(first.shop, roll_shop(&first, &[]));
+}
+
+#[test]
+fn a_reroll_gives_new_shop_items_and_the_same_seed_gives_the_same_shops() {
+    let shops = |seed: u64| {
+        let mut run = Run::new(&Meta::default(), seed, &[]);
+        run.gold = 100;
+        run.enter_camp(true, &[]);
+        let mut shops = vec![run.shop.clone()];
+        for rolls in 1..=3 {
+            assert!(run.reroll_shop(&[]).is_ok());
+            assert_eq!(run.rolls, rolls);
+            shops.push(run.shop.clone());
+        }
+        // The next camp visit starts with no reroll.
+        run.enter_camp(true, &[]);
+        assert_eq!(run.rolls, 0);
+        shops
+    };
+    let first = shops(7);
+    assert_ne!(first[1], first[0]);
+    assert_ne!(first, shops(8));
 }
 
 #[test]
@@ -120,7 +171,7 @@ fn a_win_gives_gold_keeps_the_army_and_opens_the_camp() {
     let result = battle.result.clone().unwrap();
     assert_eq!(result.outcome, Outcome::Rout { winner: Color::White });
     assert_eq!(result.reward, BattleReward { captures: 1, clear: 4, bonuses: vec![] });
-    assert_eq!(battle.settle(&mut run, &mut Dice::new(1), &[]), Some(Next::Camp));
+    assert_eq!(battle.settle(&mut run, &[]), Some(Next::Camp));
     assert_eq!((run.floor, run.gold, run.phase), (2, 5, Phase::Camp));
     assert_eq!(run.army.len(), 7);
     assert_eq!(run.draft.as_ref().map(Vec::len), Some(3));
@@ -161,7 +212,7 @@ fn a_captured_unit_leaves_the_army_and_second_wind_returns_the_first_one() {
     let mut battle = lose(&run);
     assert_eq!((battle.lost.clone(), battle.rescued.clone()), (vec![3], vec![2]));
     battle.result = clock_draw();
-    assert_eq!(battle.settle(&mut run, &mut Dice::new(1), &[]), Some(Next::Camp));
+    assert_eq!(battle.settle(&mut run, &[]), Some(Next::Camp));
     assert_eq!(run.army.iter().map(|u| u.id).collect::<Vec<_>>(), vec![1, 2, 4, 5, 6, 7]);
     assert_eq!(run.draft, None);
 }
@@ -201,7 +252,7 @@ fn a_promoted_pawn_stays_promoted_after_the_battle() {
     let promote = battle.find_move(sq("c7"), sq("c8"), Some(Kind::Queen)).expect("No promotion move");
     battle.play(&run, promote);
     battle.result = clock_draw();
-    battle.settle(&mut run, &mut Dice::new(1), &[]);
+    battle.settle(&mut run, &[]);
     let mut kinds: Vec<char> = run.army.iter().map(|u| chess::kind_letter(u.kind)).collect();
     kinds.sort_unstable();
     assert_eq!(kinds, vec!['k', 'n', 'q', 'r']);
@@ -212,7 +263,7 @@ fn the_last_floor_ends_the_run_with_a_win() {
     let mut run = run_against(&[KING, (Kind::Pawn, "a2")], |r| r.floor = FLOORS.len());
     let mut battle = Battle::new(&run).unwrap();
     play(&mut battle, &run, "a1", "a2");
-    assert_eq!(battle.settle(&mut run, &mut Dice::new(1), &[]), Some(Next::Won));
+    assert_eq!(battle.settle(&mut run, &[]), Some(Next::Won));
     let mut meta = Meta::default();
     let summary = RunSummary { won: true, cleared: 8, bonus: 5, crowns: 13, new_best: true };
     assert_eq!(meta.finish_run(&run, true), summary);
@@ -239,9 +290,9 @@ fn the_draft_and_the_shop_do_not_offer_a_relic_that_the_run_has() {
     let mut run = new_run(&Meta::default());
     let all: Vec<RelicId> = RelicId::all().collect();
     run.relics = all[1..].to_vec();
-    let mut dice = Dice::new(3);
-    for _ in 0..50 {
-        for offer in roll_draft(&run, &mut dice, &[]).into_iter().chain(roll_shop(&run, &mut dice, &[])) {
+    for seed in 0..50 {
+        run.seed = seed;
+        for offer in roll_draft(&run, &[]).into_iter().chain(roll_shop(&run, &[])) {
             if let Offer::Relic(id) = offer {
                 assert_eq!(id, all[0]);
             }
@@ -254,15 +305,15 @@ fn the_game_does_not_offer_a_barred_relic_and_a_boss_does_not_get_it_as_a_trait(
     let pool = trait_pool(&[]);
     let (kept, rest) = (pool[0], pool[1..].to_vec());
     assert!(!relic_pool(&rest).contains(&rest[0]));
-    let run = new_run(&Meta::default());
-    let mut dice = Dice::new(5);
-    for _ in 0..50 {
-        for offer in roll_draft(&run, &mut dice, &rest).into_iter().chain(roll_shop(&run, &mut dice, &rest)) {
+    let mut run = new_run(&Meta::default());
+    for seed in 0..50 {
+        run.seed = seed;
+        for offer in roll_draft(&run, &rest).into_iter().chain(roll_shop(&run, &rest)) {
             if let Offer::Relic(id) = offer {
                 assert!(!rest.contains(&id));
             }
         }
-        assert_eq!(generate_enemy(4, &mut dice, &rest).traits, vec![kept]);
+        assert_eq!(generate_enemy(seed, 4, &rest).traits, vec![kept]);
     }
     assert_eq!(relic_pool(&[]), RelicId::all().collect::<Vec<_>>());
 }
@@ -311,6 +362,66 @@ fn saved_data_survives_a_round_trip_and_unknown_ids_are_removed() {
 
     let meta = parse_meta(&json!({ "crowns": 4, "upgrades": { "pawn": 2, "removedUpgrade": 1 } }));
     assert_eq!(meta, meta_with(&[("pawn", 2)], 4));
+}
+
+#[test]
+fn a_saved_run_keeps_its_seed_and_its_rolls() {
+    let mut run = new_run(&Meta::default());
+    (run.seed, run.rolls) = (SEED_MAX, 2);
+    let saved = run_json(&run);
+    assert_eq!((&saved["seed"], &saved["rolls"]), (&json!(SEED_MAX), &json!(2)));
+    assert_eq!(parse_run(&saved), Ok(run.clone()));
+
+    // A run with no seed and no rolls loads with 0.
+    let mut bare = saved.clone();
+    for name in ["seed", "rolls"] {
+        bare.as_object_mut().unwrap().remove(name);
+    }
+    assert_eq!(parse_run(&bare), Ok(Run { seed: 0, rolls: 0, ..run }));
+    for (name, value) in [
+        ("seed", json!(SEED_MAX + 1)),
+        ("seed", json!(-1)),
+        ("seed", json!(2.5)),
+        ("seed", json!("7")),
+        ("seed", Value::Null),
+        ("rolls", json!(u64::from(u32::MAX) + 1)),
+        ("rolls", json!(-1)),
+    ] {
+        let mut bad = saved.clone();
+        bad[name] = value.clone();
+        assert!(parse_run(&bad).is_err(), "{name}: {value}");
+    }
+}
+
+/// The reward, the shop, and the next enemy come from the seed of the run, not from the
+/// numbers that the AI took in the battle.
+#[test]
+fn the_camp_does_not_depend_on_the_number_of_moves_of_the_battle() {
+    let camp = |wait: bool| -> (Value, Value) {
+        let mut session = Session::with_debug(Box::new(MemoryStorage::default()), 3, true);
+        let mut send = |request: Value| -> Value {
+            let reply: Value = serde_json::from_str(&session.command(&request.to_string())).unwrap();
+            assert_eq!(reply["ok"], json!(true), "{request} -> {reply}");
+            reply
+        };
+        send(json!({ "cmd": "new_run" }));
+        send(
+            json!({ "cmd": "debug_set_army", "units": [{ "kind": "k", "home": 4 }, { "kind": "r", "home": 0 }, { "kind": "p", "home": 12 }] }),
+        );
+        // The enemy pawn on a2 cannot move, thus the AI moves the king.
+        send(
+            json!({ "cmd": "debug_set_enemy", "pieces": [{ "kind": "k", "square": 63 }, { "kind": "p", "square": 8 }] }),
+        );
+        if wait {
+            send(json!({ "cmd": "move", "from": 12, "to": 20 }));
+            send(json!({ "cmd": "enemy_move" }));
+        }
+        send(json!({ "cmd": "move", "from": 0, "to": 8 }));
+        let view = send(json!({ "cmd": "continue" }))["view"].clone();
+        assert_eq!(view["screen"], json!("camp"));
+        (view, send(json!({ "cmd": "view", "run": true }))["data"]["run"].clone())
+    };
+    assert_eq!(camp(false), camp(true));
 }
 
 /// The debug changes run through the protocol.
