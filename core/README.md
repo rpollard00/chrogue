@@ -1,11 +1,12 @@
 # Chrogue core
 
-This directory has the Rust core of Chrogue. At this time it has two parts:
+This directory has the Rust core of Chrogue. It has these parts:
 
 - The chess rules: the move generation, the functions that make and unmake a move, and the result of a battle.
 - The enemy AI: a search with an evaluation that comes from the movement rules of the battle.
+- The game layer and the command server: the runs, the saved data, and the commands of a client. See "Game layer and command server".
 
-The TypeScript engine in `src/engine/` is the reference. The Rust engine gives the same moves and the same results for the rules that the game has today. A differential test compares the two engines on random games and on prepared positions.
+The core is the source of truth for the rules of the game. The TypeScript game in `src/` is deprecated. The core came from it, and the scripts in `difftest/` and `gametest/` compare the two while the TypeScript game is in the repository.
 
 The Rust engine is not a copy of the TypeScript engine. The movement of each kind is data: the steps and slides of the officers, the pawn moves, the first-move atoms, en passant, the promotion, the 50-move clock, and the castles. Thus a new movement rule needs no new engine code.
 
@@ -357,7 +358,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
 
 A relic has movement rules and an effect. The movement rules are a list of `RuleEdit`: edits of `SideRules::standard()` that the engine and the AI read. The effect is one kind of `Effect`, at a fixed point of a battle. `Effect` has a kind for each hook of `RelicHooks` in `src/game/relics.ts`.
 
-To add a relic, add one entry to `RELICS` in `game/src/content.rs` and the same entry to `src/game/relics.ts`. A new kind of effect needs a kind in `Effect` and code in `battle.rs`. Then run `gametest/parity.ts`.
+To add a relic, add one entry to `RELICS` in `game/src/content.rs`. A new kind of effect needs a kind in `Effect` and code in `battle.rs`. `gametest/parity.ts` compares the content with the deprecated TypeScript game, thus it reports a relic that only the core has.
 
 ### Behavior that differs from the TypeScript game
 
