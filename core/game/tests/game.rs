@@ -96,14 +96,14 @@ fn the_same_seed_gives_the_same_run_after_battles_with_different_numbers_of_move
             battle.play(&run, reply);
         }
         play(&mut battle, &run, "a1", "a2");
-        assert_eq!(battle.settle(&mut run, &defaults()), Some(Next::Camp));
+        assert_eq!(battle.settle(&mut run, &Meta::default(), &defaults()), Some(Next::Camp));
         (battle.plies, run)
     };
     let ((short, first), (long, second)) = (camp(false), camp(true));
     assert_eq!((short, long), (1, 3));
     assert_eq!(first, second);
     assert_eq!(first.enemy, generate_enemy(7, 2, &defaults()));
-    assert_eq!(first.draft, Some(roll_draft(&first, &defaults())));
+    assert_eq!(first.draft, Some(roll_draft(&first, &Meta::default(), &defaults())));
     assert_eq!(first.shop, roll_shop(&first, &defaults()));
 }
 
@@ -112,15 +112,15 @@ fn a_reroll_gives_new_shop_items_and_the_same_seed_gives_the_same_shops() {
     let shops = |seed: u64| {
         let mut run = Run::new(&Meta::default(), seed, &defaults());
         run.gold = 100;
-        run.enter_camp(true, &defaults());
+        run.enter_camp(true, &Meta::default(), &defaults());
         let mut shops = vec![run.shop.clone()];
         for rolls in 1..=3 {
-            assert!(run.reroll_shop(&defaults()).is_ok());
+            assert!(run.reroll_shop(&Meta::default(), &defaults()).is_ok());
             assert_eq!(run.rolls, rolls);
             shops.push(run.shop.clone());
         }
         // The next camp visit starts with no reroll.
-        run.enter_camp(true, &defaults());
+        run.enter_camp(true, &Meta::default(), &defaults());
         assert_eq!(run.rolls, 0);
         shops
     };
@@ -174,7 +174,7 @@ fn a_win_gives_gold_keeps_the_army_and_opens_the_camp() {
     let result = battle.result.clone().unwrap();
     assert_eq!(result.outcome, Outcome::Rout { winner: Color::White });
     assert_eq!(result.reward, BattleReward { captures: 1, clear: 4, ..BattleReward::default() });
-    assert_eq!(battle.settle(&mut run, &defaults()), Some(Next::Camp));
+    assert_eq!(battle.settle(&mut run, &Meta::default(), &defaults()), Some(Next::Camp));
     assert_eq!((run.floor, run.gold, run.phase), (2, 5, Phase::Camp));
     assert_eq!(run.army.len(), 7);
     assert_eq!(run.draft.as_ref().map(Vec::len), Some(3));
@@ -216,7 +216,7 @@ fn a_captured_unit_leaves_the_army_and_second_wind_returns_the_first_one() {
     let mut battle = lose(&run);
     assert_eq!((battle.lost.clone(), battle.rescued.clone()), (vec![3], vec![2]));
     battle.result = clock_draw();
-    assert_eq!(battle.settle(&mut run, &defaults()), Some(Next::Camp));
+    assert_eq!(battle.settle(&mut run, &Meta::default(), &defaults()), Some(Next::Camp));
     assert_eq!(run.army.iter().map(|u| u.id).collect::<Vec<_>>(), vec![1, 2, 4, 5, 6, 7]);
     assert_eq!(run.draft, None);
 }
@@ -256,7 +256,7 @@ fn a_promoted_pawn_stays_promoted_after_the_battle() {
     let promote = battle.find_move(sq("c7"), sq("c8"), Some(Kind::Queen)).expect("No promotion move");
     battle.play(&run, promote);
     battle.result = clock_draw();
-    battle.settle(&mut run, &defaults());
+    battle.settle(&mut run, &Meta::default(), &defaults());
     let mut kinds: Vec<char> = run.army.iter().map(|u| chess::kind_letter(u.kind)).collect();
     kinds.sort_unstable();
     assert_eq!(kinds, vec!['k', 'n', 'q', 'r']);
@@ -267,7 +267,7 @@ fn the_last_floor_ends_the_run_with_a_win() {
     let mut run = run_against(&[KING, (Kind::Pawn, "a2")], |r| r.floor = FLOORS.len());
     let mut battle = Battle::new(&run).unwrap();
     play(&mut battle, &run, "a1", "a2");
-    assert_eq!(battle.settle(&mut run, &defaults()), Some(Next::Won));
+    assert_eq!(battle.settle(&mut run, &Meta::default(), &defaults()), Some(Next::Won));
     let mut meta = Meta::default();
     let summary = RunSummary { won: true, cleared: 8, bonus: 5, crowns: 13, new_best: true };
     assert_eq!(meta.finish_run(&run, true), summary);
@@ -296,7 +296,7 @@ fn the_draft_and_the_shop_do_not_offer_a_relic_that_the_run_has() {
     run.relics = all[1..].to_vec();
     for seed in 0..50 {
         run.seed = seed;
-        for offer in roll_draft(&run, &defaults()).into_iter().chain(roll_shop(&run, &defaults())) {
+        for offer in roll_draft(&run, &Meta::default(), &defaults()).into_iter().chain(roll_shop(&run, &defaults())) {
             if let Offer::Relic(id) = offer {
                 assert_eq!(id, all[0]);
             }
@@ -312,7 +312,7 @@ fn the_game_does_not_offer_a_barred_relic_and_a_boss_does_not_get_it_as_a_trait(
     let mut run = new_run(&Meta::default());
     for seed in 0..50 {
         run.seed = seed;
-        for offer in roll_draft(&run, &rest).into_iter().chain(roll_shop(&run, &rest)) {
+        for offer in roll_draft(&run, &Meta::default(), &rest).into_iter().chain(roll_shop(&run, &rest)) {
             if let Offer::Relic(id) = offer {
                 assert!(!rest.barred.contains(&id));
             }
@@ -342,7 +342,7 @@ fn the_shop_takes_gold_and_haggler_decreases_the_price() {
 fn take_draft_takes_one_reward_and_closes_the_draft() {
     let mut run = new_run(&Meta::default());
     run.draft = Some(vec![Offer::Gold(12), Offer::Piece(Kind::Knight)]);
-    assert!(run.take_draft(0).is_ok());
+    assert!(run.take_draft(&Meta::default(), 0).is_ok());
     assert_eq!((run.gold, run.draft), (12, None));
 }
 

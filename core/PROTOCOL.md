@@ -21,7 +21,7 @@ Protocol version: 1. `hello` gives the version.
   - No token is necessary, and no time limit applies. `quit` gives its event, but the core stays open until the client calls `chrogue_close`.
 - `--save-dir PATH` keeps the saved data in `PATH/meta.json` and `PATH/run.json`. `--no-save` keeps it in memory. One of the two is necessary. See [Saved data](#saved-data) for the lock and for files that the core cannot read.
 - `--seed N` sets the seed of the session. N is a whole number from 0 to 18446744073709551615, with digits only. The session makes the seed of each new run from it. The same session seed and the same requests give the same responses, byte for byte.
-  - The seed of a run is a whole number from 0 to 999999999. All randomness of the run comes from it: enemy armies, rewards, shop items, and the noise of the AI.
+  - The seed of a run is a whole number from 0 to 999999999. All randomness of the run comes from it: enemy armies, rewards, shop items, the relic of the Heirloom upgrade, and the noise of the AI.
   - Each random result of a run has its own numbers: the enemy of a floor, the reward before a floor, each roll of the shop before a floor, and each move of the AI. Thus the number of moves of a battle does not change the armies, the rewards, and the shop items that come after it.
 - `--debug` permits the debug commands.
 - A line that is longer than 65536 bytes gets the error `too_long`. An empty line gets no response.
@@ -122,7 +122,7 @@ The client owns the pause before the enemy move. The LÖVE client waits 350 ms a
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
-| `take_reward` | `index`: a card of `reward.offers` | Takes the reward. Errors `reward_closed`, `bad_index`, `blocked`. |
+| `take_reward` | `index`: a card of `reward.offers` | Takes the reward. With the Muster upgrade, a unit card also gives a pawn if the army has space after the unit. Errors `reward_closed`, `bad_index`, `blocked`. |
 | `skip_reward` | | Takes no reward. Error `reward_closed`. |
 | `buy` | `index`: an item of `shop.offers` | Buys the item. Errors `bad_index`, `blocked`, `not_affordable`. |
 | `reroll` | | Pays `shop.reroll_cost` gold for new shop items. Error `not_affordable`. |
@@ -231,8 +231,8 @@ Each view has `screen`. The other fields depend on the screen.
 
 - `floor`: the next floor, as in the battle view.
 - `enemy`: the next enemy: `name`, `traits` (as in the battle view), `pieces` (`kind`, `square`), and `kinds` (the kinds in the order of the camp screen: the king first, then by value).
-- `reward`: `null` if this visit has no reward (after a draw, or after a reload when the reward was taken). Else `offers`, `taken` (the index of the card that the player took, or `null`), `open` (true while the player can take or skip), and `state`: `open`, `taken`, or `skipped`.
-- `shop`: `offers`, `reroll_cost`, and `can_reroll`. A shop offer also has `price` and `affordable`.
+- `reward`: `null` if this visit has no reward (after a draw with no Envoy upgrade, after a draw on the last floor, or after a reload when the reward was taken). Else `offers`, `taken` (the index of the card that the player took, or `null`), `open` (true while the player can take or skip), and `state`: `open`, `taken`, or `skipped`.
+- `shop`: `offers`, `reroll_cost`, and `can_reroll`. A shop offer also has `price` and `affordable`. `reroll_cost` and `price` are the costs for the player: they depend on the upgrades (Fixer, Antiquary, and Haggler).
 - An offer has `kind` (`piece`, `relic`, or `gold`), `name`, `text` (`null` when the name tells all), and `blocked` (`army_full`, `owned`, `relics_full`, or `null`). `relics_full`: the run has the most relics that a run can have (`relics_max` of `hello`). A piece offer has `piece` (the kind). A relic offer has `id`. A gold offer has `amount`.
 - `army`: the units: `id`, `kind`, `home` (a square from 0 to 15), in the order of the squares. `army_max`: 16.
 - `relics`, `gold`, and `can_start` (false while the reward is open).
@@ -319,7 +319,7 @@ The content text (the names and texts of relics, upgrades, floors, pieces, and o
   - `floors`: `number`, `name`, `budget` (the value of the enemy army), `traits` (the number of boss traits), `boss`, `level` (the name of the AI level), and `draft_gold` (the gold card of the reward before this floor).
   - `pieces`: `kind`, `name`, `value` (the gold of a capture), and `price` (in the shop, before upgrades).
   - `recruits`: `kind`, `weight`, `min_floor` of the pieces in rewards and in the shop.
-  - `relic_price`, `relics_max` (the most relics of a run), `reroll_cost`, `win_crowns`, `army_max`, `upgrade_slots`, `upgrade_name_max`, `traits_max`, `relic_count`.
+  - `relic_price` and `reroll_cost` (before upgrades), `relics_max` (the most relics of a run), `win_crowns`, `army_max`, `upgrade_slots`, `upgrade_name_max`, `traits_max`, `relic_count`.
 
 The content of `hello` is the default content. The tuning of a debug session does not change it.
 
@@ -374,7 +374,7 @@ A won battle and a camp action (from the test `the_camp_example_is_real`: the ar
 
 ## Open issues
 
-- A draw on the last floor: the run stays on floor 8. `continue` opens the camp before floor 8 again, with no reward.
+- A draw on the last floor: the run stays on floor 8. `continue` opens the camp before floor 8 again, with no reward, also with the Envoy upgrade.
 - The camp can give a start where the enemy king is in check: a rook or a queen of the player on an open e-file against an enemy with no pawn on e7. `start_battle` starts that battle, and White can capture the king. The debug commands and saved data permit such a start too. A rule that refuses it belongs in `start_battle`, and it changes the game: it is a decision for the design.
 - A battle that starts again has the same enemy moves for the same moves of the player: the noise of an AI move comes from the seed of the run, the floor, and the number of moves of the battle. A battle with no result starts again after `to_title` and `continue_run`, thus a player can learn the replies of the enemy.
 - A battle can start in a position where the player has no legal move (for example, a debug army that is in checkmate at the start). The result is checked only after a move: the phase is `player` with no moves, and only `give_up` and `to_title` work.

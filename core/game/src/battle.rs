@@ -3,7 +3,7 @@
 use crate::chess::{self, Color, Kind, Move, Outcome, Piece, Placement, Special, Square, State};
 use crate::content::{self, ARMY_MAX, Effect, FLOORS, RelicId};
 use crate::random::{Dice, Stream};
-use crate::run::{CONSCRIPT_ID, ENEMY_ID_BASE, Run, UNIT_ID_MAX, UnitId};
+use crate::run::{CONSCRIPT_ID, ENEMY_ID_BASE, Meta, Run, UNIT_ID_MAX, UnitId};
 use crate::tuning::Tuning;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -318,7 +318,7 @@ impl Battle {
     }
 
     /// Applies a completed battle to the run (`settleBattle`). Returns None if the battle has no result.
-    pub fn settle(&self, run: &mut Run, tuning: &Tuning) -> Option<Next> {
+    pub fn settle(&self, run: &mut Run, meta: &Meta, tuning: &Tuning) -> Option<Next> {
         let next = self.next(run)?;
         let result = self.result.as_ref()?;
         if next == Next::Lost {
@@ -336,7 +336,11 @@ impl Battle {
             run.add_unit(recruit.kind);
         }
         if next == Next::Camp {
-            run.enter_camp(result.outcome.winner() == Some(Color::White), tuning);
+            // A draw on the last floor stays on that floor, and each camp before a floor has the
+            // same reward. Thus such a draw gives no reward.
+            let won = result.outcome.winner() == Some(Color::White);
+            let with_draft = won || (meta.draw_gives_reward() && run.floor < FLOORS.len());
+            run.enter_camp(with_draft, meta, tuning);
         }
         Some(next)
     }

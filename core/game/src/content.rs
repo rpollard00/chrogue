@@ -284,6 +284,18 @@ pub enum UpgradeEffect {
     PriceCut { per_level: f64 },
     /// In a battle, the player can see the moves of each enemy piece.
     Scout,
+    /// A new run has one random relic.
+    StartRelic,
+    /// A relic in the shop costs `per_level` gold less for each level, before the factor of `PriceCut`.
+    RelicPriceCut { per_level: u64 },
+    /// New shop items cost `per_level` gold less for each level.
+    RerollCut { per_level: u64 },
+    /// A draw gives a reward, as a win does.
+    DrawReward,
+    /// A unit that the player takes as a reward comes with a pawn.
+    RewardPawn,
+    /// Each reward has one relic or more.
+    DraftRelic,
 }
 
 pub struct UpgradeDef {
@@ -295,7 +307,7 @@ pub struct UpgradeDef {
     pub effect: UpgradeEffect,
 }
 
-pub static UPGRADES: [UpgradeDef; 5] = [
+pub static UPGRADES: [UpgradeDef; 12] = [
     UpgradeDef {
         key: "pawn",
         name: "Militia",
@@ -330,6 +342,55 @@ pub static UPGRADES: [UpgradeDef; 5] = [
         text: "In a battle, select an enemy piece to see the squares that it can move to.",
         costs: &[4],
         effect: UpgradeEffect::Scout,
+    },
+    UpgradeDef {
+        key: "knight",
+        name: "Squire",
+        text: "You start each run with a second knight.",
+        costs: &[6],
+        effect: UpgradeEffect::Recruit(Kind::Knight),
+    },
+    UpgradeDef {
+        key: "heirloom",
+        name: "Heirloom",
+        text: "You start each run with one random relic.",
+        costs: &[8],
+        effect: UpgradeEffect::StartRelic,
+    },
+    UpgradeDef {
+        key: "antiquary",
+        name: "Antiquary",
+        text: "Relics in the shop cost 2 gold less for each level.",
+        costs: &[4, 7],
+        effect: UpgradeEffect::RelicPriceCut { per_level: 2 },
+    },
+    UpgradeDef {
+        key: "fixer",
+        name: "Fixer",
+        text: "New shop items cost 1 gold less for each level.",
+        costs: &[3, 5],
+        effect: UpgradeEffect::RerollCut { per_level: 1 },
+    },
+    UpgradeDef {
+        key: "envoy",
+        name: "Envoy",
+        text: "After a draw, you select a reward as after a win.",
+        costs: &[5],
+        effect: UpgradeEffect::DrawReward,
+    },
+    UpgradeDef {
+        key: "muster",
+        name: "Muster",
+        text: "A unit that you take as a reward comes with a pawn.",
+        costs: &[5],
+        effect: UpgradeEffect::RewardPawn,
+    },
+    UpgradeDef {
+        key: "curator",
+        name: "Curator",
+        text: "Each reward has one relic card or more.",
+        costs: &[5],
+        effect: UpgradeEffect::DraftRelic,
     },
 ];
 

@@ -187,7 +187,7 @@ fn camp_view(run: &Run, reward: &Option<Reward>, meta: &Meta) -> Value {
             "kinds": enemy_kinds(run),
         },
         "reward": reward,
-        "shop": { "offers": shop, "reroll_cost": REROLL_COST, "can_reroll": run.gold >= REROLL_COST },
+        "shop": { "offers": shop, "reroll_cost": meta.reroll_cost(), "can_reroll": run.gold >= meta.reroll_cost() },
         "army": army.iter().map(|u| json!({ "id": u.id, "kind": letter(u.kind), "home": u.home })).collect::<Vec<_>>(),
         "army_max": ARMY_MAX,
         "relics": run.relics.iter().map(|&id| relic_view(id)).collect::<Vec<_>>(),

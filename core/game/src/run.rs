@@ -175,8 +175,35 @@ impl Meta {
         UpgradeId::all().map(|id| (id, self.level(id))).filter(|&(_, level)| level > 0)
     }
 
+    fn has(&self, effect: UpgradeEffect) -> bool {
+        self.owned().any(|(id, _)| id.def().effect == effect)
+    }
+
     pub fn can_scout(&self) -> bool {
-        self.owned().any(|(id, _)| id.def().effect == UpgradeEffect::Scout)
+        self.has(UpgradeEffect::Scout)
+    }
+
+    /// True if a draw gives a reward.
+    pub fn draw_gives_reward(&self) -> bool {
+        self.has(UpgradeEffect::DrawReward)
+    }
+
+    /// True if a unit of a reward comes with a pawn.
+    pub fn reward_gives_pawn(&self) -> bool {
+        self.has(UpgradeEffect::RewardPawn)
+    }
+
+    /// True if each reward has one relic or more.
+    pub fn draft_has_relic(&self) -> bool {
+        self.has(UpgradeEffect::DraftRelic)
+    }
+
+    /// The gold cost of new shop items.
+    pub fn reroll_cost(&self) -> u64 {
+        self.owned().fold(REROLL_COST, |cost, (id, level)| match id.def().effect {
+            UpgradeEffect::RerollCut { per_level } => cost.saturating_sub(per_level.saturating_mul(level)),
+            _ => cost,
+        })
     }
 
     /// The crown cost of the next level, or None at the maximum level.
@@ -204,14 +231,21 @@ impl Meta {
         }
     }
 
-    /// The shop price of an offer (`priceOf`).
+    /// The shop price of an offer (`priceOf`). A relic first loses the gold of `RelicPriceCut`,
+    /// down to 1 gold. Then the price gets the factor of `PriceCut`.
     pub fn price_of(&self, offer: Offer) -> u64 {
-        let factor = self.owned().fold(1.0, |f, (id, level)| match id.def().effect {
-            UpgradeEffect::PriceCut { per_level } => f * (1.0 - per_level * level as f64),
-            _ => f,
-        });
+        let (mut base, mut factor) = (offer.base_price(), 1.0);
+        for (id, level) in self.owned() {
+            match id.def().effect {
+                UpgradeEffect::PriceCut { per_level } => factor *= 1.0 - per_level * level as f64,
+                UpgradeEffect::RelicPriceCut { per_level } if matches!(offer, Offer::Relic(_)) => {
+                    base = base.saturating_sub(per_level.saturating_mul(level)).max(1);
+                }
+                _ => {}
+            }
+        }
         // Math.max(1, Math.round(price * factor)).
-        let price = (offer.base_price() as f64 * factor + 0.5).floor();
+        let price = (base as f64 * factor + 0.5).floor();
         if price.is_nan() || price < 1.0 { 1 } else { price as u64 }
     }
 
@@ -283,7 +317,20 @@ impl Run {
                     run.add_unit(kind);
                 }
                 UpgradeEffect::GoldEachLevel(gold) => run.gold = run.gold.saturating_add(gold.saturating_mul(level)),
-                UpgradeEffect::PriceCut { .. } | UpgradeEffect::Scout => {}
+                UpgradeEffect::StartRelic => {
+                    let pool = relic_pool(tuning);
+                    let dice = &mut Dice::stream(seed, Stream::Start, 0, 0);
+                    if let Some(&id) = pool.get(dice.below(pool.len())) {
+                        run.relics.push(id);
+                    }
+                }
+                UpgradeEffect::PriceCut { .. }
+                | UpgradeEffect::Scout
+                | UpgradeEffect::RelicPriceCut { .. }
+                | UpgradeEffect::RerollCut { .. }
+                | UpgradeEffect::DrawReward
+                | UpgradeEffect::RewardPawn
+                | UpgradeEffect::DraftRelic => {}
             }
         }
         run
@@ -328,16 +375,18 @@ impl Run {
     /// Moves the run to the camp before its next floor.
     ///
     /// A draw on the last floor stays on the last floor.
-    pub fn enter_camp(&mut self, with_draft: bool, tuning: &Tuning) {
+    pub fn enter_camp(&mut self, with_draft: bool, meta: &Meta, tuning: &Tuning) {
         self.floor = (self.floor + 1).min(FLOORS.len());
         self.enemy = generate_enemy(self.seed, self.floor, tuning);
-        self.draft = if with_draft { Some(roll_draft(self, tuning)) } else { None };
+        self.draft = if with_draft { Some(roll_draft(self, meta, tuning)) } else { None };
         self.rolls = 0;
         self.shop = roll_shop(self, tuning);
         self.phase = Phase::Camp;
     }
 
-    pub fn take_draft(&mut self, index: usize) -> Result<Offer, Fail> {
+    /// Takes a card of the reward. With `RewardPawn`, a unit comes with a pawn if the army has
+    /// space after the unit.
+    pub fn take_draft(&mut self, meta: &Meta, index: usize) -> Result<Offer, Fail> {
         let Some(draft) = &self.draft else { return fail(Code::RewardClosed, "The camp has no reward to take") };
         let Some(&offer) = draft.get(index) else {
             return fail(Code::BadIndex, format!("The reward has no card {index}"));
@@ -346,6 +395,9 @@ impl Run {
             return fail(Code::Blocked, format!("The run cannot take this reward: {}", blocked.code()));
         }
         offer.take(self);
+        if matches!(offer, Offer::Piece(_)) && meta.reward_gives_pawn() {
+            self.add_unit(Kind::Pawn);
+        }
         self.draft = None;
         Ok(offer)
     }
@@ -367,11 +419,12 @@ impl Run {
         Ok(offer)
     }
 
-    pub fn reroll_shop(&mut self, tuning: &Tuning) -> Result<(), Fail> {
-        if self.gold < REROLL_COST {
-            return fail(Code::NotAffordable, format!("New items cost {REROLL_COST} gold"));
+    pub fn reroll_shop(&mut self, meta: &Meta, tuning: &Tuning) -> Result<(), Fail> {
+        let cost = meta.reroll_cost();
+        if self.gold < cost {
+            return fail(Code::NotAffordable, format!("New items cost {cost} gold"));
         }
-        self.gold -= REROLL_COST;
+        self.gold -= cost;
         self.rolls = self.rolls.saturating_add(1);
         self.shop = roll_shop(self, tuning);
         Ok(())
@@ -453,13 +506,25 @@ fn new_relics(run: &Run, n: usize, dice: &mut Dice, tuning: &Tuning) -> Vec<Offe
     dice.shuffle(pool).into_iter().take(n).map(Offer::Relic).collect()
 }
 
-/// The three free rewards after a win. `run.floor` is the floor that comes next.
-pub fn roll_draft(run: &Run, tuning: &Tuning) -> Vec<Offer> {
+/// The three free rewards. `run.floor` is the floor that comes next. With `DraftRelic`, one of
+/// the two relics of the reward is the first card. A run with `RELICS_MAX` relics has no
+/// guarantee of a relic.
+pub fn roll_draft(run: &Run, meta: &Meta, tuning: &Tuning) -> Vec<Offer> {
     let dice = &mut Dice::stream(run.seed, Stream::Draft, run.floor as u64, 0);
     let mut pool = piece_pool(run.floor);
     pool.extend(new_relics(run, 2, dice, tuning).into_iter().map(|offer| (offer, DRAFT_RELIC_WEIGHT)));
     pool.push((Offer::Gold(content::draft_gold(run.floor)), DRAFT_GOLD_WEIGHT));
-    dice.pick_weighted(pool, 3)
+    let mut draft = Vec::new();
+    if meta.draft_has_relic() && run.can_add_relic() {
+        let relics = pool.iter().enumerate().filter(|(_, (offer, _))| matches!(offer, Offer::Relic(_)));
+        let relics: Vec<(usize, f64)> = relics.map(|(i, &(_, weight))| (i, weight)).collect();
+        if let Some(&i) = dice.pick_weighted(relics, 1).first() {
+            draft.push(pool.remove(i).0);
+        }
+    }
+    let rest = 3 - draft.len();
+    draft.extend(dice.pick_weighted(pool, rest));
+    draft
 }
 
 /// The shop items of the camp before `run.floor`, after `run.rolls` rerolls.

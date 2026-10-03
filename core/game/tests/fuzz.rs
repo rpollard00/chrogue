@@ -46,6 +46,23 @@ fn junk(g: &mut Gen) -> Value {
     }
 }
 
+/// The ids of the upgrades, and an id that no upgrade has.
+const UPGRADE_IDS: [&str; 13] = [
+    "pawn",
+    "gold",
+    "bishop",
+    "haggle",
+    "scout",
+    "knight",
+    "heirloom",
+    "antiquary",
+    "fixer",
+    "envoy",
+    "muster",
+    "curator",
+    "x",
+];
+
 fn piece_kind(g: &mut Gen) -> &'static str {
     g.pick(&["k", "q", "r", "b", "n", "p"])
 }
@@ -170,7 +187,7 @@ fn any_command(g: &mut Gen) -> Value {
                     json!([{ "kind": "piece", "type": piece_kind(g) }, { "kind": "relic", "id": "bounty" }, { "kind": "gold", "amount": g.below(9) }])
                 }
                 "traits" => json!([*g.pick(&["sidestep", "bounty", "forcedMarch", "nope"])]),
-                "upgrade" => json!(*g.pick(&["pawn", "gold", "bishop", "haggle", "scout", "x"])),
+                "upgrade" => json!(*g.pick(&UPGRADE_IDS)),
                 "relic" => json!(*g.pick(&["bounty", "secondWind", "kingKnight", "earlyPromo", "y"])),
                 "on" | "barred" | "run" | "reset" => json!(g.chance(0.5)),
                 _ => json!(g.below(10)),
@@ -349,7 +366,7 @@ fn run_doc(g: &mut Gen) -> String {
 fn meta_doc(g: &mut Gen) -> String {
     let text = json!({ "format": "chrogue.meta", "version": 1, "data": {
         "crowns": big(g), "best": big(g), "runs": big(g),
-        "upgrades": { "pawn": big(g), "gold": big(g), "bishop": big(g), "haggle": big(g), "scout": big(g) },
+        "upgrades": UPGRADE_IDS.iter().map(|&id| (id.to_string(), big(g))).collect::<serde_json::Map<_, _>>(),
     } })
     .to_string();
     // Sometimes a file that a crash cut.

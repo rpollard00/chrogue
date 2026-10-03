@@ -196,7 +196,7 @@ fn apprenticeship_gives_one_pawn_after_a_win_with_a_promotion() {
     assert_eq!(reward(&battle).recruits, vec![Recruit { id: relic("apprenticeship"), kind: Kind::Pawn }]);
     let screen = Screen::Battle { run: run.clone(), battle: Box::new(battle.clone()), settled: None };
     assert_eq!(view(&screen, &Meta::default())["result"]["recruits"], json!(["p"]));
-    battle.settle(&mut run, &Tuning::default());
+    battle.settle(&mut run, &Meta::default(), &Tuning::default());
     // The pawn of e2 is a queen, and one more pawn takes the place of it.
     assert_eq!((run.army.len(), pawns(&run)), (8, 4));
 }
@@ -210,7 +210,7 @@ fn apprenticeship_gives_one_pawn_after_two_promotions() {
     }
     assert_eq!(winner(&battle), Some(Color::White));
     assert_eq!(reward(&battle).recruits.len(), 1);
-    battle.settle(&mut run, &Tuning::default());
+    battle.settle(&mut run, &Meta::default(), &Tuning::default());
     assert_eq!((run.army.len(), pawns(&run)), (8, 3));
 }
 
@@ -223,7 +223,7 @@ fn apprenticeship_gives_no_pawn_after_a_draw() {
     let report = play(&mut battle, &run, "e7", "e8");
     assert_eq!(battle.result.as_ref().map(|r| r.outcome), Some(Outcome::Clock));
     assert_eq!((report.relics, reward(&battle).recruits), (vec![], vec![]));
-    battle.settle(&mut run, &Tuning::default());
+    battle.settle(&mut run, &Meta::default(), &Tuning::default());
     assert_eq!(run.army.len(), 7);
 }
 
@@ -238,7 +238,7 @@ fn apprenticeship_gives_no_pawn_if_the_enemy_captured_the_promoted_unit() {
         }
         assert_eq!(winner(&battle), Some(Color::White));
         assert_eq!(reward(&battle).recruits, vec![]);
-        battle.settle(&mut run, &Tuning::default());
+        battle.settle(&mut run, &Meta::default(), &Tuning::default());
         assert_eq!(run.army.len(), units);
     }
 }
@@ -251,7 +251,7 @@ fn apprenticeship_gives_no_pawn_to_a_full_army() {
     let report = play(&mut battle, &run, "e7", "e8");
     assert_eq!(winner(&battle), Some(Color::White));
     assert_eq!((report.relics, reward(&battle).recruits), (vec![], vec![]));
-    battle.settle(&mut run, &Tuning::default());
+    battle.settle(&mut run, &Meta::default(), &Tuning::default());
     assert_eq!(run.army.len(), 16);
 }
 
@@ -263,7 +263,7 @@ fn apprenticeship_does_not_count_the_pawn_of_conscription() {
     play(&mut battle, &run, "a7", "a8");
     assert_eq!(winner(&battle), Some(Color::White));
     assert_eq!(reward(&battle).recruits, vec![]);
-    battle.settle(&mut run, &Tuning::default());
+    battle.settle(&mut run, &Meta::default(), &Tuning::default());
     assert_eq!(run.army.len(), 7);
 }
 
@@ -392,7 +392,7 @@ fn a_run_with_the_most_relics_cannot_take_one_more_relic() {
     run.draft = Some(vec![new]);
     run.shop = vec![new];
     assert!(!new.take(&mut run));
-    assert_eq!(run.take_draft(0).map_err(|fail| fail.code), Err(Code::Blocked));
+    assert_eq!(run.take_draft(&Meta::default(), 0).map_err(|fail| fail.code), Err(Code::Blocked));
     assert_eq!(run.buy_offer(&Meta::default(), 0).map_err(|fail| fail.code), Err(Code::Blocked));
     assert_eq!((run.relics.len(), run.gold, run.shop.len()), (RELICS_MAX, 100, 1));
 

@@ -438,7 +438,7 @@ fn settle(game: &mut Game, done: &mut Done) {
     let Game { meta, screen, tuning, .. } = game;
     let Screen::Battle { run, battle, settled: settled @ None } = screen else { return };
     let mut after = run.clone();
-    let Some(next) = battle.settle(&mut after, tuning) else { return };
+    let Some(next) = battle.settle(&mut after, meta, tuning) else { return };
     *settled = Some(Box::new(match next {
         Next::Camp => Settled::Camp(after),
         next => {
@@ -688,8 +688,8 @@ fn apply(game: &mut Game, command: Command, args: &Args, debug: bool) -> Result<
         }
         Command::TakeReward => {
             let i = index(args)?;
-            camp_action(game, command, d, |run, reward, _, _| {
-                run.take_draft(i)?;
+            camp_action(game, command, d, |run, reward, meta, _| {
+                run.take_draft(meta, i)?;
                 if let Some(reward) = reward {
                     reward.taken = Some(i);
                 }
@@ -706,7 +706,7 @@ fn apply(game: &mut Game, command: Command, args: &Args, debug: bool) -> Result<
             let i = index(args)?;
             camp_action(game, command, d, |run, _, meta, _| run.buy_offer(meta, i).map(|_| ()))?;
         }
-        Command::Reroll => camp_action(game, command, d, |run, _, _, tuning| run.reroll_shop(tuning))?,
+        Command::Reroll => camp_action(game, command, d, |run, _, meta, tuning| run.reroll_shop(meta, tuning))?,
         Command::Place => {
             let unit = uint(args, "unit", u16::MAX as u64)? as UnitId;
             let to = uint(args, "square", 15)? as Square;
