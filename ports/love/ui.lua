@@ -1,5 +1,4 @@
--- The elements that more than one screen uses: the port of src/ui/widgets.ts, src/ui/effects.ts and src/ui/tip.ts.
--- Each position and each size is in stage units (1 unit is 1rem of the web game).
+-- The elements that more than one screen uses. Each position and each size is in stage units.
 local gfx = require('gfx')
 local icons = require('icons')
 local theme = require('theme')
@@ -52,7 +51,7 @@ local KEY_FONT = {
 
 --[[
   A key with its label. `kind` is 'key', 'quiet', or 'primary'. opts: cost = { value, currency }, size, color (label),
-  hoverColor. The label is in the center. A cost follows the label, as actionButton in src/ui/widgets.ts.
+  hoverColor. The label is in the center. A cost follows the label.
 ]]
 function ui.key(r, label, kind, state, opts)
   opts = opts or {}
@@ -111,7 +110,7 @@ local function infoButton(r, hover)
 end
 
 --[[
-  The one card of the game (card in src/ui/widgets.ts). face: kind, art, name, text (nil for no info button), stamp,
+  The one card of the game. face: kind, art, name, text (nil for no info button), stamp,
   settled ('chosen' or 'passed'), verb, cost, disabled. st: key (state of the key), info (true if the pointer is on the
   info button), hover (the pointer is on the card).
 ]]
@@ -277,7 +276,7 @@ function ui.notice(notice, r, hover, since, life)
   end)
 end
 
--- The question before an action that ends a run. The web game uses the dialog of the browser for it.
+-- The question before an action that ends a run.
 function ui.dialogLayout(stage)
   local w, h = 20, 7.4
   local x, y = (stage.w - w) / 2, (stage.h - h) / 2

@@ -26,7 +26,7 @@ impl Dice {
         ((self.unit() * n as f64) as usize).min(n.saturating_sub(1))
     }
 
-    /// The algorithm of `shuffle` in `src/game/random.ts`.
+    /// The items in a random order (a Fisher-Yates shuffle from the last item).
     pub fn shuffle<T>(&mut self, mut items: Vec<T>) -> Vec<T> {
         for i in (1..items.len()).rev() {
             let j = self.below(i + 1);
@@ -35,7 +35,7 @@ impl Dice {
         items
     }
 
-    /// Up to `n` different items: the algorithm of `pickWeighted` in `src/game/random.ts`.
+    /// Up to `n` different items. The chance of each item is its part of the weights that remain.
     pub fn pick_weighted<T>(&mut self, pool: Vec<(T, f64)>, n: usize) -> Vec<T> {
         let mut rest = pool;
         let mut picked = Vec::new();

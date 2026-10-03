@@ -1,4 +1,4 @@
-//! Rules that the TypeScript engine does not have. Each test defines its rules through the
+//! Rules that the six rule flags do not give. Each test defines its rules through the
 //! public rules data only: these movement rules need no engine code. The tests also cover the
 //! errors for rules and states that are not valid, and the limits of the move list.
 

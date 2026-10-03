@@ -258,7 +258,7 @@ pub fn view(screen: &Screen, meta: &Meta) -> Value {
 }
 
 /// The run of the screen in the shape of the saved data. The debug command `view` with
-/// `"run": true` adds it, thus a test can compare a run with the TypeScript game.
+/// `"run": true` adds it, thus a test can read the run.
 pub fn run_data(screen: &Screen) -> Value {
     screen.run().map_or(Value::Null, run_json)
 }

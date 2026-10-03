@@ -9,7 +9,7 @@ local C, px = theme.color, gfx.px
 local board = {}
 
 local SQ = layout.square
--- The web game has 9.5cqw for a piece and 1.9cqw for a coordinate. 100cqw is the width of the board with no border.
+-- A piece has 9.5% of the width of the board with no border, and a coordinate has 1.9%.
 local INNER = layout.board.w - 2 * layout.boardBorder
 local PIECE = 0.095 * INNER
 local COORD = 0.019 * INNER

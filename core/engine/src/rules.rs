@@ -267,7 +267,7 @@ pub struct SideRules {
     pub castles: Vec<Castle>,
 }
 
-/// The names of the rule flags of the TypeScript engine (`MoveRules` in `src/engine/types.ts`).
+/// The names of the rule flags: the six named edits of ordinary chess (`SideRules::with_flag`).
 pub const FLAG_NAMES: [&str; 6] = ["forcedMarch", "backpedal", "earlyPromo", "kingKnight", "longLeap", "sidestep"];
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -426,7 +426,7 @@ impl SideRules {
         self.with_atom(Kind::Bishop, Atom::leap(&ORTHO, Mode::MoveOnly))
     }
 
-    /// Applies one rule flag of the TypeScript engine by its name.
+    /// Applies one rule flag by its name.
     pub fn with_flag(self, name: &str) -> Result<SideRules, RulesError> {
         Ok(match name {
             "forcedMarch" => self.forced_march(),
@@ -439,7 +439,7 @@ impl SideRules {
         })
     }
 
-    /// Ordinary chess with the given rule flags of the TypeScript engine.
+    /// Ordinary chess with the given rule flags.
     pub fn from_flags<'a>(names: impl IntoIterator<Item = &'a str>) -> Result<SideRules, RulesError> {
         names.into_iter().try_fold(SideRules::standard(), SideRules::with_flag)
     }

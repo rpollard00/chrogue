@@ -1,14 +1,12 @@
 //! Saved data. A `Storage` keeps two documents: the meta (crowns and upgrades) and the run in
 //! progress. This module writes them as versioned JSON and checks the data that it reads.
 //!
-//! The checks are those of `parseMeta` and `parseRun` in `src/game/storage.ts`: unknown relic
-//! and upgrade ids are dropped, a field of the meta that is not valid counts as 0, and an offer
-//! that is not valid is dropped. The core differs from the TypeScript game in these points:
+//! The checks: unknown relic and upgrade ids are dropped, a field of the meta that is not valid
+//! counts as 0, and an offer that is not valid is dropped. These rules also apply:
 //!
 //! - A relic id counts one time in a list. The core removes the second copy.
 //! - A count (a floor, gold, an id, a level, an amount) is at most 2^53 - 1, the largest whole
-//!   number that a JSON reader in a browser keeps exactly. The TypeScript game accepts each whole
-//!   number.
+//!   number that a JSON reader in a browser keeps exactly.
 //! - A unit id is at most `UNIT_ID_MAX` and appears one time, `nextId` is at most
 //!   `UNIT_ID_MAX + 1`, and the enemy has at most `ENEMY_PIECES_MAX` pieces.
 //! - The board of a run must be valid (`Battle::new`): no two enemy pieces on one square, no
@@ -16,10 +14,7 @@
 //!   is valid: normal play can make it, and the core saves the run at the start of the battle.
 //! - A document that the core cannot use is not dropped in silence. `load` reports it as a
 //!   `Problem`, and the session moves the file aside (`Storage::set_aside`) before it writes
-//!   anything. The TypeScript game drops such data, and its next save writes over it.
-//!
-//! The `data` field of a document has the shape of the TypeScript saved data, thus a saved run of
-//! the browser game can be put in a document as it is.
+//!   anything.
 
 use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions, TryLockError};
@@ -529,14 +524,14 @@ fn offers(value: &Value) -> Vec<Offer> {
 }
 
 /// The run of the data, or why it is not a run that the game can continue. The checks of
-/// `parseRun` and more (see the module comment).
+/// the fields and of the board (see the module comment).
 pub fn parse_run(raw: &Value) -> Result<Run, String> {
     let run = parse_run_shape(raw).ok_or("The data does not have the fields of a run")?;
     Battle::new(&run)?;
     Ok(run)
 }
 
-/// The checks of `parseRun` on the fields, and the limits of ids and of the enemy army.
+/// The checks of the fields, and the limits of ids and of the enemy army.
 fn parse_run_shape(raw: &Value) -> Option<Run> {
     let Value::Object(data) = raw else { return None };
     let Some(Value::Object(enemy)) = data.get("enemy") else { return None };

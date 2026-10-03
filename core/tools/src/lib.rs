@@ -20,7 +20,7 @@ impl Player {
         Player { level, reference: false }
     }
 
-    /// The old TypeScript AI at its strongest setting of the game before floor 7: depth 2, no noise.
+    /// The reference AI (`reference.rs`) at depth 2 with no noise.
     pub const fn reference() -> Player {
         let level = Level {
             name: "reference",

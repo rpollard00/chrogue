@@ -29,7 +29,7 @@ impl Outcome {
         }
     }
 
-    /// The name of the reason in the TypeScript engine.
+    /// The name of the reason in the protocol.
     pub const fn reason(self) -> &'static str {
         match self {
             Outcome::Bare => "bare",

@@ -1,5 +1,4 @@
-//! One battle of a run. This module connects the chess engine to the run and its relics, as
-//! `src/game/battle.ts` does.
+//! One battle of a run. This module connects the chess engine to the run and its relics.
 
 use crate::chess::{self, Color, Kind, Move, Outcome, Piece, Placement, Special, Square, State};
 use crate::content::{self, Effect, FLOORS, RelicId};
@@ -90,7 +89,7 @@ pub struct MoveReport {
     pub mv: Move,
     /// The captured piece, its square, and the gold that the capture gave.
     pub capture: Option<(Piece, Square, f64)>,
-    /// The relics of the player that had an effect, in the order of `src/game/battle.ts`.
+    /// The relics of the player that had an effect, in the order of the effects.
     pub relics: Vec<RelicId>,
     /// The unit that the enemy captured, and true if it returns after the battle.
     pub unit_lost: Option<(UnitId, bool)>,
@@ -116,8 +115,8 @@ impl Battle {
         for (_, effect) in effects(&run.relics) {
             if effect == Effect::ExtraPawn {
                 // The pawn goes to the first free square of rank 2, or of rank 3 if rank 2 is full.
-                // The TypeScript game does not look at the enemy pieces here; the core skips
-                // their squares too, thus a debug enemy on rank 2 or 3 does not share a square.
+                // A square of an enemy piece is not free, thus a debug enemy on rank 2 or 3 does not
+                // share a square.
                 let taken =
                     |s: Square| pieces.iter().any(|p| p.square == s) || run.enemy.pieces.iter().any(|e| e.square == s);
                 if let Some(square) = (8..24).find(|&s| !taken(s)) {

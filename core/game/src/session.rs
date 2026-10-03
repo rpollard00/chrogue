@@ -34,7 +34,7 @@ pub enum Settled {
     Over { summary: RunSummary, run: Run },
 }
 
-/// The current screen and the data that only this screen has (`Screen` in `src/ui/app.ts`).
+/// The current screen and the data that only this screen has.
 /// The title and the upgrades screen keep the run in progress, if one is saved.
 #[derive(Clone, Debug)]
 pub enum Screen {
@@ -532,7 +532,7 @@ fn camp(game: &mut Game, command: Command) -> Result<(&mut Run, &mut Option<Rewa
     }
 }
 
-/// Runs a camp action and adds the event that tells what it changed (`CampCue` in `src/ui/app.ts`).
+/// Runs a camp action and adds the event that tells what it changed.
 fn camp_action(
     game: &mut Game,
     command: Command,
@@ -761,8 +761,7 @@ fn debug_command(game: &mut Game, command: Command, args: &Args, d: &mut Done) -
         debug_run(run, command, args, dice, barred)?;
         // A command that changes the pieces or their rules must leave a board that the engine
         // takes as it is: no two pieces on one square, one king on each side. A check of the
-        // enemy king at the start is permitted here, as in the camp: `gametest/parity.ts` sets up
-        // such random boards and compares them with the TypeScript game.
+        // enemy king at the start is permitted here, as in the camp.
         let board = matches!(
             command,
             Command::DebugSetArmy

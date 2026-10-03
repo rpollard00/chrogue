@@ -1,5 +1,5 @@
 --[[
-  The battle screen: its state and its behavior. It is the port of viewBattle in src/ui/views/battle.ts.
+  The battle screen: its state and its behavior.
   The core has the rules. This module keeps only the state of the interface: the selection, the promotion picker,
   and the motion. Each response of the core gives the full view; the events of the response start the motion.
   board.lua, plaques.lua, fan.lua and result.lua draw this state.
@@ -16,7 +16,7 @@ local text = require('text')
 local battle = {}
 battle.__index = battle
 
--- The client owns the pause before the enemy move (core/PROTOCOL.md). The browser game waits 350 ms.
+-- The client owns the pause before the enemy move (core/PROTOCOL.md).
 battle.ENEMY_DELAY = 0.35
 battle.MOVE_TIME = 0.15
 battle.GONE_TIME = 0.26

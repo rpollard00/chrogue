@@ -1,6 +1,6 @@
 # Design
 
-The visual and interaction intent of Chrogue. Raw values are in `style.css`. This file records what they mean and how to select among them.
+The visual and interaction intent of Chrogue. Raw values are in the client: `ports/love/theme.lua` has the colors and the typefaces, and `ports/love/layout.lua` has the areas. This file records what they mean and how to select among them.
 
 Status words: **provisional** means the user approved the direction and the rendered game is under validation. **Established** means the user accepted the rendered result.
 
@@ -13,8 +13,10 @@ Chrogue is a game, not a web page. Its interface has a set layout, as the interf
 - Each area has a size for the largest content that the game can give it. Design the area for that content first.
 - When the content of an area changes, the content changes in its place. An area with no content stays as an empty slot. Do not hide the area, and do not let other areas take its space.
 - Only an element above the layout can have a size that comes from its content: the card of a relic, the list of a stash, a tooltip, a dialog, a banner. Such an element does not move the layout below it.
-- A layout becomes larger or smaller only as one unit. Each size is in `rem`, and the size of `1rem` comes from the size of the screen (see `html` in `style.css`). Do not add a breakpoint, a wrap, or a size from a container to make content fit.
-- Do not measure elements with script to set a layout.
+- A layout becomes larger or smaller only as one unit. Each size is in stage units, and the size of one unit comes from the size of the window (`gfx.u` in the client). Do not add a breakpoint, a wrap, or a size from a container to make content fit.
+- Do not measure elements with code to set a layout.
+
+The client has only the wide layout at this time. See "Responsive and accessibility rules".
 
 Before you add or change an interface element, answer two questions. Where is its set area in each of the two layouts? What is the largest content of that area?
 
@@ -59,7 +61,7 @@ Rules:
 - An upgrade is not a card. A card is a thing of one run. An upgrade stays between runs, and it has a set slot on the medal board.
 - On the medal board, an upgrade keeps its slot in each visit. A slot with no upgrade stays as an empty well. The slot of the upgrade that the player selects has an amber ring.
 - The panel has a set size. It has space for a text of three lines on a phone. On a wide screen, the panel also shows the cost of each level.
-- The display typeface is for names, headings, the wordmark, the primary key, the boss badge, and the purse, as in mockup C. Body text uses the system typeface.
+- The display typeface is for names, headings, the wordmark, the primary key, the boss badge, and the purse, as in mockup C. Body text uses Fira Sans.
 
 ## Composition
 
@@ -72,28 +74,32 @@ Rules:
 - Upgrades: the crowns are at the top, and the key that goes back is at the bottom. Between them are the medal board and the panel. On a wide screen, the panel is at the right of the board. On a phone, the panel is below the board. Nothing on this screen scrolls.
 - The game has no rules screen. The player finds the rules and the relics in a run. The result of a battle gives its cause.
 
-Status: established. The user accepted the rendered screens on 1 October 2026. For the upgrades screen, the user selected mockup C, "a board of medals and one panel", and accepted the rendered screen on 1 October 2026. Reference surfaces: the demos in `gallery.html`, and the title of the game.
+Status: established. The user accepted the rendered screens of the TypeScript game on 1 October 2026. For the upgrades screen, the user selected mockup C, "a board of medals and one panel", and accepted the rendered screen on 1 October 2026. The client draws the same screens. Reference surfaces: the screens of the client.
 
 ## Responsive and accessibility rules
 
 - A phone width is a first-class target. The game must be fully playable at 390 pixels wide.
 - On a phone, only the camp scrolls. In the camp, the purse and the start action stay in view.
 - The phone layout is a second set layout. It is not the wide layout at a smaller size.
-- Each control is a `button` with a visible focus ring. Status text has `role="status"`. Motion stops when the player prefers reduced motion.
+- Each control has a visible focus ring. A screen reader gets the status text. Motion stops when the player prefers reduced motion.
+
+The client does not obey these rules at this time. It has only the wide layout, and it does not have the properties of the last rule. The TypeScript game obeyed them, and the removal of that game removed its phone layout. A new plan for the phone layout is necessary (`DECISIONS.md`, "Open").
 
 ## Color
 
-Each color is a custom property in `:root` of `style.css`. A component uses the property, not a raw value, so that a second theme can replace the properties. The game has one theme, dark. Themes are a possible later task.
+Each color has a name in `ports/love/theme.lua`. A module uses the name, not a raw value, so that a second theme can replace the colors. The game has one theme, dark. Themes are a possible later task.
 
 ## Sources
 
-- Tokens and all styles: `style.css`
-- Display typeface: `src/fonts/ChrogueDisplay.woff2`. It is a Latin subset of Fira Sans Condensed ExtraBold. The license reserves the name "Fira", thus the subset has a different name. The license is in `src/fonts/OFL.txt`.
-- Shared elements: `src/ui/widgets.ts`, `src/ui/icons.ts`, `src/ui/tip.ts`
-- Rendered reference surfaces: `gallery.html` (run `bun run dev`, open `/gallery.html`)
+- Colors and typefaces: `ports/love/theme.lua`
+- Areas of each screen: `ports/love/layout.lua`
+- Typeface files and their licenses: `ports/love/fonts/`. The display typeface is Fira Sans Condensed ExtraBold.
+- Shared elements: `ports/love/ui.lua`, `ports/love/gfx.lua`, `ports/love/icons.lua`
+- Rendered reference surfaces: the client with the script `test/showcase.lua`, which shows the largest content of each screen (`ports/love/README.md`, "Test scripts")
 
 ## Not yet covered
 
 - The end of a run does not show a summary of the run. This is a follow-up task.
 - The medal board holds 16 upgrades. The design for more upgrades (a second page, or a board that scrolls) is not decided. A test stops a 17th upgrade.
 - A slot on a phone holds a name of 13 characters. A test stops a longer name.
+- The phone layout, the focus ring, the text for a screen reader, and the stop of motion for a player who prefers reduced motion ("Responsive and accessibility rules").

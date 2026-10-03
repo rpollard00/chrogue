@@ -4,7 +4,7 @@
 //!              [--seed N] [--max-plies N] [--threads N]
 //!
 //! A CONFIG is a base and then options, with `,` between them:
-//! - Base: `floor1` to `floor8` (a level of the ladder), `reference` (the old TypeScript AI),
+//! - Base: `floor1` to `floor8` (a level of the ladder), `reference` (the reference AI),
 //!   or `nodes=N` (the search with a node limit and no noise).
 //! - Options: `eval=derived|fixed|blind`, `noise=CP`, `depth=N`, `nodes=N`, `null=0|1`, `lmr=0|1`,
 //!   `threats=0|1`. The reference AI reads only `noise` and `depth`.
@@ -123,8 +123,8 @@ fn rule_sets() -> Vec<RuleSet> {
     sets
 }
 
-// The data of the game: `VALUE` in src/engine/types.ts, `FLOORS` and `generateEnemy` in
-// src/game/floors.ts, `baseArmy` and `freeHome` in src/game/army.ts.
+// The data of the game, as in the crate `chrogue-game`: `gold_value`, `enemy_weight`, and `FLOORS` in content.rs,
+// and `generate_enemy`, `base_army`, and `free_home` in run.rs.
 const RECRUITS: [Kind; 5] = [Kind::Pawn, Kind::Knight, Kind::Bishop, Kind::Rook, Kind::Queen];
 const RECRUIT_VALUE: [u32; 5] = [1, 3, 3, 5, 9];
 const RECRUIT_WEIGHT: [f64; 5] = [4.0, 2.0, 2.0, 1.5, 1.0];

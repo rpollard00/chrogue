@@ -40,7 +40,7 @@ With `--listen`, the core reads a token from the environment variable `CHROGUE_T
 - The WebAssembly build has no lock. A page of a browser has a file system of its own, with no file locks and no second process. Two pages of the same game each keep their own copy of the saved data, and the page that saves last sets the data that the browser keeps.
 - A save writes a temporary file with a name of its own (`meta.json.<pid>-<n>.tmp`), syncs it to the disk, and renames it over the document. On Unix, the core then syncs the directory. A start of the core removes the temporary files that a crash left.
 - A saved file that the core cannot use is never deleted or written over. That is a file that the core cannot read, that is not JSON (for example, a file that a crash cut, or JSON nested too deep), that is not a document of its format, whose data is not valid as a whole (see below), or that has a version newer than the version of the core. Before it writes anything, the core renames such a file to `<name>.bad-<unix time>` (for example `meta.json.bad-1759420800`; `-2`, `-3`, ... if that name is taken), loads no data from it, and puts a `save_problem` event in its first successful response. If the rename fails, the core does not write or remove that document in the session; each save of it then gives `save_failed`.
-- The checks of saved data are those of `src/game/storage.ts`, and more: a count (a floor, gold, an id, a level, an amount) is at most 2^53 - 1; a unit id is at most 19999 and appears one time; a relic id counts one time in a list; the enemy has at most 64 pieces; no two pieces are on one square (two enemy pieces, an enemy piece on the home square of a unit, or two units with one home); and each side has exactly one king. A start with the enemy king in check is valid (see [Open issues](#open-issues)). A run that fails a check is not valid as a whole. A field of the meta that is not valid counts as 0, and an unknown relic id, upgrade id, or offer is dropped, as in the browser game.
+- The checks of saved data: a count (a floor, gold, an id, a level, an amount) is at most 2^53 - 1; a unit id is at most 19999 and appears one time; a relic id counts one time in a list; the enemy has at most 64 pieces; no two pieces are on one square (two enemy pieces, an enemy piece on the home square of a unit, or two units with one home); and each side has exactly one king. A start with the enemy king in check is valid (see [Open issues](#open-issues)). A run that fails a check is not valid as a whole. A field of the meta that is not valid counts as 0, and an unknown relic id, upgrade id, or offer is dropped.
 
 ## Requests and responses
 
@@ -89,7 +89,7 @@ over ──new_run──> battle;  over ──open_upgrades──> upgrades;  ov
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
-| `new_run` | | Starts a new run and its first battle. A saved run is replaced, with no crowns for it, as in the browser game. |
+| `new_run` | | Starts a new run and its first battle. A saved run is replaced, with no crowns for it. |
 | `continue_run` | | Continues the saved run: the camp, or the battle of the run from its start. Error `no_run` if no run is saved. |
 | `open_upgrades` | | Goes to the upgrades screen. |
 
@@ -110,11 +110,11 @@ The `phase` of the battle view tells who acts: `player`, `enemy`, or `over`.
 | `enemy_move` | | `enemy` | The AI of the floor selects and plays the enemy move. The command blocks until the move is done. On floor 8 a move usually takes less than 100 ms; a board with many queens (an army of 7 queens against 23 queens) takes up to about 190 ms. |
 | `give_up` | | `player`, `enemy` | Ends the run as a loss. Goes to `over`. |
 | `continue` | | `over` | Goes to `camp`, or to `over` if the run is won or lost. The core settled the battle when it ended (see below). |
-| `to_title` | | any | Goes to the title. A battle with no result is not saved: `continue_run` starts it again from its start, as a reload of the browser game does. After the result, the title has the run in the camp, or no run if the run ended. |
+| `to_title` | | any | Goes to the title. A battle with no result is not saved: `continue_run` starts it again from its start. After the result, the title has the run in the camp, or no run if the run ended. |
 
 The core settles a battle with the move that ends it (the move that gives the `result` event): the gold, the lost units, and the promoted pieces go to the run, the run goes to the camp before its next floor or it ends, and the core saves this at once. The view of the battle shows the run of the battle until `continue`. Thus a client that starts again after the result continues in the camp, or has no run. It cannot play the battle a second time.
 
-The client owns the pause before the enemy move. The browser game waits 350 ms after the move of the player, then sends the equivalent of `enemy_move`.
+The client owns the pause before the enemy move. The LÖVE client waits 350 ms after the move of the player, then sends `enemy_move`.
 
 ### Camp
 
@@ -140,7 +140,7 @@ The client owns the pause before the enemy move. The browser game waits 350 ms a
 
 ### Debug commands
 
-These commands work only in a session with `--debug`. Else the error is `debug_disabled`. They are the debug menu of the browser game (`src/ui/debug.ts`), and some more commands for tests. A change of the meta or of the run is saved immediately. If the screen is a battle with no result, the battle starts again, as the debug menu does when it closes. After the result, the change goes to the run after the battle (error `no_run` if the run ended), and the screen stays. Each change gives the event `debug_changed`.
+These commands work only in a session with `--debug`. Else the error is `debug_disabled`. They change the meta, the run, and the offers at no cost, for a test or for the preparation of a position. A change of the meta or of the run is saved immediately. If the screen is a battle with no result, the battle starts again. After the result, the change goes to the run after the battle (error `no_run` if the run ended), and the screen stays. Each change gives the event `debug_changed`.
 
 A command that changes the pieces or their rules (`debug_set_army`, `debug_set_enemy`, `debug_add_unit`, `debug_remove_unit`, `debug_set_floor`, `debug_set_relic`, `debug_set_trait`) must leave a board that the engine can take as it is. Else the error is `bad_args` with a message that starts with `The board is not valid`, and the run does not change: two pieces on one square (two enemy pieces, or an enemy piece on the home square of a unit), or a side with no king or with two kings. An enemy piece on an empty home square is permitted. A start with the enemy king in check is permitted, as in the camp and in saved data (see [Open issues](#open-issues)). The pawn of Conscription goes to the first square of ranks 2 and 3 that no unit and no enemy piece has.
 
@@ -199,7 +199,7 @@ Each view has `screen`. The other fields depend on the screen.
   - `outcome`: `victory`, `defeat`, or `draw`.
   - `next`: what `continue` does: `camp`, `won` (the run is won), or `lost` (the run ends).
   - `reward`: `captures`, `clear`, `bonuses` (each with `id`, `label`, `gold`), and `total`.
-  - `rows`: the rows of the result panel of the browser game, in order. A row has `row` (`captures`, `clear`, or `bonus`) and `gold`. A `bonus` row also has `id` and `label` (the name of the relic). A defeat has no rows.
+  - `rows`: the rows of the result panel, in order. A row has `row` (`captures`, `clear`, or `bonus`) and `gold`. A `bonus` row also has `id` and `label` (the name of the relic). A defeat has no rows.
   - `total`: the sum of the gold. `rescued`: the number of units that return (0 on a defeat).
 
 ### `camp`
@@ -226,7 +226,7 @@ Each event is an object with `type`. The other fields depend on the type.
 | --- | --- | --- |
 | `screen` | `name` | The screen changed or started again. It is the first event of the new screen. |
 | `run_start` | | A new run started. |
-| `battle_start` | `floor`, `name`, `boss` | A battle started. The browser game shows the floor banner here. |
+| `battle_start` | `floor`, `name`, `boss` | A battle started. The client shows the floor banner here. |
 | `move` | `id`, `color`, `kind` (before a promotion), `from`, `to` | A piece moved. It is the first event of a move. |
 | `castle` | `id` (the rook), `from`, `to` | The rook move of a castle. |
 | `en_passant` | `square` (of the captured pawn) | The move is an en passant capture. |
@@ -234,11 +234,11 @@ Each event is an object with `type`. The other fields depend on the type.
 | `unit_lost` | `id` | The enemy captured a unit. It leaves the army after the battle. |
 | `unit_rescued` | `id` | The enemy captured a unit, and a relic returns it after the battle. |
 | `promote` | `id`, `square`, `kind` | A pawn promoted. |
-| `relic` | `ids` | These relics of the player had an effect. The browser game flashes them. |
+| `relic` | `ids` | These relics of the player had an effect. The client flashes them. |
 | `check` | `square`, `color` | The king of the side to move is in check. |
 | `result` | `winner`, `reason` | The battle ended. The view has the full result. |
-| `camp_enter` | `floor`, `reward` (true if the visit has a reward) | The camp opened. The browser game deals the cards here. |
-| `camp_action` | `action` (the command), `gold_before`, `gold`, `units` (`id`, `kind`, `home` of each new unit), `relics` (new relic ids), `rolled` | A camp command succeeded. These are the fields of `CampCue` in `src/ui/app.ts`. `rolled` is true when the shop has new items. |
+| `camp_enter` | `floor`, `reward` (true if the visit has a reward) | The camp opened. The client deals the cards here. |
+| `camp_action` | `action` (the command), `gold_before`, `gold`, `units` (`id`, `kind`, `home` of each new unit), `relics` (new relic ids), `rolled` | A camp command succeeded. `rolled` is true when the shop has new items. |
 | `unit_placed` | `id`, `from`, `to`, `swapped` (the id of the unit that swapped, or `null`) | A unit moved to a new home square. |
 | `upgrade_bought` | `id`, `level`, `crowns_before`, `crowns` | An upgrade got a level. |
 | `run_end` | `won`, `cleared`, `bonus`, `crowns`, `new_best`, and `run` in a debug session | The run ended. `run` is the last state of the run in the format of the saved data. |
@@ -289,14 +289,14 @@ The content text (the names and texts of relics, upgrades, floors, pieces, and o
 - `protocol`: the version. `debug`: true if the debug commands work.
 - `commands`, `events`, `errors`: the names in this file.
 - `content`:
-  - `relics`: `id`, `name`, `text`, `foe_text` (`null` if a boss cannot have it), `trait`, `rule_flags`, and `hooks`. `rule_flags` are the names of the TypeScript movement flags that give the same engine rules as the relic (`null` for a rule that only the Rust engine has). `hooks` are the names of the TypeScript hooks that the relic uses.
+  - `relics`: `id`, `name`, `text`, `foe_text` (`null` if a boss cannot have it), `trait`, `rule_flags`, and `hooks`. `rule_flags` are the names of the rule flags of the engine that give the movement rules of the relic (`null` if no set of flags gives them). `hooks` are the names of the effects of the relic.
   - `upgrades`: `id`, `name`, `text`, `costs`, `hooks`.
   - `floors`: `number`, `name`, `budget` (the value of the enemy army), `traits` (the number of boss traits), `boss`, `level` (the name of the AI level), and `draft_gold` (the gold card of the reward before this floor).
   - `pieces`: `kind`, `name`, `value` (the gold of a capture), and `price` (in the shop, before upgrades).
   - `recruits`: `kind`, `weight`, `min_floor` of the pieces in rewards and in the shop.
   - `relic_price`, `reroll_cost`, `win_crowns`, `army_max`, `upgrade_slots`, `upgrade_name_max`, `traits_max`, `relic_count`.
 
-The format of the saved data (`data.run` of `view`, and `run` of `run_end`) is the format of the browser game: `floor`, `gold`, `army` (`id`, `type`, `home`), `nextId`, `relics`, `enemy` (`pieces` with `type` and `square`, and `traits`), `phase`, `draft`, and `shop`. An offer there has `kind` and `type`, `id`, or `amount`.
+The format of the saved data (`data.run` of `view`, and `run` of `run_end`) has these fields: `floor`, `gold`, `army` (`id`, `type`, `home`), `nextId`, `relics`, `enemy` (`pieces` with `type` and `square`, and `traits`), `phase`, `draft`, and `shop`. An offer there has `kind` and `type`, `id`, or `amount`.
 
 ## Example session
 
@@ -347,6 +347,6 @@ A won battle and a camp action (from the test `the_camp_example_is_real`: the ar
 
 ## Open issues
 
-- A draw on the last floor: the run stays on floor 8, in the two games. `continue` opens the camp before floor 8 again, with no reward.
-- The camp can give a start where the enemy king is in check: a rook or a queen of the player on an open e-file against an enemy with no pawn on e7. As in the TypeScript game, `start_battle` starts that battle, and White can capture the king. The debug commands and saved data permit such a start too (`gametest/parity.ts` compares random starts of this kind with the TypeScript game). A rule that refuses it belongs in `start_battle`, and it changes the game: it is a decision for the design.
-- A battle can start in a position where the player has no legal move (for example, a debug army that is in checkmate at the start). As in the TypeScript game, the result is checked only after a move: the phase is `player` with no moves, and only `give_up` and `to_title` work.
+- A draw on the last floor: the run stays on floor 8. `continue` opens the camp before floor 8 again, with no reward.
+- The camp can give a start where the enemy king is in check: a rook or a queen of the player on an open e-file against an enemy with no pawn on e7. `start_battle` starts that battle, and White can capture the king. The debug commands and saved data permit such a start too. A rule that refuses it belongs in `start_battle`, and it changes the game: it is a decision for the design.
+- A battle can start in a position where the player has no legal move (for example, a debug army that is in checkmate at the start). The result is checked only after a move: the phase is `player` with no moves, and only `give_up` and `to_title` work.

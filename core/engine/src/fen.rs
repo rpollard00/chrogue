@@ -20,7 +20,6 @@ pub fn square(name: &str) -> Square {
 /// The pieces of the piece field of a FEN string. The ids count from 0 in the order of the string.
 ///
 /// A pawn that is not on its start rank counts as moved. All other pieces count as not moved.
-/// This is the same as `fromFen` in `test/helpers.ts`.
 pub fn placements(fen: &str) -> Result<Vec<Placement>, StateError> {
     let bad = || StateError::BadFen(fen.to_string());
     let rows: Vec<&str> = fen.split('/').collect();

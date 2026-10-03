@@ -1,4 +1,4 @@
--- The end of a run: the port of viewOver in src/ui/views/over.ts. The king that fell, the heading, the tally of the
+-- The end of a run. The king that fell, the heading, the tally of the
 -- crowns, and the menu. The positions are set (layout.over); a lost run has empty space where a won run has more rows.
 local gfx = require('gfx')
 local layout = require('layout')

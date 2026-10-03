@@ -1,4 +1,4 @@
-//! The movement-rule, `movesFrom`, and `outcome` cases of `test/engine.test.ts`.
+//! The six rule flags, the moves from one square, and the results of a battle.
 
 mod common;
 

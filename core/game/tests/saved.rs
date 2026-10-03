@@ -71,7 +71,7 @@ fn a_run_saved_in_camp_reloads_identically() {
     assert_eq!(reloaded, camp);
 
     // After a camp action the run is saved again. A reward that the player took is not on the
-    // reloaded screen, as in the TypeScript game, where the reward shelf is data of the screen.
+    // reloaded screen: the reward shelf is data of the screen, not of the saved run.
     let taken = send(&mut first, json!({ "cmd": "take_reward", "index": 0 }))["view"].clone();
     let mut third = Session::new(Box::new(storage), 5);
     let mut reloaded = send(&mut third, json!({ "cmd": "continue_run" }))["view"].clone();
@@ -422,7 +422,7 @@ fn unknown_relic_and_upgrade_ids_are_dropped() {
 }
 
 #[test]
-fn the_game_saves_at_the_points_of_the_typescript_game() {
+fn the_game_saves_the_run_and_the_meta_at_each_change_of_the_phase() {
     let dir = temp_dir("points");
     let mut session = Session::with_debug(open(&dir), 2, true);
     let run_file = dir.join("run.json");

@@ -1,5 +1,4 @@
-//! The content of the game as data: relics, upgrades, floors, prices, and constants. The text
-//! is a copy of the TypeScript definitions in `src/game/`. `gametest/parity.ts` compares the two.
+//! The content of the game as data: relics, upgrades, floors, prices, and constants.
 //!
 //! - Relic: add one entry to `RELICS`. If the entry has a `foe_text`, a boss can have it as a trait.
 //! - Relic effect at a new point of a battle: add a kind to `Effect`, and apply it in `battle.rs`.
@@ -37,8 +36,7 @@ impl RuleEdit {
     }
 }
 
-/// What a relic does at a fixed point of a battle. Each kind is one hook of `RelicHooks` in
-/// `src/game/relics.ts`.
+/// What a relic does at a fixed point of a battle.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Effect {
     /// The gold of each capture by the player is multiplied by `factor`.
@@ -52,7 +50,7 @@ pub enum Effect {
 }
 
 impl Effect {
-    /// The name of the hook in the TypeScript game.
+    /// The name of the effect in the content of `hello` (`hooks`).
     pub const fn hook_name(self) -> &'static str {
         match self {
             Effect::CaptureGold { .. } => "captureGold",
@@ -193,8 +191,7 @@ pub fn rules_for(ids: &[RelicId]) -> SideRules {
     rules
 }
 
-/// The rule flags of the TypeScript engine that a relic gives, or None for a rule that only the
-/// Rust engine has.
+/// The rule flags that a relic gives, or None for rules that no set of flags gives.
 pub fn relic_flags(id: RelicId) -> Option<Vec<&'static str>> {
     chess::flags_of(&rules_for(&[id]))
 }
@@ -216,7 +213,7 @@ pub enum UpgradeEffect {
 }
 
 impl UpgradeEffect {
-    /// The name of the field of `UpgradeDef` in the TypeScript game.
+    /// The name of the effect in the content of `hello` (`hooks`).
     pub const fn hook_name(self) -> &'static str {
         match self {
             UpgradeEffect::RecruitEachLevel(_) | UpgradeEffect::Recruit(_) | UpgradeEffect::GoldEachLevel(_) => {
@@ -319,8 +316,7 @@ const fn floor(name: &'static str, budget: u32, traits: usize, boss: bool) -> Fl
     FloorDef { name, budget, traits, boss }
 }
 
-/// The AI of floor `n` is `Level::floor(n)` of the engine. It replaces the `ai` field of the
-/// TypeScript floors.
+/// The AI of floor `n` is `Level::floor(n)` of the engine.
 pub static FLOORS: [FloorDef; 8] = [
     floor("Border Patrol", 5, 0, false),
     floor("Scouts", 9, 0, false),
@@ -347,7 +343,7 @@ pub fn traits_max() -> usize {
 /// The kinds that the player can add to the army, and the kinds of the enemy officers.
 pub const RECRUIT_KINDS: [Kind; 5] = [Kind::Pawn, Kind::Knight, Kind::Bishop, Kind::Rook, Kind::Queen];
 
-/// The gold value of a piece (`VALUE` in `src/engine/types.ts`). The enemy budget uses it too.
+/// The gold value of a piece. The enemy budget uses it too.
 pub const fn gold_value(kind: Kind) -> u32 {
     match kind {
         Kind::Pawn => 1,
@@ -409,7 +405,7 @@ pub const RECRUITS: [Recruit; 5] = [
 pub const DRAFT_RELIC_WEIGHT: f64 = 2.0;
 pub const DRAFT_GOLD_WEIGHT: f64 = 2.0;
 
-/// The weight of each kind in an enemy army (`WEIGHT` in `src/game/floors.ts`).
+/// The weight of each kind in an enemy army.
 pub const fn enemy_weight(kind: Kind) -> f64 {
     match kind {
         Kind::Pawn => 4.0,

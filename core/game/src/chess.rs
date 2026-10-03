@@ -9,7 +9,7 @@ pub use engine::{Atom, Color, Kind, Mode, Move, Offset, Outcome, Piece, Placemen
 /// The state of a battle in the engine.
 pub type State = engine::State;
 
-/// The names of the rule flags of the TypeScript engine, in the order of the engine.
+/// The names of the rule flags, in the order of the engine.
 pub const FLAG_NAMES: [&str; 6] = engine::rules::FLAG_NAMES;
 
 /// Makes a battle with White to move. Returns an error if the rules are not valid.
@@ -93,9 +93,8 @@ pub fn level_name(floor: usize) -> &'static str {
     engine::Level::LADDER[floor.clamp(1, engine::Level::LADDER.len()) - 1].name
 }
 
-/// The rule flags of the TypeScript engine that give these rules, or None if no set of flags
-/// gives them. The protocol reports the flags so that a test can compare the relics of the two
-/// implementations.
+/// The rule flags that give these rules, or None if no set of flags gives them. The protocol
+/// reports the flags of each relic in the content of `hello`.
 pub fn flags_of(rules: &SideRules) -> Option<Vec<&'static str>> {
     (0u32..1 << FLAG_NAMES.len()).find_map(|mask| {
         let names: Vec<&'static str> =

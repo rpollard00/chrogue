@@ -21,7 +21,7 @@ function fan.new(items, side, area, align)
   local self = { items = items, ids = ids, side = side, area = area, hovered = nil, hoveredAt = 0, raise = {} }
   for i = 1, #ids do self.raise[i] = 0 end
   self.flair = side == 'enemy' and C.danger or C.relic
-  -- In the battle, the medals of the enemy are at the right side of their area, next to the stash, as in the web game.
+  -- In the battle, the medals of the enemy are at the right side of their area, next to the stash.
   align = align or (side == 'enemy' and 'right' or 'left')
   self.left = align == 'right' and area.x + area.w - #ids * layout.fanStep or area.x
   return self

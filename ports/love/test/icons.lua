@@ -1,5 +1,5 @@
 --[[
-  The SVG path reader of icons.lua. The icons are the paths of src/ui/icons.ts. Each check is a property of a path that a
+  The SVG path reader of icons.lua. Each check is a property of a path that a
   fault of the reader changes: the points stay in the grid of 24 units, the arcs are circles with their radius, a closed
   path ends at its start, and the S command reflects the control point of the curve before it.
   Run with: --no-save --script test/icons.lua

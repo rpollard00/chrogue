@@ -1,4 +1,4 @@
-//! The cases of `test/game.test.ts`, with the same expectations, on the Rust game layer.
+//! The game layer: relics, upgrades, offers, the results of a battle in a run, and saved data.
 
 use std::collections::HashSet;
 
@@ -313,8 +313,7 @@ fn saved_data_survives_a_round_trip_and_unknown_ids_are_removed() {
     assert_eq!(meta, meta_with(&[("pawn", 2)], 4));
 }
 
-/// The debug changes run through the protocol, as the debug menu of the TypeScript game uses
-/// `src/game/debug.ts`.
+/// The debug changes run through the protocol.
 #[test]
 fn the_debug_changes_keep_the_saved_data_valid() {
     let mut session = Session::with_debug(Box::new(MemoryStorage::default()), 1, true);

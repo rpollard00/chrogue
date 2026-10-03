@@ -1,4 +1,4 @@
--- The upgrades: the port of viewUpgrades in src/ui/views/upgrades.ts. The crowns at the top, the medal board of 16 set
+-- The upgrades. The crowns at the top, the medal board of 16 set
 -- slots and the panel of the selected upgrade in the middle, and the key that goes back at the bottom.
 local gfx = require('gfx')
 local icons = require('icons')

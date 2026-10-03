@@ -1,4 +1,4 @@
-//! The algorithm of the old TypeScript AI (`src/engine/ai.ts`), as a baseline opponent.
+//! The reference AI: the algorithm of the AI that the first version of the game had, as a baseline opponent.
 //!
 //! It is a negamax search with a fixed depth and a quiescence search of 4 half moves. Its
 //! evaluation has fixed piece values, thus it does not see the movement rules of the battle.

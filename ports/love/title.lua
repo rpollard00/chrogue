@@ -1,4 +1,4 @@
--- The title screen: the port of viewTitle in src/ui/views/title.ts. One column in the center: the wordmark, the menu,
+-- The title screen. One column in the center: the wordmark, the menu,
 -- and the wells of the crowns, the best run, and the runs.
 local gfx = require('gfx')
 local layout = require('layout')
@@ -52,7 +52,7 @@ function title:activate(name)
   if name == 'continueRun' then app.send({ cmd = 'continue_run' })
   elseif name == 'upgrades' then app.send({ cmd = 'open_upgrades' })
   elseif name == 'newRun' then
-    -- A new run replaces the saved run, with no crowns for it. The web game asks first.
+    -- A new run replaces the saved run, with no crowns for it. Thus the game asks first.
     if self.view.can_continue then app.confirm(text.NEW_RUN, function() app.send({ cmd = 'new_run' }) end)
     else app.send({ cmd = 'new_run' }) end
   end

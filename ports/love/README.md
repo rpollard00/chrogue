@@ -151,7 +151,7 @@ With `CHROGUE_EFFECTS=off`, `flow.lua` and `showcase.lua` start with the effects
 | `net.lua` | The core process, the socket, the queue of requests, and the reconnection. With `--embed`, the queue and the calls to `core.lua` |
 | `core.lua` | The core in the process of the game: the library through the FFI of LuaJIT, or the linked module of the WebAssembly build |
 | `json.lua` | The JSON reader and writer of the protocol |
-| `text.lua` | The interface text for the codes of the protocol. The strings come from `src/ui` |
+| `text.lua` | The interface text for the codes of the protocol |
 | `layout.lua` | The set layout of each screen: rectangles in stage units |
 | `title.lua`, `upgrades.lua`, `battle.lua`, `camp.lua`, `over.lua` | One module for each screen of the view |
 | `board.lua`, `plaques.lua`, `fan.lua`, `result.lua` | The areas of the battle. `fan.lua` is also in the camp |
@@ -163,7 +163,7 @@ With `CHROGUE_EFFECTS=off`, `flow.lua` and `showcase.lua` start with the effects
 
 Each screen module has the same functions: `new`, `apply` (a new view of the same screen), `refused` (an error response), `update`, `draw`, `hit`, `activate`, `key`, `control`, `settled`, and `state`. A `screen` event opens a new screen object.
 
-The stage is 80 by 45 units. One unit is 1rem of the web game. The stage becomes larger or smaller as one unit. At 1920 by 1080, one unit is 24 pixels. The web game keeps 1rem at 16 pixels at this size.
+The stage is 80 by 45 units. The stage becomes larger or smaller as one unit. At 1280 by 720, one unit is 16 pixels. At 1920 by 1080, one unit is 24 pixels.
 
 ## Pixels and precision
 
@@ -171,40 +171,29 @@ The stage is 80 by 45 units. One unit is 1rem of the web game. The stage becomes
 - On a window with a high pixel density, the canvases and the fonts have the pixels of the screen. Only the build for a browser asks for such a window (`conf.lua`).
 - The shaders ask for floats of high precision. OpenGL ES (a browser, a phone) gives medium precision without this, and the background then has no noise.
 
-## Differences from the web game
+## Set areas
 
-Where the web game gives an area the size of its content, the client gives the area the size of its largest content (`DESIGN.md`, "The first rule: a set layout"). `layout.lua` names each of these areas:
+Each area has the size of its largest content (`DESIGN.md`, "The first rule: a set layout"). `layout.lua` names each of these areas:
 
 - The wells of the title and the purses have the width of their largest value.
 - The well of the next enemy in the camp has space for 16 pieces. The fan of traits has a set place before it.
 - The start key of the camp stays in place when the text below it goes.
-- The reward shelf has 3 set card slots, and the shop has 4. A card keeps its slot when the player buys a different card, and a bought card leaves an empty slot. In the web game, the other cards move to the center. After a new connection, the cards fill the slots from the left. When a shelf has no card, its heading line tells it, as the text of the web game does.
+- The reward shelf has 3 set card slots, and the shop has 4. A card keeps its slot when the player buys a different card, and a bought card leaves an empty slot. After a new connection, the cards fill the slots from the left. When a shelf has no card, its heading line tells it.
 - The end of a run has the positions of a won run. The tally well keeps its height when a lost run has one row.
 - The text of the upgrade panel has a slot for three lines, and the ladder has a slot for three levels.
 - On the battle, the name "You" stays in its row when the lamp goes after the result.
 
-Other differences:
+## Other properties of the interface
 
-- The relic medals, the relic cards, and the relic cards on the shelves have the foil shader. The background and the post pass are also only in this client.
-- Body text uses Fira Sans. The web game uses the typeface of the system.
-- The dialogs (Give up, a new run over a saved run) are in the game window. The web game uses the dialog of the browser.
+- The relic medals, the relic cards, and the relic cards on the shelves have the foil shader.
+- The dialogs (Give up, a new run over a saved run) are in the game window.
 - A screen comes into view with a fade of 0.2 seconds. During the fade, the screen takes no input.
 - A battle that starts with no legal move for the player shows "No legal move. Give up." in the lamp (core/PROTOCOL.md, "Open issues").
 - The keyboard has no focus ring and no Tab order. Only `Escape` and `Enter` work.
 
-## What this change removed
-
-The rules of the earlier prototype came from TypeScript compiled to Lua with TypeScriptToLua. The client does not use them now. This change removed:
-
-- `tools/prepare-rules.ts`, `tools/tstl-plugin.cjs`, `package.json`, `bun.lock`, `tsconfig.json`, and `.gitignore` (for `node_modules/`, `generated/`, and `.rules-src/`)
-- `rules.lua` and `rules_runtime.lua`, which loaded the compiled rules
-- `scenario.lua`, the prepared battles of the prototype
-- `screen.lua` and `input.lua`. `battle.lua` and `main.lua` replace them
-- `test/run.lua` (the Lua tests of the compiled rules) and the earlier app tests. The Rust core has its own tests
-
 ## Typefaces
 
-`fonts/` has Fira Sans and Fira Sans Condensed (SIL Open Font License, `fonts/Fira-OFL.txt`) and DejaVu Sans (`fonts/DejaVu-LICENSE.txt`). The files have no changes. The pieces are the chess glyphs of DejaVu Sans, as in the web game.
+`fonts/` has Fira Sans and Fira Sans Condensed (SIL Open Font License, `fonts/Fira-OFL.txt`) and DejaVu Sans (`fonts/DejaVu-LICENSE.txt`). The files have no changes. Body text uses Fira Sans. The pieces are the chess glyphs of DejaVu Sans.
 
 ## Not yet covered
 

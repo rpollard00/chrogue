@@ -145,7 +145,7 @@ end
 
 --[[
   A key. `kind` is 'key', 'quiet' or 'primary'. A key goes down when the player presses it.
-  A key that the player cannot use (state.disabled) stays down and has no light, as button:disabled in style.css.
+  A key that the player cannot use (state.disabled) stays down and has no light.
   Returns the distance that the face went down, and the color of the label.
 ]]
 function gfx.key(x, y, w, h, kind, state)
@@ -175,7 +175,7 @@ function gfx.key(x, y, w, h, kind, state)
 end
 
 local gray
--- Draws with less color and less opacity, as filter: grayscale() with opacity in style.css. `amount` is from 0 to 1.
+-- Draws with less color and less opacity. `amount` is from 0 to 1.
 function gfx.muted(amount, alpha, draw)
   gray = gray or lg.newShader([[
     extern float amount;
@@ -314,7 +314,8 @@ function gfx.piece(kind, color, cx, cy, size, alpha, scale)
   local x = cx - font:getWidth(glyph) * s / 2
   local y = cy - (font:getAscent() - font:getDescent()) * s / 2
   local fill, stroke = C.pieceW, C.pieceWStroke
-  -- The outline of the web game is 1.5px for a white piece and 1px for a black piece, and half of it is outside the glyph.
+  -- At 16 pixels for each unit, the outline is 1.5 pixels for a white piece and 1 pixel for a black piece. Half of it
+  -- is outside the glyph.
   local out = 0.75 * gfx.u / 16
   if color == 'b' then fill, stroke, out = C.pieceB, C.pieceBStroke, 0.5 * gfx.u / 16 end
   out = math.max(out, 0.6) * s

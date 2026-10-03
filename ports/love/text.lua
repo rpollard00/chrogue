@@ -1,4 +1,4 @@
--- The interface text. The strings are the strings of src/ui. The core sends codes (core/PROTOCOL.md, "Codes for the
+-- The interface text. The core sends codes (core/PROTOCOL.md, "Codes for the
 -- client text"), and this module selects the text for each code. The content text (names and texts of relics, upgrades,
 -- floors, pieces, and offers) comes from the views of the core.
 local text = {}
@@ -64,7 +64,7 @@ text.ARMY_HINT = 'To move a piece, select the piece and then select a square.'
 text.START_REASON = 'Select or skip the reward before the battle.'
 text.UPGRADES_HINT = 'Upgrades apply to each new run.'
 
--- The text of the connection to the core. The web game has no core, thus these strings are new.
+-- The text of the connection to the core.
 text.NET = {
   starting = 'The game starts the core.',
   connecting = 'The game connects to the core.',
@@ -75,7 +75,7 @@ text.NET = {
   retry = 'Attempt %d',
 }
 
--- The warnings about the saved data. The web game has no core, thus these strings are new.
+-- The warnings about the saved data.
 local SAVED = { meta = 'crowns and upgrades', run = 'run' }
 local PROBLEM = {
   unreadable = 'The core cannot read the saved %s.',

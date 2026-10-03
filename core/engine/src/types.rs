@@ -76,7 +76,7 @@ impl Kind {
         self as usize
     }
 
-    /// The letter of the kind in the TypeScript engine: p, n, b, r, q, or k.
+    /// The letter of the kind: p, n, b, r, q, or k.
     pub const fn letter(self) -> char {
         match self {
             Kind::Pawn => 'p',

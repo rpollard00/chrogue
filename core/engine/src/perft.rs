@@ -1,5 +1,5 @@
 //! Perft: the number of move sequences of a given length. The tests compare it with the known
-//! counts of chess positions, and the differential test compares it with the TypeScript engine.
+//! counts of chess positions.
 
 use crate::movegen::{in_check, pseudo_moves};
 use crate::state::State;

@@ -1,6 +1,5 @@
 //! The data of the roguelite layer (`Meta`, `Run`, `Unit`, `Enemy`, `Offer`) and the life of a
-//! run: its start, the enemy of each floor, the camp actions, and its end. This module mirrors
-//! `army.ts`, `floors.ts`, `offers.ts`, `run.ts`, and `upgrades.ts` in `src/game/`.
+//! run: its start, the enemy of each floor, the camp actions, and its end.
 
 use std::collections::BTreeMap;
 
@@ -396,7 +395,7 @@ pub fn generate_enemy(floor: usize, dice: &mut Dice, barred: &[RelicId]) -> Enem
             _ => vec![52, 51, 53, 50, 54, 49, 55, 48],
         }
     };
-    // The TypeScript game shuffles the squares of all kinds before it places the pieces.
+    // The dice shuffle the squares of each kind first, then the pieces get their squares.
     let homes: Vec<Vec<Square>> = [Kind::Rook, Kind::Knight, Kind::Bishop, Kind::Queen, Kind::Pawn]
         .into_iter()
         .map(|kind| squares(kind, dice))

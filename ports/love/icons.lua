@@ -1,4 +1,4 @@
--- The icon set of src/ui/icons.ts: each icon is a line drawing on a grid of 24 units, as an SVG path.
+-- The icon set: each icon is a line drawing on a grid of 24 units, as an SVG path.
 -- This module reads the path data and draws the lines. To add an icon, add its path.
 local lg = love.graphics
 
@@ -21,7 +21,7 @@ local PATHS = {
   eye = 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6z',
 }
 
--- The art of each upgrade, as UPGRADE_ART in src/ui/icons.ts: a piece, or an icon.
+-- The art of each upgrade: a piece, or an icon.
 icons.UPGRADE_ART = {
   pawn = { kind = 'piece', type = 'p' },
   gold = { kind = 'icon', id = 'chest' },
@@ -148,7 +148,7 @@ icons.parse = parse
 local parsed = {}
 
 -- Draws an icon with its center at a point. `size` is the width of the 24 unit grid. The line has a width of 2 grid units
--- and round ends, as in the web game. Set the color before the call.
+-- and round ends. Set the color before the call.
 function icons.draw(id, cx, cy, size)
   local lines = parsed[id]
   if not lines then
@@ -170,7 +170,7 @@ function icons.draw(id, cx, cy, size)
 end
 
 local crown
--- The crown of the crowns: a solid shape, as the solid icons of the currencies in the web game.
+-- The crown of the crowns: a solid shape.
 function icons.crown(cx, cy, size)
   crown = crown or love.math.triangulate(4, 18, 20, 18, 21, 8, 16, 12, 12, 5, 8, 12, 3, 8)
   lg.push()

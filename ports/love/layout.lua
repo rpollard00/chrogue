@@ -1,9 +1,9 @@
--- The set layout of the battle on a wide screen. The stage is 80 by 45 units, and 1 unit is 1rem of the web game.
+-- The set layout of the battle on a wide screen. The stage is 80 by 45 units.
 -- Each area has a set position and a set size. The content and the state of the battle do not change this table.
--- The values come from the wide battle layout in style.css. A measurement of the web game at 1280 by 720 gave the same values.
+-- The design size of the stage is 1280 by 720 pixels. At this size, 1 unit is 16 pixels.
 local layout = { stage = { w = 80, h = 45 } }
 
--- 1 CSS pixel in units. The web game has 16 pixels in 1rem at the design size.
+-- 1 pixel of the design size, in units.
 function layout.px(n) return n / 16 end
 
 local function rect(x, y, w, h) return { x = x, y = y, w = w, h = h } end
@@ -27,7 +27,7 @@ layout.me = {
   medal = rect(24.25, 37.65, 2.6, 2.6),
   name = rect(27.75, 37.4, 14, 1.52),
   lamp = rect(27.75, 38.92, 14, 1.57),
-  -- In the web game, the purse becomes wider when it shows the gold from captures. Here it has the size of its largest content.
+  -- The purse has the size of its largest content: the gold, and the gold from captures.
   purse = rect(42.75, 37.65, 13, 2.6),
   stash = rect(24.25, 41.1, 4.4, 2.6),
   -- The fan has space for the 10 relics of the game.
@@ -42,9 +42,8 @@ layout.result = { w = 22.5, pad = 1.25 }
 layout.edge = layout.px(8)
 
 --[[
-  The other screens. The values come from the web game at 1280 by 720, where 1rem is 16 pixels and the window is
-  80 by 45 rem. Where the web game gives an area the size of its content, this table gives the area the size of its
-  largest content (DESIGN.md, "The first rule: a set layout"). The comments name these areas.
+  The other screens. An area with content that changes has the size of its largest content (DESIGN.md, "The first
+  rule: a set layout"). The comments name these areas.
 ]]
 
 -- The menu of a screen between runs: a raised bar, the primary key with the full width, and two keys in a row.
@@ -63,12 +62,11 @@ layout.title = {
   tagline = rect(20, 17.69, 40, 1.5),
   menu = menu(20.58),
   -- The wells have the width of their largest value: 4 digits of crowns, "8 of 8 floors", and 4 digits of runs.
-  -- In the web game, each well has the width of its value.
   stats = { y = 30.78, h = 3.33, wells = { rect(28.7, 30.78, 6.6, 3.33), rect(36.0, 30.78, 8.6, 3.33), rect(45.3, 30.78, 6.0, 3.33) } },
 }
 
--- The end of a run. In the web game, the column moves up or down with the number of rows of the tally.
--- Here, the column has the positions of a won run, the largest content, and the tally well keeps its height.
+-- The end of a run. The column has the positions of a won run, the largest content, and the tally well keeps its
+-- height.
 layout.over = {
   emblem = rect(37.98, 6.93, 4.03, 4.5),
   heading = rect(10, 12.83, 60, 3),
@@ -80,7 +78,7 @@ layout.over = {
 
 layout.upgrades = {
   heading = rect(10, 1.5, 30, 3),
-  -- The purse has the width of 3 digits of crowns. In the web game, it has the width of its value.
+  -- The purse has the width of 3 digits of crowns.
   purse = rect(64.4, 1.7, 5.6, 2.6),
   board = rect(10, 5.25, 38.25, 34.9),
   boardPad = 0.8, slotGap = 0.6,
@@ -114,12 +112,11 @@ layout.camp = {
     kicker = rect(6.85, 2.56, 13, 0.99),
     name = rect(6.85, 3.55, 13, 1.52),
     sub = rect(6.85, 5.07, 13, 1.2),
-    -- The fan has space for the two traits of the last boss. In the web game, the well moves when the enemy has traits.
+    -- The fan has space for the two traits of the last boss.
     fan = rect(20.3, 3.26, 4.05, 2.3),
-    -- The well has space for the 16 pieces of the last enemy (16 glyphs of 1.8rem with a gap of 0.1rem, and the padding).
-    -- In the web game, it has the width of its pieces.
+    -- The well has space for the 16 pieces of the last enemy (16 glyphs of 1.8 units with a gap of 0.1 units, and the padding).
     well = rect(25.6, 3.11, 28.6, 2.6),
-    -- The start key keeps its place when the text below it goes. In the web game, the key moves down.
+    -- The start key keeps its place when the text below it goes.
     start = rect(64.1, 2.25, 13.8, 3),
     reason = rect(61.94, 5.56, 15.96, 1.2),
   },
@@ -139,7 +136,7 @@ layout.camp = {
     homes = rect(20.6, 35.06, 30, 7.88),
     kicker = rect(51.85, 37.16, 18, 0.99),
     fan = rect(51.85, 38.55, 18.3, 2.3),
-    -- The purse has the width of 4 digits of gold. In the web game, it has the width of its value.
+    -- The purse has the width of 4 digits of gold.
     purse = rect(71.5, 37.7, 6.4, 2.6),
   },
 }

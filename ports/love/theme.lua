@@ -1,4 +1,4 @@
--- The colors and the typefaces. The colors are the custom properties of :root in style.css.
+-- The colors and the typefaces.
 local theme = {}
 
 --[[
@@ -85,8 +85,8 @@ theme.color = {
   flash = rgba(217, 164, 65, 0.6),
 }
 
--- The display typeface is the one of the web game (Fira Sans Condensed ExtraBold). The web game uses the system
--- typeface for body text. The port uses Fira Sans. The pieces are the chess glyphs of DejaVu Sans, as in the web game.
+-- The display typeface is Fira Sans Condensed ExtraBold. Body text uses Fira Sans. The pieces are the chess glyphs of
+-- DejaVu Sans.
 local FILES = {
   display = 'fonts/FiraSansCondensed-ExtraBold.ttf',
   body = 'fonts/FiraSans-Regular.ttf',

@@ -1,5 +1,5 @@
 --[[
-  The camp: the port of viewCamp in src/ui/views/camp.ts. One table: the next enemy and the start key at the top, the
+  The camp. One table: the next enemy and the start key at the top, the
   reward shelf and the shop shelf in the middle, and the army, the relics, and the purse at the bottom.
   The core has the rules of the camp. This module keeps the selection of a home square and the motion of each action.
 ]]
