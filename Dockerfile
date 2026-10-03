@@ -1,14 +1,8 @@
-FROM oven/bun:1.4.2 AS build
-WORKDIR /build
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
-COPY index.html style.css vite.config.ts tsconfig.json ./
-COPY src/ src/
-RUN bun run build
-
+# The image serves the web build (ports/web). ports/web/build.sh makes the files on the workstation: the build needs
+# the Emscripten SDK and Rust, and this image has only the server.
 FROM busybox:1.37.0
 COPY httpd.conf /etc/httpd.conf
-COPY --from=build /build/dist/ /www/
+COPY ports/web/dist/ /www/
 USER 65534:65534
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]

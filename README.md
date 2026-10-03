@@ -76,6 +76,27 @@ The content is in `core/game/src/content.rs`.
 
 Saved data keeps relic ids and upgrade ids. If you remove an id, the core removes it from saved data when it loads the data.
 
+## Deploy to Unraid
+
+The container on the Unraid server has the web build.
+
+Run `bun run deploy:unraid`. The command does these steps without a confirmation prompt:
+
+1. It runs the tests of the core (`cargo test --release`) and builds the web build (`ports/web/build.sh`) on this workstation. It does not run the test of the web build, which takes some minutes.
+2. It builds the image on this workstation. The image has BusyBox `httpd` and the files of `ports/web/dist`.
+3. It sends the image to `root@media.media` through SSH. It does not use a registry.
+4. It replaces the container `chrogue` on network `br0` at `192.168.88.13`, port 80.
+5. It makes sure that the server gives the page and `love.wasm`.
+
+The container name is always `chrogue`. If a container with that name exists and this script did not make it, the deployment stops.
+To change the target, set `CHROGUE_SSH_TARGET`, `CHROGUE_NETWORK`, or `CHROGUE_ADDRESS`.
+
+The saved data of a player is in the browser of the player, for the address of the game. The web build does not read the saved data of the TypeScript game.
+
+The web build has only the wide layout. The TypeScript game also had a layout for a phone.
+
+`Dockerfile`, `httpd.conf`, and `scripts/deploy-unraid` are the files of the deployment.
+
 ## The browser game (deprecated)
 
 The TypeScript game in `src/` is the first version of Chrogue. The core came from it. Do not add features to it.
@@ -90,7 +111,7 @@ The project uses Bun and Vite.
 2. Run `bun run dev`.
 3. Open `http://localhost:5188`.
 
-`bun run build` writes the production files to `dist/`. `bun run preview` serves those files.
+`bun run build` writes the production files to `dist/`. `bun run preview` serves those files. The deployment does not use them: the container has the web build.
 
 ### See the animations
 
@@ -119,22 +140,11 @@ The menu has three sections:
 
 The game applies the Offers section only while the menu is on the page.
 
-A deployed game shows the menu only when the address has `?debug`.
+A production build shows the menu only when the address has `?debug`.
 
 ### Run the tests
 
 Run `bun test`. Run `bun run check` for the TypeScript type check.
-
-### Deploy to Unraid
-
-Run `bun run deploy:unraid`. The command does these steps without a confirmation prompt:
-
-1. It runs the type check and the tests, and builds the image on this workstation.
-2. It sends the image to `root@media.media` through SSH. It does not use a registry.
-3. It replaces the container `chrogue` on network `br0` at `192.168.88.13`, port 80.
-
-The container name is always `chrogue`. If a container with that name exists and this script did not make it, the deployment stops.
-To change the target, set `CHROGUE_SSH_TARGET`, `CHROGUE_NETWORK`, or `CHROGUE_ADDRESS`.
 
 ### Structure
 
@@ -159,7 +169,5 @@ Saved data keeps relic ids and upgrade ids. If you remove an id, `src/game/stora
 
 ### Files
 
-- `Dockerfile`, `httpd.conf`: The container image. Bun and Vite build the files. BusyBox `httpd` serves them.
-- `scripts/deploy-unraid`: The deployment script.
 - `test/engine.test.ts`: Perft counts, movement rules, battle results, and AI checks.
 - `test/game.test.ts`: Relics, upgrades, offers, battle results in a run, and saved data.

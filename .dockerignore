@@ -1,11 +1,5 @@
 **
 !Dockerfile
 !httpd.conf
-!package.json
-!bun.lock
-!vite.config.ts
-!tsconfig.json
-!index.html
-!style.css
-!src/
-!src/**
+!ports/web/dist/
+!ports/web/dist/**

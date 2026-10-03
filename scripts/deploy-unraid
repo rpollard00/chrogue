@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Builds the image on this workstation and replaces the chrogue container on the Unraid server.
+# Builds the web build (ports/web) and its image on this workstation, and replaces the chrogue container on the
+# Unraid server.
 # The script sends the image through SSH. It does not use a registry.
 set -euo pipefail
 
@@ -13,8 +14,9 @@ cd "$(dirname "$0")/.."
 image="$NAME:$(date -u +%Y%m%d%H%M%S)"
 remote() { ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 "$SSH_TARGET" "$@"; }
 
-bun run check
-bun test
+# The tests of the core: the rules of the game that the page has.
+(cd core && cargo test --release)
+ports/web/build.sh
 docker build --platform linux/amd64 --label "$LABEL" -t "$image" .
 
 # A container with this name that this script did not make stops the deployment.
@@ -36,7 +38,9 @@ remote "docker run -d --name $NAME --label $LABEL --restart unless-stopped \
 remote "docker images $NAME --format '{{.Repository}}:{{.Tag}}' | grep -vxF $image | xargs -r docker rmi" >/dev/null || true
 
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-  if curl -fsS --max-time 3 "http://$ADDRESS/" -o /dev/null; then
+  # The page, and the module of the game with the MIME type of httpd.conf.
+  if curl -fsS --max-time 3 "http://$ADDRESS/" -o /dev/null &&
+    [[ $(curl -fsS --max-time 10 "http://$ADDRESS/love.wasm" -o /dev/null -w '%{content_type}') == application/wasm ]]; then
     echo "Deployed $image as container $NAME at http://$ADDRESS"
     exit 0
   fi
