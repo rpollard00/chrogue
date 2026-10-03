@@ -96,6 +96,10 @@ fn scripted_session() -> Seen {
     }
     s.send(json!({ "cmd": "debug_set_trait", "relic": "sidestep", "on": true }));
     s.send(json!({ "cmd": "debug_bar_relic", "relic": "longLeap", "barred": true }));
+    s.send(json!({ "cmd": "debug_set_seed", "seed": 7 }));
+    s.send(json!({ "cmd": "debug_tune", "floor": 5, "level": 2, "budget": 9 }));
+    s.send(json!({ "cmd": "debug_tune", "kind": "q", "min_floor": 4 }));
+    s.send(json!({ "cmd": "debug_state" }));
 
     // A castle, an en passant capture of a unit (Second Wind returns it), a promotion that
     // captures a second unit, and a capture with check.

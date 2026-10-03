@@ -286,7 +286,8 @@ const fn floor(name: &'static str, budget: u32, traits: usize, boss: bool) -> Fl
     FloorDef { name, budget, traits, boss }
 }
 
-/// The AI of floor `n` is `Level::floor(n)` of the engine.
+/// The AI of floor `n` is level `n` of the engine. The tuning of a session can change the budget,
+/// the traits, and the level of a floor (`tuning.rs`).
 pub static FLOORS: [FloorDef; 8] = [
     floor("Border Patrol", 5, 0, false),
     floor("Scouts", 9, 0, false),
@@ -303,9 +304,11 @@ pub fn floor_def(floor: usize) -> &'static FloorDef {
     &FLOORS[floor.clamp(1, FLOORS.len()) - 1]
 }
 
-/// The most traits that the enemy can have: the traits of the largest boss.
+/// The most traits that the enemy can have: the trait fan of the client has space for 2 traits.
+pub const TRAITS_MAX: usize = 2;
+
 pub fn traits_max() -> usize {
-    FLOORS.iter().map(|f| f.traits).max().unwrap_or(0)
+    TRAITS_MAX
 }
 
 // ---- Pieces, prices, and constants ----
@@ -347,6 +350,8 @@ pub const fn piece_price(kind: Kind) -> u64 {
 }
 
 pub const RELIC_PRICE: u64 = 16;
+/// The most relics of a run: the relic fan of the client has space for 10 medals.
+pub const RELICS_MAX: usize = 10;
 pub const REROLL_COST: u64 = 3;
 pub const WIN_CROWNS: u64 = 5;
 pub const ARMY_MAX: usize = 16;
@@ -375,23 +380,21 @@ pub const RECRUITS: [Recruit; 5] = [
 pub const DRAFT_RELIC_WEIGHT: f64 = 2.0;
 pub const DRAFT_GOLD_WEIGHT: f64 = 2.0;
 
-/// The weight of each kind in an enemy army.
-pub const fn enemy_weight(kind: Kind) -> f64 {
-    match kind {
-        Kind::Pawn => 4.0,
-        Kind::Knight | Kind::Bishop => 2.0,
-        Kind::Rook => 1.5,
-        Kind::Queen => 1.0,
-        Kind::King => 0.0,
-    }
+/// A kind in an enemy army: its weight, the most pieces of the kind (the number of its home
+/// squares), and the first floor that has it.
+pub struct EnemyKind {
+    pub kind: Kind,
+    pub weight: f64,
+    pub cap: u32,
+    pub min_floor: usize,
 }
 
-/// The most pieces of a kind in an enemy army.
-pub const fn enemy_cap(kind: Kind, floor: usize) -> u32 {
-    match kind {
-        Kind::Pawn => 8,
-        Kind::Knight | Kind::Bishop | Kind::Rook => 2,
-        Kind::Queen => (floor >= 5) as u32,
-        Kind::King => 0,
-    }
-}
+/// The kinds of an enemy army, in the order of `RECRUIT_KINDS`. The tuning of a session can
+/// change these numbers (`tuning.rs`).
+pub const ENEMY_KINDS: [EnemyKind; 5] = [
+    EnemyKind { kind: Kind::Pawn, weight: 4.0, cap: 8, min_floor: 1 },
+    EnemyKind { kind: Kind::Knight, weight: 2.0, cap: 2, min_floor: 1 },
+    EnemyKind { kind: Kind::Bishop, weight: 2.0, cap: 2, min_floor: 1 },
+    EnemyKind { kind: Kind::Rook, weight: 1.5, cap: 2, min_floor: 1 },
+    EnemyKind { kind: Kind::Queen, weight: 1.0, cap: 1, min_floor: 5 },
+];

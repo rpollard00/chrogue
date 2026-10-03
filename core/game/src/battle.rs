@@ -4,6 +4,7 @@ use crate::chess::{self, Color, Kind, Move, Outcome, Piece, Placement, Special, 
 use crate::content::{self, Effect, FLOORS, RelicId};
 use crate::random::{Dice, Stream};
 use crate::run::{CONSCRIPT_ID, ENEMY_ID_BASE, Run, UnitId};
+use crate::tuning::Tuning;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Bonus {
@@ -279,7 +280,7 @@ impl Battle {
     }
 
     /// Applies a completed battle to the run (`settleBattle`). Returns None if the battle has no result.
-    pub fn settle(&self, run: &mut Run, barred: &[RelicId]) -> Option<Next> {
+    pub fn settle(&self, run: &mut Run, tuning: &Tuning) -> Option<Next> {
         let next = self.next(run)?;
         let result = self.result.as_ref()?;
         if next == Next::Lost {
@@ -294,7 +295,7 @@ impl Battle {
             }
         }
         if next == Next::Camp {
-            run.enter_camp(result.outcome.winner() == Some(Color::White), barred);
+            run.enter_camp(result.outcome.winner() == Some(Color::White), tuning);
         }
         Some(next)
     }

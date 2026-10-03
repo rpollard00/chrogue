@@ -61,7 +61,7 @@ A response is one of these two objects:
 - `ok`: true if the command had an effect.
 - `events`: the things that the command did, in order. See [Events](#events).
 - `view`: the full data of the current screen, after the command. See [Views](#views). It is a snapshot. A client can draw the screen from it with no other data.
-- `data`: only for `hello`, and for `view` with `"run": true` in a debug session.
+- `data`: only for `hello`, for `view` with `"run": true` in a debug session, and for the debug commands (`data.debug`, see [Debug state](#debug-state)).
 - `error`: the `code` is for the client, and the `message` is for a person.
 
 The core never stops on a bad request. A refused command changes nothing: the view in the error response is the view from before the request.
@@ -144,10 +144,17 @@ The client owns the pause before the enemy move. The LÖVE client waits 350 ms a
 
 These commands work only in a session with `--debug`. Else the error is `debug_disabled`. They change the meta, the run, and the offers at no cost, for a test or for the preparation of a position. A change of the meta or of the run is saved immediately. If the screen is a battle with no result, the battle starts again. After the result, the change goes to the run after the battle (error `no_run` if the run ended), and the screen stays. Each change gives the event `debug_changed`.
 
+`debug_state`, `debug_set_seed`, `debug_tune`, and `debug_bar_relic` read or change the tuning: the debug settings of the session. They need no run. The table gives their effect on a battle. The tuning is not saved, and a new session starts with the defaults.
+
+Each successful debug command has the debug state in `data.debug` (see [Debug state](#debug-state)).
+
 A command that changes the pieces or their rules (`debug_set_army`, `debug_set_enemy`, `debug_add_unit`, `debug_remove_unit`, `debug_set_floor`, `debug_set_relic`, `debug_set_trait`) must leave a board that the engine can take as it is. Else the error is `bad_args` with a message that starts with `The board is not valid`, and the run does not change: two pieces on one square (two enemy pieces, or an enemy piece on the home square of a unit), or a side with no king or with two kings. An enemy piece on an empty home square is permitted. A start with the enemy king in check is permitted, as in the camp and in saved data (see [Open issues](#open-issues)). The pawn of Conscription goes to the first square of ranks 2 and 3 that no unit and no enemy piece has.
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
+| `debug_state` | | No change and no event. `data.debug` has the debug state. |
+| `debug_set_seed` | `seed`: 0 to 999999999, or `null` | Sets the seed of each new run of the session. `null` clears it: the session makes the seed of each new run again. The run in progress keeps its seed, and a battle does not start again. Event `debug_changed` (`what`: `seed`). |
+| `debug_tune` | One of these three: `reset` (true). `floor` (1 to 8) with one or more of `level` (1 to 8), `budget` (0 to 39), and `traits` (0 to 2). `kind` (`p`, `n`, `b`, `r`, `q`) with one or more of `cap` (0 to `cap_max`), `weight` (0 to 9, a fraction is permitted), and `min_floor` (1 to 8). | Changes the numbers of one floor or of one kind. `reset` sets each floor and each kind to the default. Error `bad_args`, and nothing changes: a value that is not in its range, no number to change, or more than one of `reset`, `floor`, and `kind`. Event `debug_changed` (`what`: `tuning`). If a number other than `level` changes, the run in progress gets a new enemy for its floor, the core saves the run, and a battle with no result starts again. With no run, only the tuning changes. A change of only `level` keeps the enemy and the battle. |
 | `debug_set_crowns` | `crowns` | Sets the crowns. |
 | `debug_set_upgrade` | `upgrade`, `level` | Sets the level of an upgrade at no cost. The level stays from 0 to the maximum level. |
 | `debug_set_floor` | `floor`: 1 to 8 | Moves the run to the floor and makes a new enemy for it. |
@@ -158,11 +165,26 @@ A command that changes the pieces or their rules (`debug_set_army`, `debug_set_e
 | `debug_set_relic` | `relic`, `on` | Adds or removes a relic of the player. |
 | `debug_set_trait` | `relic`, `on` | Adds or removes a trait of the enemy. The relic must have a text for the enemy. The enemy has at most `traits_max` traits (error `blocked`). |
 | `debug_set_enemy` | `pieces`: a list of `{"kind", "square"}`, `traits` (optional) | Replaces the enemy army. One king, distinct squares. |
-| `debug_bar_relic` | `relic`, `barred` | A barred relic is not a reward, not a shop item, and not a boss trait. The session keeps this set; it is not saved. |
+| `debug_bar_relic` | `relic`, `barred` | A barred relic is not a reward, not a shop item, and not a boss trait. The tuning keeps this set. A battle does not start again. |
 | `debug_set_shop` | `offers`: a list of offers | Replaces the shop items. An offer is `{"kind":"piece","type":"n"}`, `{"kind":"relic","id":"bounty"}`, or `{"kind":"gold","amount":12}`. |
 | `debug_set_draft` | `offers`: a list of offers, or `null` | Replaces the reward cards. In the camp, the reward shelf shows them. |
 | `debug_enemy_move` | `from`, `to`, `promo` | Plays this enemy move in the phase `enemy`, instead of the AI. |
-| `debug_ai_move` | `level` (optional, 1 to 8) | The AI plays for the side that has the move, at the level of a floor. The default is the floor of the run. A bot uses it to play White. |
+| `debug_ai_move` | `level` (optional, 1 to 8) | The AI plays for the side that has the move at this level. The default is the AI level of the floor of the run. A bot uses it to play White. |
+
+### Debug state
+
+`data.debug` of `debug_state` and of each successful debug command has the tuning with its limits, and the numbers of the run and of the meta that a debug menu shows.
+
+- `seed`: the seed of each new run (`debug_set_seed`), or `null` if the session makes the seeds.
+- `run`: `null` with no run in progress. Else the run: `seed`, `floor`, `gold`, `relics` (the relic ids), and `traits` (the ids of the enemy traits). After a battle has its result, it is the run after the battle.
+- `meta`: `crowns`, and `upgrades`: an object with the level of each upgrade that the player has. Each key is an upgrade id (for example `pawn`).
+- `barred`: the ids of the barred relics (`debug_bar_relic`).
+- `floors`: 8 items, one for each floor: `number`, `name`, `level` (the AI level of the floor, 1 to 8), `level_name` (the name of that level), `budget` (the value of the enemy army), and `traits` (the number of boss traits).
+- `kinds`: 5 items, one for each of `p`, `n`, `b`, `r`, `q`: `kind`, `cap` (the most pieces of the kind in an enemy army), `cap_max` (the largest `cap`: the number of home squares of the kind), `weight` (the chance of the kind against the other kinds), and `min_floor` (the first floor that can have the kind).
+- `limits`: the largest value of `seed`, `level`, `budget`, `traits`, and `weight`, and `relics` (the most relics of a run).
+- `tuned`: true if a floor or a kind differs from the default.
+
+The core makes the enemy army of a floor from these numbers and the seed of the run. It adds one piece at a time until no kind fits in the remaining budget. A kind fits if the floor is `min_floor` or higher, the army has fewer pieces of the kind than `cap`, and the value of the piece is not more than the remaining budget. The chance of each kind that fits is its part of the weights. A kind with a `cap` of 0 or a `weight` of 0 is not in an army. The AI of `enemy_move` on a floor is the `level` of the floor.
 
 ## Views
 
@@ -297,6 +319,8 @@ The content text (the names and texts of relics, upgrades, floors, pieces, and o
   - `pieces`: `kind`, `name`, `value` (the gold of a capture), and `price` (in the shop, before upgrades).
   - `recruits`: `kind`, `weight`, `min_floor` of the pieces in rewards and in the shop.
   - `relic_price`, `reroll_cost`, `win_crowns`, `army_max`, `upgrade_slots`, `upgrade_name_max`, `traits_max`, `relic_count`.
+
+The content of `hello` is the default content. The tuning of a debug session does not change it.
 
 The format of the saved data (`data.run` of `view`, and `run` of `run_end`) has these fields: `seed` (the seed of the run), `floor`, `gold`, `army` (`id`, `type`, `home`), `nextId`, `relics`, `enemy` (`pieces` with `type` and `square`, and `traits`), `phase`, `draft`, `shop`, and `rolls` (the number of `reroll` commands in this camp visit). An offer there has `kind` and `type`, `id`, or `amount`.
 

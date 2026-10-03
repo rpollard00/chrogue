@@ -79,15 +79,18 @@ pub fn in_check(state: &State, color: Color) -> bool {
     engine::in_check(state, color)
 }
 
-/// The move of an AI level (1 to 8) for the side that has the move.
+/// The number of AI levels.
+pub const LEVELS: usize = engine::Level::LADDER.len();
+
+/// The move of an AI level (1 to `LEVELS`) for the side that has the move.
 pub fn ai_move(state: &mut State, level: usize, seed: u64) -> Option<Move> {
-    let level = engine::Level::LADDER[level.clamp(1, engine::Level::LADDER.len()) - 1];
+    let level = engine::Level::LADDER[level.clamp(1, LEVELS) - 1];
     engine::choose_move(state, &level, seed).map(|result| result.mv)
 }
 
-/// The name of the AI level of a floor.
-pub fn level_name(floor: usize) -> &'static str {
-    engine::Level::LADDER[floor.clamp(1, engine::Level::LADDER.len()) - 1].name
+/// The name of an AI level.
+pub fn level_name(level: usize) -> &'static str {
+    engine::Level::LADDER[level.clamp(1, LEVELS) - 1].name
 }
 
 pub const fn kind_letter(kind: Kind) -> char {

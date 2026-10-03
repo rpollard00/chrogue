@@ -310,16 +310,17 @@ Run the commands from the `core/` directory, unless the command shows a differen
 
 ### Structure
 
-- `game/src/content.rs`: The relics, upgrades, floors, prices, and constants as data.
+- `game/src/content.rs`: The relics, upgrades, floors, enemy kinds, prices, and constants as data.
 - `game/src/run.rs`: `Meta`, `Run`, `Unit`, `Enemy`, `Offer`, the enemy of each floor, rewards, the shop, and upgrades.
 - `game/src/random.rs`: The dice, and the streams of random numbers of a run.
+- `game/src/tuning.rs`: The tuning: the debug settings of a session. It has the fixed seed of new runs, the barred relics, the budget, the traits, and the AI level of each floor, and the cap, the weight, and the first floor of each kind in an enemy army. Its defaults come from the content.
 - `game/src/battle.rs`: One battle on the engine: relic effects, gold, lost and rescued units, the reward, and `settle`.
 - `game/src/save.rs`: The `Storage` trait, a file storage (with the lock of the directory and safe writes) and a memory storage, and the check of saved data. A file that the core cannot use is set aside as `<name>.bad-<unix time>`, never written over.
 - `game/src/session.rs`: `Screen`, `Session::command`, and the commands.
 - `game/src/view.rs`: The views of the screens and the content tables of `hello`.
 - `game/src/protocol.rs`: The names of the commands, events, and error codes.
 - `game/src/chess.rs`: The one module that calls the engine. A change of the engine API changes only this file.
-- `game/tests/`: The game layer (`game.rs`), saved data (`saved.rs`), random requests (`fuzz.rs`), and the check of `PROTOCOL.md` (`protocol_doc.rs`).
+- `game/tests/`: The game layer (`game.rs`), saved data (`saved.rs`), the tuning (`tuning.rs`), random requests (`fuzz.rs`), and the check of `PROTOCOL.md` (`protocol_doc.rs`).
 - `server/src/main.rs`: The line transport: the command line, the auth line, the takeover by a newer client, the timeouts, and the idle exit. `server/tests/tcp.rs` starts the binary and tests TCP, stdio, the lock, and the command line.
 - `embed/include/chrogue_core.h`: The C interface: `chrogue_open`, `chrogue_open_error`, `chrogue_command`, and `chrogue_close`.
 - `embed/src/lib.rs`: The functions of the C interface. They move text to `Session::command` and back, as the server does for a socket. `embed/tests/c_interface.rs` calls the functions as a client does.
@@ -332,7 +333,8 @@ To add a relic, add one entry to `RELICS` in `game/src/content.rs`. A new kind o
 
 ### Details of the behavior of the game layer
 
-- The AI of floor `n` is `Level::floor(n)` of the engine.
+- The AI of floor `n` is the level of the floor in the tuning. The default is `Level::floor(n)` of the engine. `debug_tune` gives a floor another level of `Level::LADDER`.
+- The enemy army of a floor comes from the tuning too: the budget and the number of traits of the floor, and the cap, the weight, and the first floor of each kind. The defaults are `FLOORS` and `ENEMY_KINDS` in `game/src/content.rs`.
 - A run has a seed from 0 to 999999999. Each random result of the run has dice of its own (`Dice::stream`) from the seed, the kind of the result, and two numbers: the enemy of a floor (the floor), the reward before a floor (the floor), the shop before a floor (the floor and the number of rerolls), and the move of the AI (the floor and the number of moves that the battle played). Thus the same run seed gives the same armies, rewards, and shop items, also when the battles have different numbers of moves. The dice of the session (`--seed`) make only the seed of each new run.
 - Saved data: a unit id is at most 19999 and appears one time, the seed of a run is at most 999999999, a relic id appears one time in a list, a count is at most 2^53 - 1, and the board must be valid (no two pieces on one square, and one king on each side). A file that the core cannot use is kept as `<name>.bad-<unix time>`. The comment of `game/src/save.rs` has the list.
 - The pawn of Conscription does not go to the square of an enemy piece (only a debug enemy can be on rank 2 or 3).

@@ -10,6 +10,7 @@ use crate::content::{
 };
 use crate::protocol::{Code, Fail, fail};
 use crate::random::{Dice, Stream};
+use crate::tuning::Tuning;
 
 /// The id of a unit of the army. Units have the ids from 1 to `UNIT_ID_MAX`.
 pub type UnitId = u16;
@@ -249,7 +250,7 @@ pub fn free_home(army: &[Unit], kind: Kind) -> Option<Square> {
 }
 
 impl Run {
-    pub fn new(meta: &Meta, seed: u64, barred: &[RelicId]) -> Run {
+    pub fn new(meta: &Meta, seed: u64, tuning: &Tuning) -> Run {
         let army = base_army();
         let mut run = Run {
             seed,
@@ -258,7 +259,7 @@ impl Run {
             next_id: army.len() as UnitId + 1,
             army,
             relics: Vec::new(),
-            enemy: generate_enemy(seed, 1, barred),
+            enemy: generate_enemy(seed, 1, tuning),
             phase: Phase::Battle,
             draft: None,
             shop: Vec::new(),
@@ -319,12 +320,12 @@ impl Run {
     /// Moves the run to the camp before its next floor.
     ///
     /// A draw on the last floor stays on the last floor.
-    pub fn enter_camp(&mut self, with_draft: bool, barred: &[RelicId]) {
+    pub fn enter_camp(&mut self, with_draft: bool, tuning: &Tuning) {
         self.floor = (self.floor + 1).min(FLOORS.len());
-        self.enemy = generate_enemy(self.seed, self.floor, barred);
-        self.draft = if with_draft { Some(roll_draft(self, barred)) } else { None };
+        self.enemy = generate_enemy(self.seed, self.floor, tuning);
+        self.draft = if with_draft { Some(roll_draft(self, tuning)) } else { None };
         self.rolls = 0;
-        self.shop = roll_shop(self, barred);
+        self.shop = roll_shop(self, tuning);
         self.phase = Phase::Camp;
     }
 
@@ -358,13 +359,13 @@ impl Run {
         Ok(offer)
     }
 
-    pub fn reroll_shop(&mut self, barred: &[RelicId]) -> Result<(), Fail> {
+    pub fn reroll_shop(&mut self, tuning: &Tuning) -> Result<(), Fail> {
         if self.gold < REROLL_COST {
             return fail(Code::NotAffordable, format!("New items cost {REROLL_COST} gold"));
         }
         self.gold -= REROLL_COST;
         self.rolls = self.rolls.saturating_add(1);
-        self.shop = roll_shop(self, barred);
+        self.shop = roll_shop(self, tuning);
         Ok(())
     }
 }
@@ -372,27 +373,32 @@ impl Run {
 // ---- Enemies and offers ----
 
 /// The relics that the game can offer as a reward or in the shop.
-pub fn relic_pool(barred: &[RelicId]) -> Vec<RelicId> {
-    RelicId::all().filter(|id| !barred.contains(id)).collect()
+pub fn relic_pool(tuning: &Tuning) -> Vec<RelicId> {
+    RelicId::all().filter(|id| !tuning.barred.contains(id)).collect()
 }
 
 /// The relics that the game can give to a boss as a trait.
-pub fn trait_pool(barred: &[RelicId]) -> Vec<RelicId> {
-    relic_pool(barred).into_iter().filter(|id| id.is_trait()).collect()
+pub fn trait_pool(tuning: &Tuning) -> Vec<RelicId> {
+    relic_pool(tuning).into_iter().filter(|id| id.is_trait()).collect()
 }
 
-/// The enemy of a floor of the run with this seed.
-pub fn generate_enemy(seed: u64, floor: usize, barred: &[RelicId]) -> Enemy {
+/// The enemy of a floor of the run with this seed. The budget and the traits of the floor, and the
+/// cap, the weight, and the first floor of each kind come from the tuning. A kind with a weight
+/// of 0 is not in the army.
+pub fn generate_enemy(seed: u64, floor: usize, tuning: &Tuning) -> Enemy {
     let dice = &mut Dice::stream(seed, Stream::Enemy, floor as u64, 0);
-    let spec = content::floor_def(floor);
+    let spec = tuning.floor(floor);
     let mut counts = [0u32; 5];
     let mut budget = spec.budget;
     loop {
         let pool: Vec<(usize, f64)> = RECRUIT_KINDS
             .iter()
+            .zip(&tuning.kinds)
             .enumerate()
-            .filter(|&(i, &kind)| counts[i] < content::enemy_cap(kind, floor) && content::gold_value(kind) <= budget)
-            .map(|(i, &kind)| (i, content::enemy_weight(kind)))
+            .filter(|&(i, (&kind, k))| {
+                floor >= k.min_floor && counts[i] < k.cap && k.weight > 0.0 && content::gold_value(kind) <= budget
+            })
+            .map(|(i, (_, k))| (i, k.weight))
             .collect();
         let Some(&i) = dice.pick_weighted(pool, 1).first() else { break };
         counts[i] += 1;
@@ -425,7 +431,7 @@ pub fn generate_enemy(seed: u64, floor: usize, barred: &[RelicId]) -> Enemy {
             pieces.push(EnemyPiece { kind, square: homes_of(kind)[n] });
         }
     }
-    let mut traits = dice.shuffle(trait_pool(barred));
+    let mut traits = dice.shuffle(trait_pool(tuning));
     traits.truncate(spec.traits);
     Enemy { pieces, traits }
 }
@@ -434,24 +440,24 @@ fn piece_pool(floor: usize) -> Vec<(Offer, f64)> {
     RECRUITS.iter().filter(|r| floor >= r.min_floor).map(|r| (Offer::Piece(r.kind), r.weight)).collect()
 }
 
-fn new_relics(run: &Run, n: usize, dice: &mut Dice, barred: &[RelicId]) -> Vec<Offer> {
-    let pool: Vec<RelicId> = relic_pool(barred).into_iter().filter(|id| !run.relics.contains(id)).collect();
+fn new_relics(run: &Run, n: usize, dice: &mut Dice, tuning: &Tuning) -> Vec<Offer> {
+    let pool: Vec<RelicId> = relic_pool(tuning).into_iter().filter(|id| !run.relics.contains(id)).collect();
     dice.shuffle(pool).into_iter().take(n).map(Offer::Relic).collect()
 }
 
 /// The three free rewards after a win. `run.floor` is the floor that comes next.
-pub fn roll_draft(run: &Run, barred: &[RelicId]) -> Vec<Offer> {
+pub fn roll_draft(run: &Run, tuning: &Tuning) -> Vec<Offer> {
     let dice = &mut Dice::stream(run.seed, Stream::Draft, run.floor as u64, 0);
     let mut pool = piece_pool(run.floor);
-    pool.extend(new_relics(run, 2, dice, barred).into_iter().map(|offer| (offer, DRAFT_RELIC_WEIGHT)));
+    pool.extend(new_relics(run, 2, dice, tuning).into_iter().map(|offer| (offer, DRAFT_RELIC_WEIGHT)));
     pool.push((Offer::Gold(content::draft_gold(run.floor)), DRAFT_GOLD_WEIGHT));
     dice.pick_weighted(pool, 3)
 }
 
 /// The shop items of the camp before `run.floor`, after `run.rolls` rerolls.
-pub fn roll_shop(run: &Run, barred: &[RelicId]) -> Vec<Offer> {
+pub fn roll_shop(run: &Run, tuning: &Tuning) -> Vec<Offer> {
     let dice = &mut Dice::stream(run.seed, Stream::Shop, run.floor as u64, run.rolls as u64);
     let mut shop = dice.pick_weighted(piece_pool(run.floor), 2);
-    shop.extend(new_relics(run, 2, dice, barred));
+    shop.extend(new_relics(run, 2, dice, tuning));
     shop
 }

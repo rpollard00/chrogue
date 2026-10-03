@@ -5,13 +5,14 @@ use serde_json::{Value, json};
 use crate::battle::{Battle, BattlePhase, is_capture};
 use crate::chess::{self, Color, Kind, Move};
 use crate::content::{
-    self, ARMY_MAX, FLOORS, RECRUITS, RELIC_PRICE, RELICS, REROLL_COST, RelicId, UPGRADE_NAME_MAX, UPGRADE_SLOTS,
-    UPGRADES, UpgradeId, WIN_CROWNS,
+    self, ARMY_MAX, FLOORS, RECRUIT_KINDS, RECRUITS, RELIC_PRICE, RELICS, RELICS_MAX, REROLL_COST, RelicId, TRAITS_MAX,
+    UPGRADE_NAME_MAX, UPGRADE_SLOTS, UPGRADES, UpgradeId, WIN_CROWNS,
 };
 use crate::protocol::{Code, Command, EventKind, PROTOCOL_VERSION, gold_number};
-use crate::run::{Meta, Offer, Phase, Run, RunSummary};
+use crate::run::{Meta, Offer, Phase, Run, RunSummary, SEED_MAX};
 use crate::save::run_json;
 use crate::session::{Reward, Screen};
+use crate::tuning::{self, BUDGET_MAX, Tuning, WEIGHT_MAX};
 
 pub fn letter(kind: Kind) -> String {
     chess::kind_letter(kind).to_string()
@@ -261,6 +262,68 @@ pub fn view(screen: &Screen, meta: &Meta) -> Value {
 /// `"run": true` adds it, thus a test can read the run.
 pub fn run_data(screen: &Screen) -> Value {
     screen.run().map_or(Value::Null, run_json)
+}
+
+/// The debug state: the tuning with its limits, and the numbers of the run and of the meta that
+/// a debug menu shows. `debug_state` and each debug command give it in `data.debug`.
+pub fn debug_data(screen: &Screen, meta: &Meta, tuning: &Tuning) -> Value {
+    let keys = |ids: &[RelicId]| ids.iter().map(|id| id.key()).collect::<Vec<_>>();
+    let run = screen.run().map(|run| {
+        json!({
+            "seed": run.seed,
+            "floor": run.floor,
+            "gold": run.gold,
+            "relics": keys(&run.relics),
+            "traits": keys(&run.enemy.traits),
+        })
+    });
+    let upgrades: serde_json::Map<String, Value> =
+        meta.upgrades.iter().map(|(id, &level)| (id.key().to_string(), Value::from(level))).collect();
+    let floors: Vec<Value> = FLOORS
+        .iter()
+        .zip(&tuning.floors)
+        .enumerate()
+        .map(|(i, (def, floor))| {
+            json!({
+                "number": i + 1,
+                "name": def.name,
+                "level": floor.level,
+                "level_name": chess::level_name(floor.level),
+                "budget": floor.budget,
+                "traits": floor.traits,
+            })
+        })
+        .collect();
+    let kinds: Vec<Value> = RECRUIT_KINDS
+        .iter()
+        .zip(&tuning.kinds)
+        .map(|(&kind, k)| {
+            json!({
+                "kind": letter(kind),
+                "cap": k.cap,
+                "cap_max": tuning::cap_max(kind),
+                "weight": k.weight,
+                "min_floor": k.min_floor,
+            })
+        })
+        .collect();
+    json!({
+        "seed": tuning.seed,
+        "run": run,
+        "meta": { "crowns": meta.crowns, "upgrades": upgrades },
+        "barred": keys(&tuning.barred),
+        "floors": floors,
+        "kinds": kinds,
+        "limits": {
+            "seed": SEED_MAX,
+            "level": chess::LEVELS,
+            "budget": BUDGET_MAX,
+            "traits": TRAITS_MAX,
+            "weight": WEIGHT_MAX,
+            "relics": RELICS_MAX,
+        },
+        "tuned": tuning.tuned(),
+    })
 }
 
 /// The data of `hello`: the version, the names of the protocol, and the content tables.

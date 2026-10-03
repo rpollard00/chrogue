@@ -50,6 +50,19 @@ fn piece_kind(g: &mut Gen) -> &'static str {
     g.pick(&["k", "q", "r", "b", "n", "p"])
 }
 
+/// A `debug_tune` with numbers that are mostly in their ranges. The level stays, thus the AI of
+/// the first floors stays fast.
+fn tune(g: &mut Gen) -> Value {
+    match g.below(4) {
+        0 => json!({ "cmd": "debug_tune", "reset": true }),
+        1 => json!({ "cmd": "debug_tune", "floor": 1 + g.below(8), "budget": g.below(42), "traits": g.below(4) }),
+        _ => {
+            let (kind, weight) = (piece_kind(g), g.below(20) as f64 / 2.0);
+            json!({ "cmd": "debug_tune", "kind": kind, "cap": g.below(4), "weight": weight, "min_floor": 1 + g.below(8) })
+        }
+    }
+}
+
 /// A command that is valid for the view, when the view has one.
 fn valid(g: &mut Gen, view: &Value) -> Value {
     let screen = view["screen"].as_str().unwrap_or("");
@@ -89,7 +102,7 @@ fn valid(g: &mut Gen, view: &Value) -> Value {
         },
         "camp" => {
             let shop = view["shop"]["offers"].as_array().map_or(0, Vec::len);
-            match g.below(9) {
+            match g.below(10) {
                 0 => json!({ "cmd": "take_reward", "index": g.below(3) }),
                 1 => json!({ "cmd": "skip_reward" }),
                 2 => json!({ "cmd": "buy", "index": g.below(shop.max(1)) }),
@@ -100,6 +113,7 @@ fn valid(g: &mut Gen, view: &Value) -> Value {
                 }
                 5 => json!({ "cmd": "debug_set_gold", "gold": g.below(100) }),
                 6 => json!({ "cmd": "debug_add_unit", "kind": piece_kind(g) }),
+                7 => tune(g),
                 _ => json!({ "cmd": "start_battle" }),
             }
         }
@@ -112,8 +126,32 @@ fn any_command(g: &mut Gen) -> Value {
     let command = *g.pick(Command::ALL);
     let mut request = json!({ "cmd": command.name() });
     let names = [
-        "from", "to", "promo", "index", "unit", "square", "upgrade", "relic", "on", "barred", "level", "floor", "gold",
-        "crowns", "kind", "units", "pieces", "traits", "offers", "run",
+        "from",
+        "to",
+        "promo",
+        "index",
+        "unit",
+        "square",
+        "upgrade",
+        "relic",
+        "on",
+        "barred",
+        "level",
+        "floor",
+        "gold",
+        "crowns",
+        "kind",
+        "units",
+        "pieces",
+        "traits",
+        "offers",
+        "run",
+        "seed",
+        "reset",
+        "budget",
+        "cap",
+        "weight",
+        "min_floor",
     ];
     for _ in 0..g.below(4) {
         let name = *g.pick(&names);
@@ -134,7 +172,7 @@ fn any_command(g: &mut Gen) -> Value {
                 "traits" => json!([*g.pick(&["sidestep", "bounty", "forcedMarch", "nope"])]),
                 "upgrade" => json!(*g.pick(&["pawn", "gold", "bishop", "haggle", "scout", "x"])),
                 "relic" => json!(*g.pick(&["bounty", "secondWind", "kingKnight", "earlyPromo", "y"])),
-                "on" | "barred" | "run" => json!(g.chance(0.5)),
+                "on" | "barred" | "run" | "reset" => json!(g.chance(0.5)),
                 _ => json!(g.below(10)),
             },
         };
@@ -360,6 +398,7 @@ fn saved_files_and_debug_boards_that_are_not_valid_are_refused() {
                 3 => json!({ "cmd": "debug_set_relic", "relic": *g.pick(&RELIC_IDS), "on": g.chance(0.7) }),
                 13 => json!({ "cmd": "debug_add_unit", "kind": *g.pick(&["p", "n", "b", "r", "q"]) }),
                 21 => json!({ "cmd": "debug_set_floor", "floor": 1 + g.below(8) }),
+                5 => tune(&mut g),
                 // A debug board can start with no legal move for the player (see PROTOCOL.md).
                 _ if before["phase"] == json!("player") && before["moves"] == json!([]) => json!({ "cmd": "give_up" }),
                 _ => valid(&mut g, &before),

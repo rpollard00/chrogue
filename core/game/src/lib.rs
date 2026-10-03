@@ -3,6 +3,7 @@
 //! - `content`: relics, upgrades, floors, and prices as data.
 //! - `run`: the data of a run and of the permanent progress, and the life of a run.
 //! - `random`: the dice, and the streams of random numbers of a run.
+//! - `tuning`: the debug settings of a session: the enemy armies and the AI levels.
 //! - `battle`: one battle of a run on the chess engine.
 //! - `save`: saved data through a `Storage`.
 //! - `session`: the screens and `Session::command`, the one entry point of the protocol.
@@ -19,6 +20,7 @@ pub mod random;
 pub mod run;
 pub mod save;
 pub mod session;
+pub mod tuning;
 pub mod view;
 
 pub use save::{Doc, FileStorage, MemoryStorage, Storage};
