@@ -5,6 +5,8 @@ Chrogue is a roguelite chess game. The game has two parts:
 - `core/`: The Rust core. It has the chess engine, the enemy AI, the runs, and the saved data.
 - `ports/love/`: The LÖVE client. It draws the screens and sends commands to the core.
 
+`ports/web/` builds the two parts for a browser as one WebAssembly module. It is the web version of the game, and it has no code of the game.
+
 The TypeScript browser game in `src/` is deprecated. Do not add features to it. The core has the rules of the game.
 
 `DECISIONS.md` records the direction of the project. `README.md` has the commands and the structure of the code. `core/PROTOCOL.md` is the contract between the core and a client.
@@ -34,4 +36,5 @@ The client has only the wide layout at this time. `ports/love/layout.lua` has th
 - Use `jj`, not `git`. Make one change for each feature, with a Conventional Commit description.
 - Core: In `core/`, run `cargo test --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check` before you finish.
 - Client: Run `ports/love/test/run.sh` before you finish. Look at the result in the client at 1440×900 (`love . --size 1440x900` in `ports/love/`).
+- Web build: If you change `ports/web/`, the library `core/embed`, or how the client draws, run `ports/web/build.sh` and `bun ports/web/test/run.ts` before you finish. Look at the result in a browser at 1440×900.
 - Browser game: If you must change the deprecated game, use Bun and Vite. Run `bun run check` and `bun test`, and look at the result in a browser at 1440×900 and at 390×844. `gallery.html` has each screen with prepared data.

@@ -43,7 +43,9 @@ The TypeScript game was the reference for the first version of the core. It is n
 
 ### The game also goes to the web through WebAssembly
 
-The LÖVE game will have a WebAssembly build, thus the game can stay on the web. This build does not exist at this time.
+The web version is the full LÖVE game with the core in it, as one WebAssembly build (`ports/web`). Thus the game stays on the web, and the web has the same game as the desktop.
+
+The user wanted this build before the removal of the TypeScript game. The removal comes after it.
 
 ## Rules of the game
 
@@ -71,5 +73,4 @@ No decision at this time.
 - The phone layout of the client. The client has only the wide layout.
 - A battle in progress is not saved. If the player starts the game again in a battle, the battle starts again from its first move.
 - The core describes the pawn moves and the castles as data, as it does for the other pieces. The user did not confirm this part.
-- The time to remove the TypeScript game: before or after the WebAssembly build.
 - `core/PROTOCOL.md` has a list of open issues in the behavior of the core.

@@ -7,6 +7,8 @@ The game has two parts:
 - `core/`: The Rust core. It has the chess engine, the enemy AI, the runs, and the saved data.
 - `ports/love/`: The LÖVE client. It draws the screens and sends commands to the core.
 
+`ports/web/` builds these two parts for a browser, as one WebAssembly module. This build is the web version of the game.
+
 The TypeScript browser game in `src/` is deprecated. The last section of this file has its commands.
 
 `DECISIONS.md` records the direction of the project and the reason for each decision.
@@ -20,10 +22,18 @@ Rust and LÖVE 11.5 are necessary.
 
 The client starts the core. `ports/love/README.md` has the options of the command line, the keys, and the location of the saved data.
 
+### In a browser
+
+The Emscripten SDK and the Rust target `wasm32-unknown-emscripten` are also necessary. `ports/web/README.md` has the steps to install them.
+
+1. Run `ports/web/build.sh`.
+2. Give the folder `ports/web/dist` to a static server, and open its page.
+
 ## Run the tests
 
 - Core: In `core/`, run `cargo test --release`. `core/README.md` has the other commands: the lint, the speed of the engine, and the self-play matches of the AI.
 - Client: Build the core, then run `ports/love/test/run.sh`. Each test opens a window for some seconds.
+- Web build: Run `ports/web/build.sh`, then run `bun ports/web/test/run.ts`. The test runs scripts of the client in a Chromium with no window.
 
 ## Rules
 
@@ -48,6 +58,7 @@ Each run gives crowns. Crowns buy permanent upgrades on the title screen.
 - `core/embed/`: The library `chrogue_core`. It gives the same commands as a C interface, for a client that loads the core into its own process.
 - `core/tools/`: Tools for the engine: a timer, self-play matches, and the move of the AI for one position.
 - `ports/love/`: The client. It has the screens, the motion, and the shaders. It has no game rules.
+- `ports/web/`: The build of the client and the core for a browser, its page, and its test.
 
 A relic changes a battle in two ways. Its movement rules are data that the engine and the AI read. Its effect runs at a fixed point of a battle.
 

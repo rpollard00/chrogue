@@ -1,0 +1,113 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 242d749..e8686a6 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1862,10 +1862,24 @@ if(MSVC OR MINGW)
+ 	endif()
+ endif()
+ 
+-add_library(${LOVE_LIB_NAME} SHARED ${LOVE_LIB_SRC} ${LOVE_RC})
++if(EMSCRIPTEN)
++	# Chrogue: the page has one module. A shared library is a side module in CMake 4.3.3 and later.
++	add_library(${LOVE_LIB_NAME} STATIC ${LOVE_LIB_SRC} ${LOVE_RC})
++else()
++	add_library(${LOVE_LIB_NAME} SHARED ${LOVE_LIB_SRC} ${LOVE_RC})
++endif()
+ set_target_properties(${LOVE_LIB_NAME} PROPERTIES C_VISIBILITY_PRESET hidden CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
+ target_link_libraries(${LOVE_LIB_NAME} ${LOVE_LINK_LIBRARIES} ${LOVE_3P})
+ 
++# Chrogue: the core of the game as the Lua module chrogue_core (ports/web in the Chrogue repository).
++if(EMSCRIPTEN AND CHROGUE_CORE_LIB)
++	add_library(chrogue_core_lua STATIC ${CHROGUE_CORE_LUA})
++	target_include_directories(chrogue_core_lua PRIVATE ${CHROGUE_CORE_INCLUDE})
++	target_link_libraries(chrogue_core_lua ${LOVE_LUA_LIBRARY} ${CHROGUE_CORE_LIB})
++	target_link_libraries(${LOVE_LIB_NAME} chrogue_core_lua)
++	target_compile_definitions(${LOVE_LIB_NAME} PRIVATE CHROGUE_CORE)
++endif()
++
+ if(LOVE_EXTRA_DEPENDECIES)
+ 	add_dependencies(${LOVE_LIB_NAME} ${LOVE_EXTRA_DEPENDECIES})
+ endif()
+@@ -1913,6 +1927,8 @@ if(EMSCRIPTEN)
+                 "-sASSERTIONS"
+                 "-fwasm-exceptions"
+                 "-sSUPPORT_LONGJMP=wasm"
++                # Chrogue: the search of the enemy AI needs more than the default stack of 64 KB.
++                "-sSTACK_SIZE=4mb"
+                 ## "-sWASMFS"
+                 ## "-sJSPI=1" ## async needed for OPFS ## getting an error about an unresolved promise?
+                 ## "-lopfs.js" ## storage lib form WASM uses OPFS
+diff --git a/src/modules/event/sdl/Event_compat.cpp b/src/modules/event/sdl/Event_compat.cpp
+index b135b6a..43ac17f 100644
+--- a/src/modules/event/sdl/Event_compat.cpp
++++ b/src/modules/event/sdl/Event_compat.cpp
+@@ -133,7 +133,9 @@ void Event::pump()
+ 		}
+ 	}
+ 
+-	Module::getInstance<love::audio::openal::Audio>(Module::M_AUDIO)->pool->update();
++	// Chrogue: a game with no audio module (t.modules.audio = false) has no pool.
++	if (auto audio = Module::getInstance<love::audio::openal::Audio>(Module::M_AUDIO))
++		audio->pool->update();
+ }
+ 
+ Message *Event::wait()
+diff --git a/src/modules/graphics/opengl/OpenGL.cpp b/src/modules/graphics/opengl/OpenGL.cpp
+index 6bf80f3..ccfadcc 100644
+--- a/src/modules/graphics/opengl/OpenGL.cpp
++++ b/src/modules/graphics/opengl/OpenGL.cpp
+@@ -1740,6 +1740,13 @@ bool OpenGL::isPixelFormatSupported(PixelFormat pixelformat, bool rendertarget,
+ 		else
+ 			return false;
+ 	case PIXELFORMAT_RGBA8:
++#ifdef LOVE_EMSCRIPTEN
++		// Chrogue: WebGL 1 can always draw to an RGBA texture of 8 bits, and it does not give the extensions
++		// below. Without this line, each canvas has 4 bits for each color, and the colors show bands.
++		if (rendertarget && !readable)
++			return GLAD_ES_VERSION_3_0 || GLAD_OES_rgb8_rgba8 || GLAD_ARM_rgba8;
++		return true;
++#endif
+ 		if (rendertarget)
+ 			return GLAD_VERSION_1_0 || GLAD_ES_VERSION_3_0 || GLAD_OES_rgb8_rgba8 || GLAD_ARM_rgba8;
+ 		else
+diff --git a/src/modules/love/love.cpp b/src/modules/love/love.cpp
+index b5b3803..b520f9d 100644
+--- a/src/modules/love/love.cpp
++++ b/src/modules/love/love.cpp
+@@ -68,6 +68,9 @@
+ #	include "libraries/websockets/wrap_websockets.h"
+ #	include "libraries/sqlite3/lsqlite3.h"
+ #endif
++#ifdef CHROGUE_CORE
++extern "C" int luaopen_chrogue_core(lua_State *L);
++#endif
+ #ifdef LOVE_ENABLE_LUA53
+ #	include "libraries/lua53/lutf8lib.h"
+ #endif
+@@ -535,6 +538,9 @@ int luaopen_love(lua_State *L)
+         love::luax_preload(L, luaopen_websockets, "websockets");
+         love::luax_preload(L, luaopen_lsqlite3, "web.sqlite"); // experimental
+ #endif        
++#ifdef CHROGUE_CORE
++	love::luax_preload(L, luaopen_chrogue_core, "chrogue_core");
++#endif
+ #ifdef LOVE_ENABLE_LUA53
+ 	love::luax_preload(L, luaopen_luautf8, "utf8");
+ #endif
+diff --git a/src/scripts/lovejs-post.js b/src/scripts/lovejs-post.js
+index c18bbc5..2259d7f 100644
+--- a/src/scripts/lovejs-post.js
++++ b/src/scripts/lovejs-post.js
+@@ -86,9 +86,10 @@ function addSaveDir () {
+ FS.createPath("/", "home", true, true);
+ FS.createPath("/home", "web_user", true, true);
+ FS.createPath("/home/web_user", "love", true, true);
+-LoveState['FS_createPath']("/home/web_user/", "savedir", true, true);
++FS.createPath("/home/web_user", "savedir", true, true);
+ if (Module["game_file"]){
+     const fileBuffer = base64_decode(Module["game_file"]);
+     FS.createDataFile('/home/web_user/love/game.love', 0, fileBuffer, true,true,true);
+ }
+-addSaveDir();
++// Chrogue: this script runs after the game starts (Emscripten 4 and later), which is too late for the saved data.
++// The page mounts the save folder before the start (ports/web/index.html).

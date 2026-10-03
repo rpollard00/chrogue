@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chrogue</title>
+<style>
+  /* The page is only the window of the game. The game sets its own layout in the canvas (ports/love/layout.lua). */
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #15171c; }
+  canvas { display: block; width: 100vw; height: 100vh; outline: none; }
+  #status { position: fixed; inset: 0; display: grid; place-items: center; padding: 2rem; text-align: center;
+    color: #e8e6e0; font: 1rem/1.5 system-ui, sans-serif; pointer-events: none; }
+  #status:empty { display: none; }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="0"></canvas>
+<div id="status" role="status">The game loads.</div>
+<!-- build.sh puts a stamp of the build in each address that the page loads. A new build then has new addresses, thus a browser does
+     not use the module of an old build with the script of a new one. -->
+<script src="love.js?v=@BUILD@"></script>
+<script>
+  // These options of the game come from the address: ?seed=7&debug becomes --seed 7 --debug (ports/love/README.md).
+  // The other options are for a window or for a socket, and a page has none.
+  const OPTIONS = ['seed', 'debug', 'no-save', 'script'];
+  const SAVE_FOLDER = '/home/web_user/savedir';
+  // The time that the browser has to give the saved data.
+  const SAVED_DATA_LIMIT = 10000;
+  const options = [];
+  for (const [name, value] of new URLSearchParams(location.search)) {
+    if (!OPTIONS.includes(name)) continue;
+    options.push('--' + name);
+    if (value !== '') options.push(value);
+  }
+  const status = document.getElementById('status');
+  const stopped = (reason) => {
+    status.textContent = 'The game stopped. Load the page again. (' + reason + ')';
+  };
+
+  // The save folder of LÖVE is in the IndexedDB of the browser. The game starts after the browser gives the saved
+  // files, and each later change of the folder goes to the browser. If the browser does not give them, the folder
+  // stays in memory: a save to a folder that is empty by a fault would erase the data that the browser keeps.
+  function mountSavedData(FS) {
+    FS.mkdirTree(SAVE_FOLDER);
+    const inMemory = (reason) => console.error('The game does not keep its saved data in this browser.', reason);
+    if (!window.indexedDB) return inMemory('The browser has no IndexedDB.');
+    FS.mount(FS.filesystems.IDBFS, { autoPersist: true }, SAVE_FOLDER);
+    Module.addRunDependency('saved data');
+    let done = false;
+    const start = (error) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      if (error) {
+        FS.unmount(SAVE_FOLDER);
+        inMemory(error);
+      }
+      Module.removeRunDependency('saved data');
+    };
+    const timer = setTimeout(() => start('The browser did not give the saved data in time.'), SAVED_DATA_LIMIT);
+    FS.syncfs(true, start);
+  }
+
+  const Module = {
+    canvas: document.getElementById('canvas'),
+    // The name of the game file in /home/web_user/love. The start script of LÖVE reads it.
+    game: 'game.love',
+    arguments: options,
+    locateFile: (name) => name + '?v=@BUILD@',
+    print: (line) => console.log(line),
+    printErr: (line) => console.error(line),
+    onRuntimeInitialized: () => { status.textContent = ''; },
+    onAbort: (reason) => stopped(reason),
+  };
+  window.addEventListener('error', (event) => stopped(event.message));
+  fetch('game.love?v=@BUILD@')
+    .then((response) => {
+      if (!response.ok) throw new Error('game.love: ' + response.status);
+      return response.arrayBuffer();
+    })
+    .then((game) => {
+      Module.preRun = [() => {
+        const FS = Module.FS;
+        // LÖVE reads the game from this folder of the file system of the page.
+        FS.mkdirTree('/home/web_user/love');
+        FS.writeFile('/home/web_user/love/game.love', new Uint8Array(game));
+        mountSavedData(FS);
+      }];
+      return Love(Module);
+    })
+    .then(() => Module.canvas.focus())
+    .catch((error) => stopped(error.message || error.name || String(error)));
+</script>
+</body>
+</html>
