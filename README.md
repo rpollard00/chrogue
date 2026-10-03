@@ -9,8 +9,6 @@ The game has two parts:
 
 `ports/web/` builds these two parts for a browser, as one WebAssembly module. This build is the web version of the game.
 
-The TypeScript browser game in `src/` is deprecated. The last section of this file has its commands.
-
 `DECISIONS.md` records the direction of the project and the reason for each decision.
 
 ## Run the game
@@ -91,83 +89,8 @@ Run `bun run deploy:unraid`. The command does these steps without a confirmation
 The container name is always `chrogue`. If a container with that name exists and this script did not make it, the deployment stops.
 To change the target, set `CHROGUE_SSH_TARGET`, `CHROGUE_NETWORK`, or `CHROGUE_ADDRESS`.
 
-The saved data of a player is in the browser of the player, for the address of the game. The web build does not read the saved data of the TypeScript game.
+The saved data of a player is in the browser of the player, for the address of the game. The web build does not read the saved data of the TypeScript game that the server had before.
 
-The web build has only the wide layout. The TypeScript game also had a layout for a phone.
+The web build has only the wide layout. The game has no layout for a phone at this time.
 
 `Dockerfile`, `httpd.conf`, and `scripts/deploy-unraid` are the files of the deployment.
-
-## The browser game (deprecated)
-
-The TypeScript game in `src/` is the first version of Chrogue. The core came from it. Do not add features to it.
-
-The scripts in `core/difftest/` and `core/gametest/` compare the core with this game. They stay only while this game is in the repository.
-
-### Run the game
-
-The project uses Bun and Vite.
-
-1. Run `bun install`.
-2. Run `bun run dev`.
-3. Open `http://localhost:5188`.
-
-`bun run build` writes the production files to `dist/`. `bun run preview` serves those files. The deployment does not use them: the container has the web build.
-
-### See the animations
-
-The animation gallery shows each screen with prepared data and plays its motion.
-
-1. Run `bun run dev`.
-2. Open `http://localhost:5188/gallery.html`.
-3. Select a demo. Select **Replay** to see the demo again.
-
-The gallery saves nothing, and the production build does not include it.
-
-### Change the saved data
-
-The debug menu changes the saved data at no cost. The development server always has it.
-
-1. Run `bun run dev`.
-2. Select **Debug** in the top right corner, or press the `` ` `` key.
-3. Change the items. The menu saves each change immediately.
-4. Select **Close**. The screen shows the changes. If you are in a battle, the battle starts again.
-
-The menu has three sections:
-
-- Progress: The crowns and the level of each upgrade.
-- Run: The floor, the gold, the army, the relics of the player, and the traits of the enemy.
-- Offers: The relics that the game can offer. A relic that is off is not a reward, a shop item, or a boss trait.
-
-The game applies the Offers section only while the menu is on the page.
-
-A production build shows the menu only when the address has `?debug`.
-
-### Run the tests
-
-Run `bun test`. Run `bun run check` for the TypeScript type check.
-
-### Structure
-
-The code has three layers. Each layer imports only from the layers before it in this list.
-
-- `src/engine/`: Chess. It has the rules, the move generation, and the enemy AI. It does not know about runs or relics.
-- `src/game/`: The roguelite. It has runs, battles, relics, upgrades, offers, floors, and saved data. It has no DOM code.
-- `src/ui/`: The screens. `src/main.ts` owns the state and changes the screen. `src/ui/debug.ts` is the debug menu.
-
-A relic changes a battle in two ways. Its `rules` add movement rules for the engine. Its `hooks` run at fixed points of a battle.
-
-### Add content
-
-- Relic: Add one entry to `defs` in `src/game/relics.ts`. If the entry has a `foeText`, a boss can have it as a trait.
-- Relic effect at a new point of a battle: Add a hook to `RelicHooks`, and call it in `src/game/battle.ts`.
-- Movement rule: Add a flag to `MoveRules` in `src/engine/types.ts`, and use it in `src/engine/rules.ts`.
-- Upgrade: Add one entry to `defs` in `src/game/upgrades.ts`.
-- Kind of reward or shop item: Add its data to `Offer` in `src/game/types.ts`. Then obey the steps at the top of `src/game/offers.ts`.
-- Floor: Add one entry to `FLOORS` in `src/game/floors.ts`.
-
-Saved data keeps relic ids and upgrade ids. If you remove an id, `src/game/storage.ts` removes it from saved data when the game loads.
-
-### Files
-
-- `test/engine.test.ts`: Perft counts, movement rules, battle results, and AI checks.
-- `test/game.test.ts`: Relics, upgrades, offers, battle results in a run, and saved data.

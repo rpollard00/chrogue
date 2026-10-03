@@ -35,7 +35,6 @@ name = "chrogue-tools"
 version = "0.1.0"
 dependencies = [
  "chrogue-engine",
- "serde_json",
 ]
 
 [[package]]

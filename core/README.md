@@ -7,9 +7,9 @@ This directory has the Rust core of Chrogue. It has these parts:
 - The game layer and the command server: the runs, the saved data, and the commands of a client. See "Game layer and command server".
 - The library for a client that loads the core into its own process. See "Game layer and command server".
 
-The core is the source of truth for the rules of the game. The TypeScript game in `src/` is deprecated. The core came from it, and the scripts in `difftest/` and `gametest/` compare the two while the TypeScript game is in the repository.
+The core is the source of truth for the rules of the game.
 
-The Rust engine is not a copy of the TypeScript engine. The movement of each kind is data: the steps and slides of the officers, the pawn moves, the first-move atoms, en passant, the promotion, the 50-move clock, and the castles. Thus a new movement rule needs no new engine code.
+The movement of each kind is data: the steps and slides of the officers, the pawn moves, the first-move atoms, en passant, the promotion, the 50-move clock, and the castles. Thus a new movement rule needs no new engine code.
 
 ## Commands
 
@@ -20,10 +20,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
 - Perft from the start position at depth 6 (a slow test): `cargo test --release -- --ignored`
 - Lint: `cargo clippy --all-targets -- -D warnings`
 - Format check: `cargo fmt --check`
-- Differential test, from the repository root: `bun core/difftest/run.ts`
-- Speed of the Rust engine: `cargo run --release --bin perft -- 6`
-- Speed of the TypeScript engine, from the repository root: `bun core/difftest/bench.ts 5`
-- Type check of the scripts, from the repository root: `bunx tsc -p core/difftest`
+- Speed of the engine: `cargo run --release --bin perft -- 6`
 - Tactics tests of the AI: `cargo test --release --test tactics`
 - Derived piece values: `cargo run --release --bin ai -- values`
 - Speed of the AI for each level: `cargo run --release --bin ai -- speed`
@@ -45,9 +42,8 @@ Run the commands from the `core/` directory, unless the command shows a differen
   - `src/level.rs`: The levels of the AI and `choose_move`.
   - `src/rng.rs`: A small seeded random number generator.
   - `src/fen.rs`: A reader for the piece field of a FEN string. The tests and the tools use it.
-  - `tests/`: Perft counts, the cases of `test/engine.test.ts`, rules that the TypeScript engine does not have (`data_rules.rs` for the officers, `data_moves.rs` for pawns, en passant, castles, ranges, and first-move atoms), the Zobrist key, the derived values, and the tactics of the AI. `tests/property.rs` compares the engine with a naive move generator on 6000 random rule sets: random atoms for each kind (the pawn too) with random ranges, conditions, en passant properties, clock properties, promotions, and castle rows. It also walks the move tree of 1500 more rule sets, compares each `make` with a naive `make`, and makes sure that `unmake` gives back the state and the key.
-- `tools/`: The crate `chrogue-tools`. It has the binaries `difftest` (the Rust side of the differential test), `perft` (a timer), `arena` (self-play matches), and `ai` (values, speed, and the move for one position). Only `difftest` uses `serde_json`. Its library has `src/reference.rs`, the algorithm of the old TypeScript AI, which is a baseline opponent only, and `Player`, a level of the engine or the reference AI. The engine and the game do not use the reference AI.
-- `difftest/`: The Bun scripts. `run.ts` is the differential test. `bench.ts` measures the TypeScript engine.
+  - `tests/`: Perft counts, the six rule flags and the results of a battle (`relic_rules.rs`), other rules as data (`data_rules.rs` for the officers, `data_moves.rs` for pawns, en passant, castles, ranges, and first-move atoms), the Zobrist key, the derived values, and the tactics of the AI. `tests/property.rs` compares the engine with a naive move generator on 6000 random rule sets: random atoms for each kind (the pawn too) with random ranges, conditions, en passant properties, clock properties, promotions, and castle rows. It also walks the move tree of 1500 more rule sets, compares each `make` with a naive `make`, and makes sure that `unmake` gives back the state and the key.
+- `tools/`: The crate `chrogue-tools`. It has the binaries `perft` (a timer), `arena` (self-play matches), and `ai` (values, speed, and the move for one position). Its library has `src/reference.rs`, the reference AI, and `Player`, a level of the engine or the reference AI. The reference AI is the algorithm of the AI that the first version of the game had. It is a baseline opponent only. The engine and the game do not use it.
 
 ## Movement rules
 
@@ -93,7 +89,7 @@ If the movement of the king can go to the `to` square of a castle, the engine gi
 - The officers: the knight leaps, the bishop, rook, and queen slides, and the king steps.
 - `Castle::STANDARD`.
 
-The six rule flags of the TypeScript engine are edits of it:
+The six rule flags are edits of it:
 
 | Flag | Method | Edit |
 | --- | --- | --- |
@@ -193,9 +189,7 @@ let custom = Castle {
 };
 ```
 
-If the TypeScript engine also gets the rule, add its flag name to `SideRules::with_flag` and to `FLAGS` in `difftest/run.ts`. Then the differential test includes the rule.
-
-## Behavior that the engine keeps from the TypeScript engine
+## Details of the behavior of the engine
 
 - A piece has its own `moved` flag. Castles and atoms with `Condition::Unmoved` read this flag. The state has no castling rights.
 - With `forcedMarch`, a pawn can do a double step from each rank, and the step makes an en passant square.
@@ -207,7 +201,7 @@ If the TypeScript engine also gets the rule, add its flag name to `SideRules::wi
 - A move can capture a king when the side that does not have the move is in check.
 - `outcome` does its checks in this order: bare, rout, checkmate or stalemate, clock. A side with no legal move loses.
 
-The TypeScript engine has no rule where a king move and a castle have the same squares. If the movement of the king can go to a castle square, the Rust engine gives only the castle when the castle is possible and legal, and the king move when it is not.
+If the movement of the king can go to a castle square, the engine gives only the castle when the castle is possible and legal, and the king move when it is not.
 
 The order of the moves is the same as before the rules became data, thus the search gives the same results. The Zobrist key has the `moved` flag of the pawn, the rook, and the king, as in ordinary chess. If the rules read the flag of another kind, the key has the flag of each kind (`zobrist.rs`). When the state has en passant squares, the key also has the square of their victim: two atoms can make the same en passant squares with different victims.
 
@@ -283,7 +277,7 @@ Null-move pruning is in the code and is off: it did not help in self-play.
 | 7 | Vanguard | none | 100 000 | 0 |
 | 8 | The Black King | none | 320 000 | 0 |
 
-`Player::reference()` in `tools/src/lib.rs` is the algorithm of `src/engine/ai.ts` at depth 2 with no noise. It is a baseline for the self-play tool and for `ai speed` only.
+`Player::reference()` in `tools/src/lib.rs` is the reference AI (`tools/src/reference.rs`) at depth 2 with no noise. It is a baseline for the self-play tool and for `ai speed` only.
 
 ### Self-play
 
@@ -298,39 +292,11 @@ Null-move pruning is in the code and is off: it did not help in self-play.
 
 The same arguments give the same output.
 
-## Differential test
-
-`bun core/difftest/run.ts [--seed N] [--playouts N]` plays random legal games with the TypeScript engine. The games start from the chess start position, Kiwipete, armies of the game against the enemy army of a floor, random positions, and prepared positions. Each game has a rule combination for each side.
-
-For each sampled position, the script compares these results of the two engines:
-
-- The legal moves, with all the fields of each move.
-- `movesFrom` for each occupied square.
-- The pseudo moves of the two colors, with and without `capturesOnly`.
-- `isAttacked` for each square and each color, and `inCheck` for each color.
-- `outcome`.
-- Perft at depth 1 and depth 2, and at depth 3 on one position of six.
-
-The script also sends each game to the Rust tool. The tool plays the moves and the script compares the full state after each move. After each move, the tool compares its bitboards with its mailbox and its Zobrist key with the key from all the pieces. Then the tool takes back each move and compares the state with the state before that move.
-
-The game starts use the ids of the game: numbers for the army of the player, `"e0"`, `"e1"`, and so on for the enemy, and `"conscript"`. The engine has `u16` ids. The Rust tool gives each id of a request its own number, and writes the ids back in its answer. Thus the script compares the ids of the game.
-
-The run also has these games and positions:
-
-- 64 short games from a start with white pawns on rank 1 and earlyPromo for Black. These games give en passant captures that promote. The script compares each position of these games.
-- Prepared endings where more than one end is true: checkmate and stalemate with 100 or more on the clock, and rout and bare kings with a high clock. These positions compare the order of the checks in `outcome`.
-
-If the engines disagree, the script prints the position, the rules, and the moves that only one engine has. The exit code is 1. The exit code is also 1 if the run has fewer than 3000 positions, if a rule combination has fewer than 20 positions, or if a kind of move or a result occurs fewer times than its minimum in `MINIMUMS`. The minimums are for en passant captures, en passant captures that promote, backward steps, checks, promotions to each kind, castles of each side to each wing, and each result.
-
-The script uses its own random numbers, thus the same seed gives the same run.
-
 ## Game layer and command server
 
-The crate `game/` (`chrogue-game`) has the roguelite layer of `src/game/`: runs, relics, upgrades, offers, floors, battles, and saved data. The crate `server/` has the binary `chrogue-core`. A client, a test, or an agent plays the full game through one JSON protocol with no interface. `PROTOCOL.md` documents the protocol.
+The crate `game/` (`chrogue-game`) has the roguelite layer: runs, relics, upgrades, offers, floors, battles, and saved data. The crate `server/` has the binary `chrogue-core`. A client, a test, or an agent plays the full game through one JSON protocol with no interface. `PROTOCOL.md` documents the protocol.
 
 The crate `embed/` (`chrogue-embed`) gives the same protocol as a C interface. A client loads this library into its own process and needs no socket. The WebAssembly build of the game (`ports/web`) links it into LÖVE.
-
-The TypeScript game in `src/game/` is the reference. `gametest/parity.ts` proves that the two give the same content and the same results.
 
 ### Commands
 
@@ -341,13 +307,10 @@ Run the commands from the `core/` directory, unless the command shows a differen
 - Library for a client: `cargo build --release -p chrogue-embed`. The result is `target/release/libchrogue_core.so` (`.dylib` on macOS, `chrogue_core.dll` on Windows) and the static library `libchrogue_core.a`.
 - Library for the WebAssembly build: `cargo build --release -p chrogue-embed --target wasm32-unknown-emscripten`. `ports/web/build.sh` runs this command.
 - Tests of the game layer and of the server: `cargo test --release -p chrogue-game -p chrogue-server`. With `-- --nocapture`, the fuzz test prints the error codes and the TCP test prints the round-trip times.
-- Parity with the TypeScript game, from the repository root: `bun core/gametest/parity.ts [--seed N] [--battles N]`
-- Whole runs with a bot, two times, with a comparison of the transcripts, from the repository root: `bun core/gametest/play.ts [--sessions N] [--runs N] [--seed N]`. The default (36 runs, two passes) takes about four minutes.
-- Type check of the scripts, from the repository root: `bunx tsc -p core/gametest`
 
 ### Structure
 
-- `game/src/content.rs`: The relics, upgrades, floors, prices, and constants as data. The text is a copy of the TypeScript text.
+- `game/src/content.rs`: The relics, upgrades, floors, prices, and constants as data.
 - `game/src/run.rs`: `Meta`, `Run`, `Unit`, `Enemy`, `Offer`, the enemy of each floor, rewards, the shop, and upgrades.
 - `game/src/battle.rs`: One battle on the engine: relic effects, gold, lost and rescued units, the reward, and `settle`.
 - `game/src/save.rs`: The `Storage` trait, a file storage (with the lock of the directory and safe writes) and a memory storage, and the check of saved data. A file that the core cannot use is set aside as `<name>.bad-<unix time>`, never written over.
@@ -355,21 +318,20 @@ Run the commands from the `core/` directory, unless the command shows a differen
 - `game/src/view.rs`: The views of the screens and the content tables of `hello`.
 - `game/src/protocol.rs`: The names of the commands, events, and error codes.
 - `game/src/chess.rs`: The one module that calls the engine. A change of the engine API changes only this file.
-- `game/tests/`: The cases of `test/game.test.ts` (`game.rs`), saved data (`saved.rs`), random requests (`fuzz.rs`), and the check of `PROTOCOL.md` (`protocol_doc.rs`).
+- `game/tests/`: The game layer (`game.rs`), saved data (`saved.rs`), random requests (`fuzz.rs`), and the check of `PROTOCOL.md` (`protocol_doc.rs`).
 - `server/src/main.rs`: The line transport: the command line, the auth line, the takeover by a newer client, the timeouts, and the idle exit. `server/tests/tcp.rs` starts the binary and tests TCP, stdio, the lock, and the command line.
 - `embed/include/chrogue_core.h`: The C interface: `chrogue_open`, `chrogue_open_error`, `chrogue_command`, and `chrogue_close`.
 - `embed/src/lib.rs`: The functions of the C interface. They move text to `Session::command` and back, as the server does for a socket. `embed/tests/c_interface.rs` calls the functions as a client does.
-- `gametest/`: The Bun scripts `parity.ts` and `play.ts`, and the client `core.ts` that they share.
 
 ### Relics as data
 
-A relic has movement rules and an effect. The movement rules are a list of `RuleEdit`: edits of `SideRules::standard()` that the engine and the AI read. The effect is one kind of `Effect`, at a fixed point of a battle. `Effect` has a kind for each hook of `RelicHooks` in `src/game/relics.ts`.
+A relic has movement rules and an effect. The movement rules are a list of `RuleEdit`: edits of `SideRules::standard()` that the engine and the AI read. The effect is one kind of `Effect`, at a fixed point of a battle.
 
-To add a relic, add one entry to `RELICS` in `game/src/content.rs`. A new kind of effect needs a kind in `Effect` and code in `battle.rs`. `gametest/parity.ts` compares the content with the deprecated TypeScript game, thus it reports a relic that only the core has.
+To add a relic, add one entry to `RELICS` in `game/src/content.rs`. A new kind of effect needs a kind in `Effect` and code in `battle.rs`.
 
-### Behavior that differs from the TypeScript game
+### Details of the behavior of the game layer
 
-- The AI of floor `n` is `Level::floor(n)` of the engine, not the `ai` field of `src/game/floors.ts`.
-- Saved data: a unit id is at most 19999 and appears one time, a relic id appears one time in a list, a count is at most 2^53 - 1, and the board must be valid (no two pieces on one square, and one king on each side). A file that the core cannot use is kept as `<name>.bad-<unix time>`; the browser game drops such data. The comment of `game/src/save.rs` has the list.
-- The pawn of Conscription does not go to the square of an enemy piece. The TypeScript game puts it there (only a debug enemy can be on rank 2 or 3).
+- The AI of floor `n` is `Level::floor(n)` of the engine.
+- Saved data: a unit id is at most 19999 and appears one time, a relic id appears one time in a list, a count is at most 2^53 - 1, and the board must be valid (no two pieces on one square, and one king on each side). A file that the core cannot use is kept as `<name>.bad-<unix time>`. The comment of `game/src/save.rs` has the list.
+- The pawn of Conscription does not go to the square of an enemy piece (only a debug enemy can be on rank 2 or 3).
 - The debug commands refuse two pieces on one square and a side with no king or two kings (see `PROTOCOL.md`).

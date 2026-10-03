@@ -35,17 +35,21 @@ The core takes JSON commands and gives the state of the game (`core/PROTOCOL.md`
 - In development, the core is a separate program on a local socket. A test or an agent can send the same commands.
 - A release build loads the core into LÖVE as a library. The socket stays for development.
 
-### The TypeScript browser game is deprecated
+### The TypeScript browser game is removed
 
 Two codebases are too much to maintain. The Rust core is the source of truth for the rules of the game.
 
-The TypeScript game was the reference for the first version of the core. It is not a specification: where the two are different, the core is correct. The scripts in `core/difftest/` and `core/gametest/` compare the core with the TypeScript game. They go away when the TypeScript game goes away.
+The TypeScript game was the first version of Chrogue, and the reference for the first version of the core. The repository does not have it now. The scripts that compared the core with it went away with it.
+
+The phone layout was a part of the TypeScript game. The user accepted that the removal also removes the phone layout. A new plan for the phone layout is necessary (see "Open").
+
+Decision source: the user decided the deprecation on 2 October 2026, and the removal on 3 October 2026.
 
 ### The game also goes to the web through WebAssembly
 
 The web version is the full LÖVE game with the core in it, as one WebAssembly build (`ports/web`). Thus the game stays on the web, and the web has the same game as the desktop.
 
-The user wanted this build before the removal of the TypeScript game. The removal comes after it.
+The user wanted this build before the removal of the TypeScript game. It is the web target of the game.
 
 ## Rules of the game
 
@@ -80,7 +84,7 @@ The user decided to wait on these items.
 
 No decision at this time.
 
-- The phone layout of the client. The client has only the wide layout.
+- The phone layout of the client. The client has only the wide layout. The phone layout of the TypeScript game went away with that game, and the user wants a new plan.
 - A battle in progress is not saved. If the player starts the game again in a battle, the battle starts again from its first move.
 - The core describes the pawn moves and the castles as data, as it does for the other pieces. The user did not confirm this part.
 - `core/PROTOCOL.md` has a list of open issues in the behavior of the core.

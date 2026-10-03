@@ -3,16 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "check": "tsc --noEmit",
-    "test": "bun test",
     "deploy:unraid": "scripts/deploy-unraid"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.1"
+    "typescript": "^7.0.2"
   }
 }
