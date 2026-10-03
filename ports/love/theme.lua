@@ -98,6 +98,8 @@ local FILES = {
 local fonts, data = {}, {}
 -- The number of fonts that the game made, for the dump of the test script.
 theme.fontsMade = 0
+-- The pixels of a canvas for each unit of the window (shaders.lua). A font has its glyphs at this density.
+theme.density = 1
 
 -- Returns the font of a face for a size in pixels. A change of the window size makes new fonts.
 function theme.font(face, pixels)
@@ -107,7 +109,7 @@ function theme.font(face, pixels)
   if not font then
     -- The file of each typeface is read one time.
     data[face] = data[face] or love.filesystem.newFileData(FILES[face])
-    font = love.graphics.newFont(data[face], pixels, 'light')
+    font = love.graphics.newFont(data[face], pixels, 'light', theme.density)
     fonts[key] = font
     theme.fontsMade = theme.fontsMade + 1
   end

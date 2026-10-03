@@ -165,6 +165,12 @@ Each screen module has the same functions: `new`, `apply` (a new view of the sam
 
 The stage is 80 by 45 units. One unit is 1rem of the web game. The stage becomes larger or smaller as one unit. At 1920 by 1080, one unit is 24 pixels. The web game keeps 1rem at 16 pixels at this size.
 
+## Pixels and precision
+
+- The scene and the foil go to canvases with 4 samples for each pixel. A system with no such canvas (WebGL 1) gets canvases with 2 pixels or more for each unit of the window, and the window shows them smaller. Thus the edges are smooth on each system.
+- On a window with a high pixel density, the canvases and the fonts have the pixels of the screen. Only the build for a browser asks for such a window (`conf.lua`).
+- The shaders ask for floats of high precision. OpenGL ES (a browser, a phone) gives medium precision without this, and the background then has no noise.
+
 ## Differences from the web game
 
 Where the web game gives an area the size of its content, the client gives the area the size of its largest content (`DESIGN.md`, "The first rule: a set layout"). `layout.lua` names each of these areas:

@@ -3,6 +3,7 @@
 -- 2. post: the full scene goes to a canvas, and the canvas goes to the window through this shader.
 -- 3. foil: a sheen on the relic medals and on the relic card. It moves with the time and with the pointer.
 local gfx = require('gfx')
+local theme = require('theme')
 local lg = love.graphics
 
 local shaders = {}
@@ -18,7 +19,17 @@ shaders.mode = 1
 -- The curve of the screen in the post pass. The same value moves the pointer, thus a click goes to the thing that the player sees.
 local CURVE = 0.06
 
-local BACKGROUND = [[
+-- OpenGL ES (a browser, a phone) gives a pixel shader floats of medium precision if the shader does not ask for more:
+-- about 3 digits. The noise of the background and the screen positions need more. LÖVE declares `effect` with medium
+-- precision, thus each `effect` here has the same parameters, and it reads the position of the pixel from
+-- love_PixelCoord, not from its last parameter.
+local PRECISION = [[
+#if defined(GL_ES) && defined(GL_FRAGMENT_PRECISION_HIGH)
+precision highp float;
+#endif
+]]
+
+local BACKGROUND = PRECISION .. [[
 extern float time;
 extern vec2 resolution;
 
@@ -40,7 +51,8 @@ float fbm(vec2 p) {
   return v;
 }
 
-vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
+vec4 effect(mediump vec4 color, Image tex, mediump vec2 uv, mediump vec2 pixel) {
+  vec2 sc = love_PixelCoord;
   vec2 p = (sc - 0.5 * resolution) / resolution.y;
   float t = time * 0.045;
   // The swirl: a turn that is larger near the center.
@@ -64,7 +76,7 @@ vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
 }
 ]]
 
-local FOIL = [[
+local FOIL = PRECISION .. [[
 extern float time;
 extern vec2 pointer;
 extern float aspect;
@@ -72,7 +84,7 @@ extern float strength;
 
 vec3 rainbow(float h) { return clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0); }
 
-vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
+vec4 effect(mediump vec4 color, Image tex, mediump vec2 uv, mediump vec2 pixel) {
   vec4 base = Texel(tex, uv);
   // The foil is only on the solid surface, not on its shadow.
   float mask = smoothstep(0.9, 1.0, base.a);
@@ -95,11 +107,14 @@ vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
 }
 ]]
 
-local POST = [[
+local POST = PRECISION .. [[
 extern vec2 resolution;
+// The pixels of the window for each unit. A scan line has the same height on each screen.
+extern float scale;
 extern float curve;
 
-vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
+vec4 effect(mediump vec4 color, Image tex, mediump vec2 uv, mediump vec2 pixel) {
+  vec2 sc = love_PixelCoord;
   // The curve of a tube screen: a point is moved away from the center, and more near the corners.
   vec2 c = uv - 0.5;
   vec2 w = 0.5 + c * (1.0 + curve * dot(c, c)) / (1.0 + curve * 0.25);
@@ -108,7 +123,7 @@ vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
   vec2 apart = c * dot(c, c) * 0.006;
   vec3 col = vec3(Texel(tex, w + apart).r, Texel(tex, w).g, Texel(tex, w - apart).b);
   // The scan lines are light, thus the text stays easy to read.
-  float scan = 0.5 + 0.5 * sin(sc.y * 6.2831853 / 3.0);
+  float scan = 0.5 + 0.5 * sin(sc.y / scale * 6.2831853 / 3.0);
   col *= 1.025 - 0.055 * scan;
   col *= 1.0 - 0.32 * smoothstep(0.38, 0.86, length(c));
   vec2 inside = smoothstep(vec2(0.0), vec2(1.5) / resolution, w) * smoothstep(vec2(0.0), vec2(1.5) / resolution, 1.0 - w);
@@ -118,6 +133,8 @@ vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
 
 local background, foil, post
 local scene, msaa
+-- The pixels of a canvas for each unit of the window, in each direction.
+local density = 1
 local pool = {}
 
 function shaders.load()
@@ -129,7 +146,18 @@ end
 
 -- Makes the canvases again after a change of the window size.
 function shaders.resize()
-  scene = lg.newCanvas(lg.getWidth(), lg.getHeight(), { msaa = msaa })
+  local before = density
+  density = lg.getDPIScale()
+  -- A canvas with no multisampling (WebGL 1) has 2 pixels or more for each unit. The window shows it smaller, thus
+  -- the edges are smooth.
+  if msaa < 2 then density = math.max(density, 2) end
+  local w, h = lg.getDimensions()
+  density = math.min(density, lg.getSystemLimits().texturesize / math.max(w, h))
+  if density ~= before then
+    theme.density = density
+    theme.dropFonts()
+  end
+  scene = lg.newCanvas(w, h, { msaa = msaa, dpiscale = density })
   pool = {}
 end
 
@@ -142,7 +170,7 @@ function shaders.beginScene(time)
   lg.clear(0.082, 0.090, 0.110, 1)
   if shaders.current().background then
     background:send('time', time)
-    background:send('resolution', { scene:getDimensions() })
+    background:send('resolution', { scene:getPixelDimensions() })
     lg.setShader(background)
     lg.setColor(1, 1, 1, 1)
     lg.rectangle('fill', 0, 0, scene:getDimensions())
@@ -155,7 +183,8 @@ function shaders.endScene()
   lg.setColor(1, 1, 1, 1)
   lg.setBlendMode('alpha', 'premultiplied')
   if shaders.current().post then
-    post:send('resolution', { scene:getDimensions() })
+    post:send('resolution', { lg.getPixelDimensions() })
+    post:send('scale', lg.getDPIScale())
     post:send('curve', CURVE)
     lg.setShader(post)
   end
@@ -178,7 +207,7 @@ function shaders.foil(area, time, pointerX, pointerY, strength, draw)
   local key = w .. 'x' .. h
   local canvas = pool[key]
   if not canvas then
-    canvas = lg.newCanvas(w, h, { msaa = msaa })
+    canvas = lg.newCanvas(w, h, { msaa = msaa, dpiscale = density })
     pool[key] = canvas
   end
   lg.push('all')
