@@ -12,7 +12,6 @@ pub mod level;
 pub mod movegen;
 pub mod outcome;
 pub mod perft;
-pub mod reference;
 pub mod rng;
 pub mod rules;
 pub mod search;
@@ -22,7 +21,7 @@ pub mod types;
 pub mod zobrist;
 
 pub use eval::{EvalTables, EvalVariant, Evaluator};
-pub use level::{Brain, Level, choose_move};
+pub use level::{Level, choose_move};
 pub use movegen::{in_check, is_attacked, is_legal, legal_moves, moves_from, pseudo_moves};
 pub use outcome::{CLOCK_LIMIT, Outcome, has_legal_move, material_outcome, outcome};
 pub use perft::perft;

@@ -11,6 +11,7 @@ use std::time::Instant;
 use chrogue_engine::eval::kind_profile;
 use chrogue_engine::rules::FLAG_NAMES;
 use chrogue_engine::{Color, EvalTables, Kind, Level, Rules, SideRules, choose_move, fen};
+use chrogue_tools::Player;
 
 /// A middlegame position of ordinary chess with all the kinds on the board.
 const MIDDLEGAME: &str = "r2q1rk1/pp2bppp/2n1bn2/2pp4/3P4/2N1PN2/PP2BPPP/R1BQ1RK1";
@@ -63,13 +64,14 @@ fn speed(args: &[String]) {
         "{:<16} {:>9} {:>6} {:>9} {:>6} {:>9} {:>12}",
         "level", "max nodes", "noise", "nodes", "depth", "ms", "nodes/s"
     );
-    for level in Level::LADDER.iter().chain([&Level::reference()]) {
+    for player in Level::LADDER.map(Player::search).iter().chain([&Player::reference()]) {
+        let level = &player.level;
         // The best of five runs, because the first run can be slow.
         let mut best = f64::MAX;
         let mut result = None;
         for _ in 0..5 {
             let start = Instant::now();
-            result = choose_move(&mut state, level, 1);
+            result = player.choose_move(&mut state, 1);
             best = best.min(start.elapsed().as_secs_f64());
         }
         let result = result.expect("the position has a legal move");

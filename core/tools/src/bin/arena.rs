@@ -6,7 +6,8 @@
 //! A CONFIG is a base and then options, with `,` between them:
 //! - Base: `floor1` to `floor8` (a level of the ladder), `reference` (the old TypeScript AI),
 //!   or `nodes=N` (the search with a node limit and no noise).
-//! - Options: `eval=derived|fixed|blind`, `noise=CP`, `depth=N`, `nodes=N`, `null=0|1`, `lmr=0|1`.
+//! - Options: `eval=derived|fixed|blind`, `noise=CP`, `depth=N`, `nodes=N`, `null=0|1`, `lmr=0|1`,
+//!   `threats=0|1`. The reference AI reads only `noise` and `depth`.
 //!
 //! The starts are the start position of chess and `--positions` armies in the style of the
 //! game: the base army of the player plus recruits against the enemy army of a floor with
@@ -24,29 +25,30 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use chrogue_engine::rng::{Rng, mix};
 use chrogue_engine::rules::FLAG_NAMES;
 use chrogue_engine::{
-    Brain, Color, EvalVariant, Kind, Level, Outcome, Piece, Placement, Rules, SideRules, Square, State, choose_move,
-    fen, outcome,
+    Color, EvalVariant, Kind, Level, Outcome, Piece, Placement, Rules, SideRules, Square, State, fen, outcome,
 };
+use chrogue_tools::Player;
 
 struct Config {
     text: String,
-    level: Level,
+    player: Player,
 }
 
 fn parse_config(text: &str) -> Config {
     let mut parts = text.split(',');
     let base = parts.next().unwrap_or_default();
-    let mut level = if base == "reference" {
-        Level::reference()
+    let mut player = if base == "reference" {
+        Player::reference()
     } else if let Some(floor) = base.strip_prefix("floor") {
         let floor: usize = floor.parse().expect("the floor must be a number");
         assert!((1..=8).contains(&floor), "the floor must be from 1 to 8");
-        Level::floor(floor)
+        Player::search(Level::floor(floor))
     } else if let Some(nodes) = base.strip_prefix("nodes=") {
-        Level::nodes("nodes", nodes.parse().expect("the nodes must be a number"))
+        Player::search(Level::nodes("nodes", nodes.parse().expect("the nodes must be a number")))
     } else {
         panic!("\"{base}\" is not a base of a CONFIG");
     };
+    let level = &mut player.level;
     for part in parts {
         let (name, value) = part.split_once('=').unwrap_or_else(|| panic!("\"{part}\" must be NAME=VALUE"));
         let number = || value.parse::<u64>().unwrap_or_else(|_| panic!("\"{value}\" must be a number"));
@@ -69,10 +71,10 @@ fn parse_config(text: &str) -> Config {
         }
     }
     assert!(
-        level.brain == Brain::Search || level.limits.max_depth <= 4,
+        !player.reference || player.level.limits.max_depth <= 4,
         "the reference AI has no node limit: its depth must be small"
     );
-    Config { text: text.to_string(), level }
+    Config { text: text.to_string(), player }
 }
 
 struct RuleSet {
@@ -230,14 +232,14 @@ enum End {
 }
 
 /// Plays one game. Returns the end and the number of half moves.
-fn play(start: &Start, rules: Rules, white: &Level, black: &Level, seed: u64, max_plies: u32) -> (End, u32) {
+fn play(start: &Start, rules: Rules, white: &Player, black: &Player, seed: u64, max_plies: u32) -> (End, u32) {
     let mut state = State::new(&start.pieces, rules).expect("the arena makes valid starts");
     for ply in 0..max_plies {
         if let Some(end) = outcome(&mut state) {
             return (End::Outcome(end), ply);
         }
-        let level = if state.turn() == Color::White { white } else { black };
-        let result = choose_move(&mut state, level, mix(seed, ply as u64)).expect("the battle continues");
+        let player = if state.turn() == Color::White { white } else { black };
+        let result = player.choose_move(&mut state, mix(seed, ply as u64)).expect("the battle continues");
         state.make(result.mv);
     }
     (outcome(&mut state).map_or(End::Cap, End::Outcome), max_plies)
@@ -342,7 +344,7 @@ fn main() {
                 loop {
                     let index = next.fetch_add(1, Ordering::Relaxed);
                     let Some(job) = jobs.get(index) else { break };
-                    let (white, black) = if job.a_is_white { (&a.level, &b.level) } else { (&b.level, &a.level) };
+                    let (white, black) = if job.a_is_white { (&a.player, &b.player) } else { (&b.player, &a.player) };
                     let rules = rule_sets[job.rule_set].rules();
                     let (end, plies) =
                         play(&starts[job.start], rules, white, black, mix(seed, index as u64), max_plies);

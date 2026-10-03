@@ -2,18 +2,9 @@
 //! root scores get. The same search plays all the levels.
 
 use crate::eval::EvalVariant;
-use crate::reference;
+use crate::outcome::outcome;
 use crate::search::{Limits, SearchOptions, SearchResult, search};
 use crate::state::State;
-
-/// The algorithm of a level.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Brain {
-    /// The search of `search`, with the evaluation of `eval`.
-    Search,
-    /// The algorithm of the old TypeScript AI. See `reference`.
-    Reference,
-}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Level {
@@ -23,7 +14,6 @@ pub struct Level {
     pub noise_cp: i32,
     pub eval: EvalVariant,
     pub options: SearchOptions,
-    pub brain: Brain,
 }
 
 impl Level {
@@ -38,7 +28,6 @@ impl Level {
             noise_cp: 0,
             eval: EvalVariant::Derived,
             options: Level::OPTIONS,
-            brain: Brain::Search,
         }
     }
 
@@ -71,27 +60,16 @@ impl Level {
     pub fn strongest() -> Level {
         Level::LADDER[Level::LADDER.len() - 1]
     }
-
-    /// The old TypeScript AI at its strongest setting of the game before floor 7: depth 2, no noise.
-    pub const fn reference() -> Level {
-        Level {
-            name: "reference",
-            limits: Limits::depth(2),
-            noise_cp: 0,
-            eval: EvalVariant::Derived,
-            options: SearchOptions::NONE,
-            brain: Brain::Reference,
-        }
-    }
 }
 
-/// Selects a move for the side that has the move. Returns None if the side has no legal move.
-/// The state is the same after the call.
+/// Selects a move for the side that has the move. Returns None if the battle has ended
+/// (`outcome` is not None): bare kings, a rout, no legal move, or the limit of the clock. The
+/// state is the same after the call.
 ///
 /// The same state, level, and seed give the same result, if the level has no time limit.
 pub fn choose_move(state: &mut State, level: &Level, seed: u64) -> Option<SearchResult> {
-    match level.brain {
-        Brain::Search => search(state, &level.limits, level.eval, level.options, level.noise_cp, seed),
-        Brain::Reference => reference::choose_move(state, level.limits.max_depth, level.noise_cp, seed),
+    if outcome(state).is_some() {
+        return None;
     }
+    search(state, &level.limits, level.eval, level.options, level.noise_cp, seed)
 }

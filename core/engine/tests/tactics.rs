@@ -6,12 +6,12 @@
 
 mod common;
 
-use chrogue_engine::fen::square;
+use chrogue_engine::fen::{KIWIPETE, START, square};
 use chrogue_engine::{
-    Color, Kind, Level, MATE, MATE_BOUND, Move, MoveList, Outcome, Rules, SearchResult, SideRules, Special, State,
-    choose_move, legal_moves, outcome,
+    Color, EvalVariant, Kind, Level, Limits, MATE, MATE_BOUND, Move, MoveList, Outcome, Rules, SearchOptions,
+    SearchResult, SideRules, Special, State, choose_move, legal_moves, outcome, search,
 };
-use common::from_fen;
+use common::{from_fen, legal};
 
 const WHITE: Color = Color::White;
 const BLACK: Color = Color::Black;
@@ -77,6 +77,11 @@ fn can_win_at_once(state: &State) -> bool {
 /// A score of a forced win in `plies` half moves.
 fn win_in(plies: i32) -> i32 {
     MATE - plies
+}
+
+/// The search of the levels to a fixed depth, with no node limit and no noise.
+fn search_depth(state: &mut State, depth: u32) -> SearchResult {
+    search(state, &Limits::depth(depth), EvalVariant::Derived, Level::OPTIONS, 0, 1).expect("a legal move")
 }
 
 // ---- Mates of ordinary chess ----
@@ -236,6 +241,30 @@ fn a_stalemate_wins_for_black() {
 }
 
 #[test]
+fn a_stalemate_at_the_horizon_wins() {
+    // Each move of White leaves Black with no legal move. At depth 1 only the quiescence
+    // search sees the position after the move.
+    let mut state = from_fen("7k/5K1p/7P/8/8/8/8/1N6", WHITE, standard());
+    let result = search_depth(&mut state, 1);
+    assert_eq!(result.score, win_in(1));
+    assert_eq!(outcome_after(&state, &result), Some(Outcome::Stalemate { winner: WHITE }));
+    for seed in 0..5 {
+        let result = choose_move(&mut state, &Level::floor(1), seed).unwrap();
+        assert_eq!(outcome_after(&state, &result), Some(Outcome::Stalemate { winner: WHITE }), "seed {seed}");
+    }
+}
+
+#[test]
+fn a_capture_that_mates_at_the_horizon_is_a_mate() {
+    // White has one legal move, h4-h5. Then Rxb1 (or cxb1) mates: the king cannot take on b1,
+    // which the pawn c2 defends, and the pawn a3 attacks b2. At depth 1 the mate is a capture
+    // of the quiescence search, and White is in check there: White cannot stand pat.
+    let mut state = from_fen("7k/8/8/8/7P/p7/P1p5/KN5r", WHITE, standard());
+    assert_eq!(legal(&mut state).len(), 1);
+    assert_eq!(search_depth(&mut state, 1).score, -win_in(2));
+}
+
+#[test]
 fn the_side_with_one_free_piece_does_not_give_it_away() {
     // White can move only its rook: the pawn is blocked and the king has no free square.
     // Rxe8 wins a knight, but Kxe8 leaves White with no legal move: a loss.
@@ -362,6 +391,19 @@ fn the_capture_of_the_king_is_a_win() {
 }
 
 #[test]
+fn the_search_does_not_capture_the_king_with_its_own_king_in_check() {
+    // Each side is in check. Rxe8 captures the king of Black, but the king of White stays in
+    // check from a1: the capture is not legal.
+    let mut state = from_fen("R3k3/8/8/8/8/8/8/r3K3", WHITE, standard());
+    let moves = legal(&mut state);
+    assert!(!moves.iter().any(|&m| squares_of(m) == mv("a8", "e8")));
+    for floor in 1..=8 {
+        let result = choose_move(&mut state, &Level::floor(floor), 1).unwrap();
+        assert!(moves.contains(&result.mv), "floor {floor} gives {:?}, which is not legal", result.mv);
+    }
+}
+
+#[test]
 fn a_castle_and_a_king_leap_to_the_same_square_are_one_move() {
     use chrogue_engine::{Atom, Mode};
     // The king has a leap of two squares to the side, thus e1-g1 is a castle and also a leap.
@@ -384,19 +426,82 @@ fn a_castle_and_a_king_leap_to_the_same_square_are_one_move() {
     }
 }
 
+// ---- The clock ----
+
+#[test]
+fn a_lost_side_takes_the_draw_of_the_clock() {
+    // White has a knight against a queen, a bishop, and a knight, and the clock is at 99. Each
+    // quiet move gets the clock to its limit: a draw. Kxg2 resets the clock in a lost battle.
+    let mut state = from_fen("7k/8/8/4b3/8/3q4/6n1/N6K", WHITE, standard());
+    state.clock = 99;
+    let result = search_depth(&mut state, 1);
+    assert_eq!(result.score, 0);
+    assert_eq!(outcome_after(&state, &result), Some(Outcome::Clock));
+    for floor in [1, 8] {
+        let result = choose_move(&mut state, &Level::floor(floor), 1).unwrap();
+        assert_eq!(outcome_after(&state, &result), Some(Outcome::Clock), "floor {floor}");
+    }
+}
+
 // ---- Determinism and the levels ----
+
+#[test]
+fn floor_1_searches_each_root_move_before_it_stops() {
+    // These positions need more nodes for depth 1 than the node limit of floor 1. The level
+    // must give the move of a full search at depth 1 with the same noise.
+    let middle = "r1bq1rk1/pp2bppp/2n1pn2/2pp4/3P4/2PBPN2/PP1N1PPP/R1BQ1RK1";
+    let level = Level::floor(1);
+    let mut longer = 0;
+    for fen in [START, KIWIPETE, middle] {
+        for turn in [WHITE, BLACK] {
+            let mut state = from_fen(fen, turn, standard());
+            for seed in 0..4 {
+                let result = choose_move(&mut state, &level, seed).unwrap();
+                let full = search(&mut state, &Limits::depth(1), level.eval, level.options, level.noise_cp, seed);
+                assert_eq!(Some(result.mv), full.map(|full| full.mv), "{fen} {turn:?} seed {seed}");
+                assert_eq!(result.depth, 1);
+                longer += (result.nodes > level.limits.max_nodes) as u32;
+            }
+        }
+    }
+    assert!(longer > 0, "no position needs more nodes for depth 1 than the node limit");
+}
+
+#[test]
+fn the_ai_gives_no_move_when_the_battle_has_ended() {
+    let mut clock = from_fen("7k/8/8/8/8/8/p7/K6R", WHITE, standard());
+    clock.clock = 100;
+    let ended = [
+        (from_fen("7k/8/8/8/8/8/8/K6R", BLACK, standard()), Outcome::Rout { winner: WHITE }),
+        (from_fen("7k/8/8/8/8/8/8/K7", WHITE, standard()), Outcome::Bare),
+        (clock, Outcome::Clock),
+        (from_fen("k7/p1K5/P7/8/8/8/8/8", BLACK, standard()), Outcome::Stalemate { winner: WHITE }),
+    ];
+    for (mut state, end) in ended {
+        assert_eq!(outcome(&mut state), Some(end));
+        for floor in [1, 8] {
+            assert_eq!(choose_move(&mut state, &Level::floor(floor), 1), None, "{end:?}, floor {floor}");
+        }
+    }
+}
+
+#[test]
+fn search_options_none_has_each_part_off() {
+    assert_eq!(SearchOptions::NONE, SearchOptions { null_move: false, lmr: false, threats: false });
+}
 
 #[test]
 fn the_same_position_level_and_seed_give_the_same_result() {
     let fen = "r2q1rk1/pp2bppp/2n1bn2/2pp4/3P4/2N1PN2/PP2BPPP/R1BQ1RK1";
     let rules = || Rules::new(flags(&["longLeap", "sidestep"]), flags(&["kingKnight", "forcedMarch"]));
-    for level in Level::LADDER.iter().chain([&Level::reference()]) {
+    for level in &Level::LADDER {
         let first = choose_move(&mut from_fen(fen, WHITE, rules()), level, 42).unwrap();
         for _ in 0..3 {
             let again = choose_move(&mut from_fen(fen, WHITE, rules()), level, 42).unwrap();
             assert_eq!(again, first, "level {}", level.name);
         }
-        assert!(first.nodes <= level.limits.max_nodes);
+        // The node limit applies after depth 1, which always completes.
+        assert!(first.nodes <= level.limits.max_nodes || first.depth == 1, "level {}", level.name);
     }
 }
 
@@ -426,7 +531,7 @@ fn a_level_with_noise_still_takes_a_win_at_once() {
 #[test]
 fn the_search_gives_no_move_when_the_side_has_no_legal_move() {
     let mut state = from_fen("k7/p1K5/P7/8/8/8/8/8", BLACK, standard());
-    for level in [Level::floor(1), Level::floor(8), Level::reference()] {
+    for level in [Level::floor(1), Level::floor(8)] {
         assert_eq!(choose_move(&mut state, &level, 1), None);
     }
 }

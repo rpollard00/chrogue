@@ -41,11 +41,10 @@ Run the commands from the `core/` directory, unless the command shows a differen
   - `src/eval.rs`: The piece values that come from the rules, and the evaluation of a position.
   - `src/search.rs`: The search.
   - `src/level.rs`: The levels of the AI and `choose_move`.
-  - `src/reference.rs`: The algorithm of the old TypeScript AI. It is a baseline opponent only.
   - `src/rng.rs`: A small seeded random number generator.
   - `src/fen.rs`: A reader for the piece field of a FEN string. The tests and the tools use it.
   - `tests/`: Perft counts, the cases of `test/engine.test.ts`, rules that the TypeScript engine does not have (`data_rules.rs` for the officers, `data_moves.rs` for pawns, en passant, castles, ranges, and first-move atoms), the Zobrist key, the derived values, and the tactics of the AI. `tests/property.rs` compares the engine with a naive move generator on 6000 random rule sets: random atoms for each kind (the pawn too) with random ranges, conditions, en passant properties, clock properties, promotions, and castle rows. It also walks the move tree of 1500 more rule sets, compares each `make` with a naive `make`, and makes sure that `unmake` gives back the state and the key.
-- `tools/`: The crate `chrogue-tools`. It has the binaries `difftest` (the Rust side of the differential test), `perft` (a timer), `arena` (self-play matches), and `ai` (values, speed, and the move for one position). Only `difftest` uses `serde_json`.
+- `tools/`: The crate `chrogue-tools`. It has the binaries `difftest` (the Rust side of the differential test), `perft` (a timer), `arena` (self-play matches), and `ai` (values, speed, and the move for one position). Only `difftest` uses `serde_json`. Its library has `src/reference.rs`, the algorithm of the old TypeScript AI, which is a baseline opponent only, and `Player`, a level of the engine or the reference AI. The engine and the game do not use the reference AI.
 - `difftest/`: The Bun scripts. `run.ts` is the differential test. `bench.ts` measures the TypeScript engine.
 
 ## Movement rules
@@ -60,7 +59,7 @@ Each kind, the pawn too, moves by a list of atoms. An `Atom` has these fields:
 - `max_steps`: The piece goes 1 to `max_steps` steps along an offset. Each step must end on an empty square, except the last step, which can capture. 1 is a leap: pieces inside one step do not block it. `Atom::MAX_STEPS` (7) is a slide that stops only at a piece or at the edge. A number between them is a slide with a range.
 - `mode`: What the atom can do on its target square. `Mode::MoveOrCapture`, `Mode::MoveOnly` (the atom attacks no square, thus it does not give check), or `Mode::CaptureOnly` (the atom attacks its squares, thus it gives check).
 - `condition`: `Condition::Always`, or `Condition::Unmoved`: only while the piece has not moved. Such an atom also attacks only while the piece has not moved.
-- `makes_en_passant`: The squares that a move of the atom passes become the en passant squares of the next half move, and the piece that moved is the victim of an en passant capture there. A move of one step passes no square.
+- `makes_en_passant`: The squares that a move of the atom passes become the en passant squares of the next half move, and the piece that moved is the victim of an en passant capture there. A move of one step passes no square. An atom of the king cannot have it (`RulesError::KingMakesEnPassant`): an en passant capture never removes a king.
 - `captures_en_passant`: The atom can go to an en passant square as if the square has the victim, and the victim is captured. The atom must be able to capture.
 - `resets_clock`: A move of the atom that is not a capture resets the 50-move clock. A capture always resets it.
 
@@ -78,13 +77,13 @@ The atoms of a kind with the same condition and the same three properties form o
 
 ### Promotion
 
-`KindRules::promotion` is `None` or a `Promotion`: the distance of the zone from the last rank (0 is ordinary chess, at most 6) and the `Promotions` (one to four different kinds, not the pawn or the king). A move that ends in the zone gives one move for each promotion kind, in the order of the list. A move that goes backward never promotes. A move that promotes makes no en passant squares.
+`KindRules::promotion` is `None` or a `Promotion`: the distance of the zone from the last rank (0 is ordinary chess, at most 6; with 6 the zone starts on the second rank, thus a piece promotes on its first move forward) and the `Promotions` (one to four different kinds, not the pawn or the king). A move that ends in the zone gives one move for each promotion kind, in the order of the list. A move that goes backward never promotes. A move that promotes makes no en passant squares.
 
 ### Castles
 
 `SideRules::castles` is a list of `Castle` rows, written from the view of White and mirrored for Black. A row has the `from` and `to` squares of the king, the kind and the `from` and `to` squares of the partner, the squares that must be empty, and the squares that the enemy must not attack. The castle is possible when the king and the partner are on their squares and have not moved, the squares of `empty` and the two `to` squares are empty (a square of the king or the partner can be a `to` square), and the enemy attacks no square of `safe`. The legality filter checks the `to` square of the king, as for each move. `Castle::STANDARD` is the two castles of ordinary chess. `Rules::castle_partner` gives the partner move of a castle.
 
-If the movement of the king can go to the `to` square of a castle, the engine gives only the castle when the castle is possible, and the king move when it is not. Two rows of a side cannot have the same king squares, and the king of a row must move.
+If the movement of the king can go to the `to` square of a castle, the engine gives only the castle when the castle is possible and legal. When the castle is not possible, it gives the king move. When the castle is possible but not legal (the partner opens a line to the `to` square, for example), the pseudo moves have the castle and the king move, and the legality filter removes the castle. Two rows of a side cannot have the same king squares, and the king of a row must move.
 
 ### The rules of ordinary chess and the six flags
 
@@ -213,13 +212,13 @@ If the TypeScript engine also gets the rule, add its flag name to `SideRules::wi
 - A move can capture a king when the side that does not have the move is in check.
 - `outcome` does its checks in this order: bare, rout, checkmate or stalemate, clock. A side with no legal move loses.
 
-The TypeScript engine has no rule where a king move and a castle have the same squares. If the movement of the king can go to a castle square, the Rust engine gives only the castle when the castle is possible, and the king move when it is not.
+The TypeScript engine has no rule where a king move and a castle have the same squares. If the movement of the king can go to a castle square, the Rust engine gives only the castle when the castle is possible and legal, and the king move when it is not.
 
-The order of the moves is the same as before the rules became data, thus the search gives the same results. The Zobrist key has the `moved` flag of the pawn, the rook, and the king, as in ordinary chess. If the rules read the flag of another kind, the key has the flag of each kind (`zobrist.rs`).
+The order of the moves is the same as before the rules became data, thus the search gives the same results. The Zobrist key has the `moved` flag of the pawn, the rook, and the king, as in ordinary chess. If the rules read the flag of another kind, the key has the flag of each kind (`zobrist.rs`). When the state has en passant squares, the key also has the square of their victim: two atoms can make the same en passant squares with different victims.
 
 ## AI
 
-`choose_move(&mut state, &level, seed)` gives the move of the side that has the move, or `None` if the side has no legal move. The result has the move, its score in centipawns, the depth, the number of nodes, and the expected line. The state is the same after the call. The same state, level, and seed give the same result, if the level has no time limit.
+`choose_move(&mut state, &level, seed)` gives the move of the side that has the move, or `None` if the battle has ended (`outcome` is not `None`): bare kings, a rout, no legal move, or the limit of the clock. The result has the move, its score in centipawns, the depth, the number of nodes, and the expected line. The state is the same after the call. The same state, level, and seed give the same result, if the level has no time limit.
 
 ### Values that come from the rules
 
@@ -256,17 +255,27 @@ The value of the king is not a part of the material. The move order uses it.
 - Rout: a penalty that grows when the material of a side gets small. Thus the side that is ahead wants trades.
 - Clock: from 70 half moves on the clock, the score goes linearly to 0 at 100.
 
+The score is at most `EVAL_LIMIT` (`MATE_BOUND - 1`) in each direction, thus a score of the evaluation is never the score of a forced win, also with very strong kinds.
+
 ### Search
 
 The search has iterative deepening, negamax with alpha-beta and principal variation search, a transposition table with the Zobrist key, a move order (the table move, captures by victim and attacker with the values of the battle, two killer moves, history), late-move reductions, a check extension, and a quiescence search of captures and promotions.
 
-The ends of a battle have these scores: a side with no legal move loses (`-MATE + ply`), a rout is a loss with the same score, bare kings and the limit of the clock are draws. The game has no rule for a repeated position, thus the search has none. The capture of a king is possible only from a state where the side that does not have the move is in check; the search gives it the score of a mate.
+The ends of a battle have these scores: a side with no legal move loses (`-MATE + ply`), a rout is a loss with the same score, bare kings and the limit of the clock are draws. Each node tests the ends before it looks at its depth, in the order of `outcome`; the quiescence search does too. The game has no rule for a repeated position, thus the search has none.
+
+The quiescence search does not stand pat while the side to move is in check: it searches each capture and promotion of that side, and two of its legal quiet moves (`QUIET_EVASIONS`). It searches more quiet moves only while each move so far is a loss, thus it still finds a mate. With no legal move the side loses. `movegen::evasion_moves` gives the moves that can end the check: the king moves, and the moves of the other pieces to a square of `movegen::evasion_squares` (the squares of the pieces that give the check, and for a slide the squares between it and the king). A side with 3 men or fewer that is not in check also loses there if it has no legal move. Thus the search sees a mate or a stalemate after a capture at its horizon.
+
+After a move inside the search, the search calls `in_check` only if `movegen::may_give_check` is true: the moved piece can attack the king from its `to` square on an empty board (`SideTables::attack_zone`), or the move leaves a square of a line toward the king (`SideTables::slide_zone`). This is valid because the side to move was not in check before the move; it is not valid for the moves of the root.
+
+The capture of a king is possible only from a state where the side that does not have the move is in check, thus only at the root. A legal capture of the royal king (the king on the lowest square) at the root wins with the score of a mate. A capture of the king that leaves the own king in check is not legal, and the search never gives it. Inside the search, the move before each node is legal, thus no move can capture the royal king there.
+
+The search always completes depth 1 for each root move, also when the node limit is smaller than the nodes that depth 1 needs. The node limit applies from depth 2. Thus the result is never a move that the search did not look at. The quiescence search has no depth limit, thus depth 1 can need many nodes in a position with many captures: in 1000 positions of random games (a third with the six flags for each side), the median is about 200 nodes, and the largest number is about 540 000 (about 0.13 s).
 
 Null-move pruning is in the code and is off: it did not help in self-play.
 
 ### Levels
 
-`Level::LADDER` has one level for each floor. `Level::floor(n)` gives the level of floor `n`. A level has a depth limit, a node limit, and noise. With noise, each root move gets a random bonus from 0 to `noise_cp` centipawns. The bonus comes from the seed and the move.
+`Level::LADDER` has one level for each floor. `Level::floor(n)` gives the level of floor `n`. A level has a depth limit, a node limit (from depth 2, see "Search"), and noise. With noise, each root move gets a random bonus from 0 to `noise_cp` centipawns. The bonus comes from the seed and the move.
 
 | Floor | Name | Depth limit | Node limit | Noise |
 | --- | --- | --- | --- | --- |
@@ -279,13 +288,13 @@ Null-move pruning is in the code and is off: it did not help in self-play.
 | 7 | Vanguard | none | 100 000 | 0 |
 | 8 | The Black King | none | 320 000 | 0 |
 
-`Level::reference()` is the algorithm of `src/engine/ai.ts` at depth 2 with no noise. It is a baseline for the self-play tool only.
+`Player::reference()` in `tools/src/lib.rs` is the algorithm of `src/engine/ai.ts` at depth 2 with no noise. It is a baseline for the self-play tool and for `ai speed` only.
 
 ### Self-play
 
 `arena --a CONFIG --b CONFIG [--rules all|standard|modified] [--positions N] [--seed N] [--max-plies N] [--threads N]` plays two configurations against each other and prints the wins, the draws, the losses, the score, and a 95% interval.
 
-- A CONFIG is `floor1` to `floor8`, `reference`, or `nodes=N`, and then options with `,` between them: `eval=derived|fixed|blind`, `noise=CP`, `depth=N`, `nodes=N`, `null=0|1`, `lmr=0|1`, `threats=0|1`.
+- A CONFIG is `floor1` to `floor8`, `reference`, or `nodes=N`, and then options with `,` between them: `eval=derived|fixed|blind`, `noise=CP`, `depth=N`, `nodes=N`, `null=0|1`, `lmr=0|1`, `threats=0|1`. The reference AI reads only `noise` and `depth`.
 - `eval=fixed` has the usual piece values of chess for each side. `eval=blind` has an evaluation that knows only the rules of chess.
 - The starts are the start position of chess and `--positions` armies in the style of the game: the base army of the player plus recruits against the enemy army of floor 3 to 8 with the same total value.
 - The rule sets are: ordinary chess, each flag for White only, each flag for Black only, each flag for the two sides, and eight mixed combinations.

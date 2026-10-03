@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[lib]
+name = "chrogue_tools"
+
 [dependencies]
 chrogue-engine = { path = "../engine" }
 # The differential test sends JSON lines between Bun and this crate.

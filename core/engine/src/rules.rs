@@ -68,7 +68,8 @@ pub struct Atom {
     pub condition: Condition,
     /// The squares that a move of this atom passes become the en passant squares of the next
     /// half move. A move of one step passes no square. A move that promotes makes no en passant
-    /// squares.
+    /// squares. A king cannot have this property (`RulesError::KingMakesEnPassant`): a king is
+    /// never the victim of an en passant capture.
     pub makes_en_passant: bool,
     /// The atom can capture en passant: it can go to an en passant square as if the square has
     /// the piece that made it, and that piece is captured. The atom must be able to capture.
@@ -178,7 +179,8 @@ impl Promotions {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct Promotion {
     /// The number of ranks before the last rank where the promotion zone starts. 0 is ordinary
-    /// chess. The largest value is 6.
+    /// chess. The largest value is 6: the zone starts on the second rank, thus a piece promotes
+    /// on its first move forward from the first or the second rank.
     pub distance: u8,
     /// The kinds that the piece can become, in the order of the generated moves.
     pub kinds: Promotions,
@@ -295,6 +297,9 @@ pub enum RulesError {
     /// atom of the kind resets the clock. A move has one special property only, thus the
     /// engine cannot give such a move both properties.
     EnPassantKeepsClock(Kind),
+    /// An atom of the king makes en passant squares. Then an en passant capture could remove a
+    /// king that no piece attacks.
+    KingMakesEnPassant,
     /// The castle at this index has a square off the board, a king that does not move, the king
     /// and the partner on the same square, or the same king squares as an earlier castle.
     BadCastle(usize),
@@ -320,6 +325,7 @@ impl std::fmt::Display for RulesError {
                 "An atom of kind {} makes en passant squares and keeps the clock, but another atom resets it",
                 kind.letter()
             ),
+            RulesError::KingMakesEnPassant => write!(f, "An atom of the king makes en passant squares"),
             RulesError::BadCastle(index) => write!(f, "The castle at index {index} is not valid"),
         }
     }
@@ -482,6 +488,9 @@ impl SideRules {
                 }
                 if atom.makes_en_passant && !atom.resets_clock && resets {
                     return Err(RulesError::EnPassantKeepsClock(kind));
+                }
+                if atom.makes_en_passant && kind == Kind::King {
+                    return Err(RulesError::KingMakesEnPassant);
                 }
             }
         }

@@ -257,11 +257,11 @@ impl State {
         self.by_color[color.index()] & !self.by_kind[Kind::King.index()]
     }
 
-    /// The Zobrist key of the state: the pieces, the side that has the move, and the en passant
-    /// square. The clock is not in the key. See `zobrist`.
+    /// The Zobrist key of the state: the pieces, the side that has the move, the en passant
+    /// squares, and their victim. The clock is not in the key. See `zobrist`.
     #[inline(always)]
     pub fn key(&self) -> u64 {
-        self.piece_key ^ zobrist::turn_key(self.turn, self.ep)
+        self.piece_key ^ zobrist::turn_key(self.turn, self.ep, self.ep_victim)
     }
 
     #[inline(always)]

@@ -12,7 +12,7 @@
 //! The castles come from the rows of `SideRules::castles`.
 
 use crate::rules::{Condition, Promotions};
-use crate::state::State;
+use crate::state::{State, Undo};
 use crate::tables::{Group, KindTables, LeapSet, SideTables, Slide, Steps};
 use crate::types::{Bitboard, Color, Kind, Move, MoveList, Special, Square, bit, pop_square};
 
@@ -99,6 +99,108 @@ pub fn in_check(state: &State, color: Color) -> bool {
         Some(king) => is_attacked(state, king, color.other()),
         None => false,
     }
+}
+
+/// The squares where a move of a piece that is not a king can end the check of the king of
+/// `color` (the king on the lowest square). For each enemy piece that attacks the king: the
+/// square of the piece, and for a slide the squares between the piece and the king. A move
+/// must capture each such piece or block each such slide. A leap cannot be blocked. All the
+/// squares if the king is not in check or the side has no king.
+///
+/// The attackers are those of `is_attacked`, thus a move of a piece that is not a king to
+/// another square (an en passant capture: with its victim on another square) leaves the king
+/// in check.
+pub fn evasion_squares(state: &State, color: Color) -> Bitboard {
+    let Some(king) = state.king_square(color) else { return !0 };
+    let by = color.other();
+    let side = state.tables().side(by);
+    let theirs = state.color_set(by);
+    let target = king as usize;
+    let mut squares = !0;
+    for &kind in &side.leap_attacker_kinds {
+        let mut attackers = side.leap_attackers[kind.index()][target] & state.kind_set(kind) & theirs;
+        while attackers != 0 {
+            squares &= bit(pop_square(&mut attackers));
+        }
+    }
+    for &kind in &side.unmoved_leap_attacker_kinds {
+        let mut attackers = side.unmoved_leap_attackers[kind.index()][target] & state.kind_set(kind) & theirs;
+        while attackers != 0 {
+            let from = pop_square(&mut attackers);
+            if !has_moved(state, from) {
+                squares &= bit(from);
+            }
+        }
+    }
+    let occupied = state.occupied();
+    for group in &side.slide_attackers {
+        let sliders = group.kinds.iter().fold(0, |set, &kind| set | state.kind_set(kind)) & theirs;
+        if group.reach[target] & sliders == 0 {
+            continue;
+        }
+        for line in &group.lines {
+            let ray = line.rays[target];
+            if ray & sliders == 0 {
+                continue;
+            }
+            if let Some(blocker) = first_blocker(ray & occupied, line.ascending)
+                && sliders & bit(blocker) != 0
+                && !(group.unmoved_only && has_moved(state, blocker))
+            {
+                // The squares of the line from the king to the attacker, with the attacker.
+                squares &= ray & !line.rays[blocker as usize];
+            }
+        }
+    }
+    squares
+}
+
+/// False if the move that `make` just played (with its `undo`) cannot have put the side to
+/// move in check, if that side was not in check before the move: the moved piece cannot attack
+/// the king from its `to` square (`SideTables::attack_zone`), and the move leaves no square of
+/// a line toward the king (`SideTables::slide_zone`). A castle can always give check.
+///
+/// The search uses it to skip `in_check`. It is not valid when the side to move was in check
+/// before the move, as at the root of a search from a state where the side that does not have
+/// the move is in check.
+#[inline(always)]
+pub fn may_give_check(state: &State, m: Move, undo: &Undo) -> bool {
+    if m.special == Special::Castle {
+        return true;
+    }
+    let Some(king) = state.king_square(state.turn()) else { return false };
+    let Some(piece) = state.piece_at(m.to) else { return true };
+    let side = state.tables().side(piece.color);
+    let left = if m.special == Special::EnPassant { bit(m.from) | bit(undo.captured_square) } else { bit(m.from) };
+    bit(m.to) & side.attack_zone[piece.kind.index()][king as usize] != 0 || left & side.slide_zone[king as usize] != 0
+}
+
+/// Adds the pseudo moves of `color` that can end a check, with the `squares` of
+/// `evasion_squares`: the moves of the king, the castles, and the moves of the other pieces
+/// that end on `squares` or capture en passant a victim there. The legal moves of a side in
+/// check are the legal moves of this list.
+pub fn evasion_moves(state: &State, color: Color, squares: Bitboard, list: &mut MoveList) {
+    let side = state.tables().side(color);
+    let own = state.color_set(color);
+    let start = list.len();
+    // With no empty square to block on, the other pieces can end the check only by a capture.
+    let captures_only = squares & !state.occupied() == 0;
+    for kind in Kind::ALL {
+        let only = captures_only && kind != Kind::King;
+        add_kind_moves(state, side, kind, color, state.kind_set(kind) & own, only, list);
+    }
+    let kings = state.kind_set(Kind::King) & own;
+    if !side.castles.is_empty() {
+        let mut each = kings;
+        while each != 0 {
+            add_castles(state, side, color, pop_square(&mut each), start, list);
+        }
+    }
+    let victim = bit(state.ep_victim());
+    retain_from(list, start, |m| {
+        let removes = if m.special == Special::EnPassant { victim } else { 0 };
+        kings & bit(m.from) != 0 || (bit(m.to) | removes) & squares != 0
+    });
 }
 
 /// The squares where some steps from `from` can go: (empty squares, squares with an enemy).
@@ -398,7 +500,8 @@ fn add_group_kind_moves(
 }
 
 /// Adds the castles of a king. The moves at and after `start` are the moves of this side.
-/// A king whose own movement also goes to a castle square gets only the castle there.
+/// A king whose own movement also goes to a castle square gets only the castle there if the
+/// castle is legal, and also its own move if the castle is not legal.
 ///
 /// The legality filter checks the `to` square of the king, as for each move.
 fn add_castles(state: &State, side: &SideTables, color: Color, from: Square, start: usize, list: &mut MoveList) {
@@ -433,7 +536,19 @@ fn add_castles(state: &State, side: &SideTables, color: Color, from: Square, sta
         return;
     }
     if side.king_move_to_castle_square {
-        retain_from(list, start, |m| m.from != from || targets & bit(m.to) == 0);
+        // The castle takes the place of the king move only if the castle is legal: the partner
+        // can open a line to the `to` square that the king move keeps closed.
+        let mut legal = 0;
+        let mut squares = targets;
+        while squares != 0 {
+            let to = pop_square(&mut squares);
+            let mut next = state.clone();
+            next.make(Move { from, to, promo: None, special: Special::Castle });
+            if !in_check(&next, color) {
+                legal |= bit(to);
+            }
+        }
+        retain_from(list, start, |m| m.from != from || legal & bit(m.to) == 0);
     }
     for castle in side.castles.iter().filter(|castle| castle.king_from == from && targets & bit(castle.king_to) != 0) {
         list.push(Move { from, to: castle.king_to, promo: None, special: Special::Castle });

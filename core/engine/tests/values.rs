@@ -1,9 +1,11 @@
 //! The material values that the engine derives from the movement rules.
 
-use chrogue_engine::eval::{officer_profile, officer_value};
-use chrogue_engine::reference::FIXED_VALUES;
+use chrogue_engine::eval::{FIXED_VALUES, kind_profile, officer_profile, officer_value};
 use chrogue_engine::rules::{CAMEL, DIAG, FLAG_NAMES, KING, KNIGHT, ORTHO};
-use chrogue_engine::{Atom, Color, EvalTables, Kind, Mode, Rules, SideRules};
+use chrogue_engine::{
+    Atom, Color, EvalTables, EvalVariant, Evaluator, Kind, MATE_BOUND, Mode, Offset, Promotion, Promotions, Rules,
+    SideRules, fen,
+};
 
 /// The values of White with these rules.
 fn values(white: SideRules) -> [i32; 6] {
@@ -145,4 +147,43 @@ fn the_pawn_bonus_grows_toward_the_promotion_zone_of_each_side() {
     assert_eq!(black[6 * 8], 0);
     let standard = EvalTables::new(&Rules::standard());
     assert!(standard.sides[0].advance[Kind::Pawn.index()][6 * 8] > 60, "a pawn on rank 7 of ordinary chess");
+}
+
+#[test]
+fn no_derived_value_is_nan_or_negative_for_each_promotion_distance() {
+    // With the distance 6, the zone starts on the second rank: the pawn has no square before
+    // its zone, and it promotes on its first step.
+    for distance in 0..=6 {
+        let promotion = Some(Promotion { distance, kinds: Promotions::STANDARD });
+        for pawn in [SideRules::standard(), SideRules::standard().backpedal(), SideRules::standard().forced_march()] {
+            let side = pawn.with_promotion(Kind::Pawn, promotion);
+            assert!(side.validate().is_ok(), "the distance {distance} is valid");
+            let profile = kind_profile(side.kind(Kind::Pawn));
+            assert!(profile.reach >= 0.0 && profile.coverage >= 0.0, "distance {distance}: {profile:?}");
+            let eval = EvalTables::new(&Rules::new(side.clone(), side));
+            for (color, tables) in Color::ALL.iter().zip(&eval.sides) {
+                for kind in Kind::ALL {
+                    let (value, reach) = (tables.value[kind.index()], tables.reach[kind.index()]);
+                    assert!(value >= 0 && reach >= 0.0, "distance {distance}, {color:?} {kind:?}: {value} {reach}");
+                }
+                assert!(tables.value[Kind::Pawn.index()] > 0, "distance {distance}: the pawn has no value");
+            }
+        }
+    }
+}
+
+#[test]
+fn the_evaluation_is_never_the_score_of_a_win() {
+    // A queen that also leaps to each square of the board. Fifteen of them have more material
+    // than the score of a win.
+    let everywhere: Vec<Offset> =
+        (-7..=7).flat_map(|df| (-7..=7).map(move |dr| (df, dr))).filter(|&offset| offset != (0, 0)).collect();
+    let side = SideRules::standard().with_atom(Kind::Queen, Atom::leap(&everywhere, Mode::MoveOrCapture));
+    let rules = Rules::new(side, SideRules::standard());
+    assert!(15 * EvalTables::new(&rules).value(Color::White, Kind::Queen) > MATE_BOUND);
+    for turn in Color::ALL {
+        let state = fen::from_fen("7k/7p/8/QQQQQQQQ/QQQQQQQ1/8/8/K7", turn, rules.clone()).unwrap();
+        let score = Evaluator::new(&state, EvalVariant::Derived).evaluate(&state);
+        assert!(score.abs() < MATE_BOUND, "{turn:?}: the evaluation is {score}");
+    }
 }

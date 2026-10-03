@@ -42,6 +42,7 @@ use std::sync::Arc;
 use crate::movegen::{piece_attacks, piece_reach};
 use crate::outcome::CLOCK_LIMIT;
 use crate::rules::{Atom, Condition, KindRules, Rules, SideRules};
+use crate::search::MATE_BOUND;
 use crate::state::State;
 use crate::tables::{Tables, offset_square};
 use crate::types::{Bitboard, Color, Kind, Square, bit, pop_square};
@@ -77,6 +78,16 @@ const THREAT_DIVISOR: i32 = 16;
 const TEMPO: i32 = 8;
 /// From this value of the clock, the score goes linearly to 0 at `CLOCK_LIMIT`.
 pub const CLOCK_FADE_START: u32 = 70;
+/// The largest score of `Evaluator::evaluate`. It is less than `MATE_BOUND`, thus a score of
+/// the evaluation is never the score of a forced win.
+pub const EVAL_LIMIT: i32 = MATE_BOUND - 1;
+
+/// The piece values of ordinary chess in centipawns: pawn, knight, bishop, rook, queen, king.
+///
+/// The evaluation of the game does not read these numbers. They are for the `FixedValues`
+/// opponent of the self-play tool, for the reference AI of the tools, and for the tests of the
+/// derived values.
+pub const FIXED_VALUES: [i32; Kind::COUNT] = [100, 320, 330, 500, 900, 0];
 
 /// The reach and the coverage of a kind. See the module text.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -117,8 +128,13 @@ impl SquareReach {
     }
 }
 
-/// The mean reach and the mean coverage. `squares` has the start squares that count.
+/// The mean reach and the mean coverage. `squares` has the start squares that count. With no
+/// square, the profile is 0: a pawn with the promotion distance 6 promotes on its first step
+/// from the second rank, thus it has no square before its zone.
 fn profile(reaches: &[SquareReach; 64], squares: Bitboard) -> Profile {
+    if squares == 0 {
+        return Profile { reach: 0.0, coverage: 0.0 };
+    }
     let count = squares.count_ones() as f64;
     let mut reach = 0.0;
     let mut coverage = 0.0;
@@ -367,7 +383,7 @@ impl Evaluator {
         let mut sides = tables.eval().sides.clone();
         if variant == EvalVariant::FixedValues {
             for side in &mut sides {
-                side.value = crate::reference::FIXED_VALUES;
+                side.value = FIXED_VALUES;
             }
         }
         Evaluator { tables, sides, threats: true }
@@ -387,7 +403,7 @@ impl Evaluator {
         }
     }
 
-    /// The score in centipawns for the side that has the move.
+    /// The score in centipawns for the side that has the move, from `-EVAL_LIMIT` to `EVAL_LIMIT`.
     pub fn evaluate(&self, state: &State) -> i32 {
         let occupied = state.occupied();
         let zones = [self.king_zone(state, Color::White), self.king_zone(state, Color::Black)];
@@ -497,6 +513,7 @@ impl Evaluator {
             let left = CLOCK_LIMIT.saturating_sub(state.clock) as i32;
             result = result * left / (CLOCK_LIMIT - CLOCK_FADE_START) as i32;
         }
-        result
+        // Rules with very strong kinds can give a material sum near the scores of a win.
+        result.clamp(-EVAL_LIMIT, EVAL_LIMIT)
     }
 }

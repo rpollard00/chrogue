@@ -2,11 +2,11 @@
 
 mod common;
 
-use chrogue_engine::fen::{KIWIPETE, START};
+use chrogue_engine::fen::{KIWIPETE, START, square};
 use chrogue_engine::rng::Rng;
-use chrogue_engine::rules::FLAG_NAMES;
+use chrogue_engine::rules::{FLAG_NAMES, FORWARD};
 use chrogue_engine::zobrist::key_from_scratch;
-use chrogue_engine::{Color, Move, Rules, SideRules, Special, State, outcome};
+use chrogue_engine::{Atom, Color, Kind, Mode, Move, Piece, Placement, Rules, SideRules, Special, State, outcome};
 use common::from_fen;
 use common::legal;
 
@@ -110,4 +110,44 @@ fn two_move_orders_to_the_same_position_give_the_same_key() {
     let b = play([(1, 18), (57, 42), (6, 21), (62, 45)]);
     assert_eq!(a.key(), b.key());
     assert_ne!(a.key(), start.key());
+}
+
+#[test]
+fn the_key_has_the_victim_of_an_en_passant_capture() {
+    // The first move of a white pawn can also go two squares diagonally. Thus b2-b4 and a2-c4
+    // both make the en passant square b3, with a different victim.
+    let pawn = vec![
+        Atom::leap(&FORWARD, Mode::MoveOnly).resets_clock(),
+        Atom::slide(&[(0, 1), (1, 1)], Mode::MoveOnly).max_steps(2).if_unmoved().makes_en_passant().resets_clock(),
+        Atom::leap(&[(-1, 1), (1, 1)], Mode::CaptureOnly).captures_en_passant().resets_clock(),
+    ];
+    let rules = Rules::new(SideRules::standard().with_kind(Kind::Pawn, pawn), SideRules::standard());
+    let piece =
+        |kind, color, moved, s: &str| Placement { piece: Piece { id: 0, kind, color, moved }, square: square(s) };
+    let start = |first: &str, other: &str| {
+        let pieces = [
+            piece(Kind::King, Color::White, false, "e1"),
+            piece(Kind::King, Color::Black, false, "e8"),
+            piece(Kind::Pawn, Color::Black, true, "a4"),
+            piece(Kind::Pawn, Color::White, false, first),
+            piece(Kind::Pawn, Color::White, true, other),
+        ];
+        State::new(&pieces, rules.clone()).unwrap()
+    };
+    let play = |mut state: State, from: &str, to: &str| {
+        let m = *legal(&mut state).iter().find(|m| (m.from, m.to) == (square(from), square(to))).expect("the move");
+        state.make(m);
+        state
+    };
+    // A: b2-b4 next to a pawn on c4. B: a2-c4 next to a pawn on b4.
+    let a = play(start("b2", "c4"), "b2", "b4");
+    let b = play(start("a2", "b4"), "a2", "c4");
+    assert_eq!(a.board(), b.board());
+    assert_eq!(a.ep_squares(), b.ep_squares());
+    assert_ne!(a.ep_victim(), b.ep_victim());
+    assert_ne!(a.key(), b.key(), "the states differ only in the victim");
+    assert_eq!(a.key(), key_from_scratch(&a));
+    assert_eq!(b.key(), key_from_scratch(&b));
+    // The same en passant capture removes a different pawn.
+    assert_ne!(play(a, "a4", "b3").board(), play(b, "a4", "b3").board());
 }

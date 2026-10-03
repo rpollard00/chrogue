@@ -7,14 +7,19 @@
 //! - A side with only its king loses (rout). If each side has only its king, the battle is a draw.
 //! - The battle is a draw when the clock gets to `CLOCK_LIMIT`.
 //!
+//! Each node of the search, the quiescence search too, tests these ends before it looks at
+//! the depth. The quiescence search does not stand pat while the side to move is in check, and
+//! it tests for a side with no legal move when the side has few men.
+//!
 //! The game has no rule for a repeated position, thus the search has none.
 //!
-//! A search with a node limit and no time limit is deterministic.
+//! A search with a node limit and no time limit is deterministic. The search always completes
+//! depth 1 for each root move; the node limit applies after that.
 
 use std::time::{Duration, Instant};
 
 use crate::eval::{CLOCK_FADE_START, EvalVariant, Evaluator};
-use crate::movegen::{in_check, pseudo_moves};
+use crate::movegen::{evasion_moves, evasion_squares, in_check, may_give_check, pseudo_moves};
 use crate::outcome::{CLOCK_LIMIT, Outcome, has_legal_move, material_outcome};
 use crate::rng::mix;
 use crate::state::State;
@@ -33,7 +38,8 @@ const MAX_PLY: usize = 96;
 pub struct Limits {
     /// The largest depth of the iterative deepening, in half moves.
     pub max_depth: u32,
-    /// The largest number of nodes.
+    /// The largest number of nodes after depth 1. The search always completes depth 1 for each
+    /// root move, thus a search can use more nodes when depth 1 needs more.
     pub max_nodes: u64,
     /// The largest time. A search with a time limit is not deterministic.
     pub max_time: Option<Duration>,
@@ -63,8 +69,20 @@ pub struct SearchOptions {
 }
 
 impl SearchOptions {
-    pub const NONE: SearchOptions = SearchOptions { null_move: false, lmr: false, threats: true };
+    /// All the parts that can be off are off.
+    pub const NONE: SearchOptions = SearchOptions { null_move: false, lmr: false, threats: false };
 }
+
+/// The quiescence search tests for a side with no legal move (a loss) when the side to move
+/// has this number of men or fewer. With more men, a side with no move is very rare, and the
+/// test would cost time at each node.
+const FEW_MEN: u32 = 3;
+
+/// In check, the quiescence search searches each capture and promotion, and this number of
+/// legal quiet moves. It searches more quiet moves only while each move so far is a loss, thus
+/// it still finds a mate. All the quiet moves after each check of a line of captures would make
+/// the tree too large.
+const QUIET_EVASIONS: u32 = 2;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SearchResult {
@@ -118,13 +136,15 @@ fn table_key(state: &State) -> u64 {
     if state.clock > CLOCK_FADE_START { state.key() ^ zobrist::clock_key(state.clock) } else { state.key() }
 }
 
-/// True if the move captures the royal king of the other side.
+/// True if the move captures the royal king of the other side: the king on the lowest square,
+/// which is the king that `in_check` tests.
 ///
-/// The legal moves of a search never permit this, because a side cannot leave its king in
-/// check. It is possible only when the search starts from a state where the side that does
-/// not have the move is in check. The capture is a win for the capturer with the score of a
-/// mate. Without this rule the search would continue against a side that has no king and is
-/// thus never in check.
+/// This is possible only at the root, when the search starts from a state where the side that
+/// does not have the move is in check. A legal capture of the king is a win for the capturer
+/// with the score of a mate. Inside the search, the move before each node is legal, thus the
+/// side that does not have the move is not in check, and no move attacks its royal king. A king
+/// cannot be the victim of an en passant capture (`RulesError::KingMakesEnPassant`), thus each
+/// capture of the king goes to its square.
 #[inline(always)]
 fn captures_royal(state: &State, m: Move) -> bool {
     state.king_square(state.turn().other()) == Some(m.to)
@@ -195,6 +215,21 @@ impl Searcher {
         })
     }
 
+    /// The score if the battle has ended, for the side that has the move: a rout, bare kings,
+    /// or the clock. The order is that of `outcome`: at the limit of the clock, a side with no
+    /// legal move loses, and the other positions are a draw. The search finds "no legal move"
+    /// before the limit in its own move loops.
+    #[inline(always)]
+    fn end_score(state: &mut State, ply: usize) -> Option<i32> {
+        if let Some(score) = Self::rout_score(state, ply) {
+            return Some(score);
+        }
+        if state.clock >= CLOCK_LIMIT {
+            return Some(if has_legal_move(state) { 0 } else { -MATE + ply as i32 });
+        }
+        None
+    }
+
     /// Gives each move a number for the order of the search: the move of the table, then the
     /// captures and promotions (most valuable victim, least valuable attacker), then the
     /// killer moves, then the other moves by their history.
@@ -240,36 +275,69 @@ impl Searcher {
         moves[from]
     }
 
-    fn quiesce(&mut self, state: &mut State, mut alpha: i32, beta: i32, ply: usize) -> i32 {
+    /// The quiescence search: a node with its count and the ends of the battle. `may_check` is
+    /// false if the move before cannot have given check (`movegen::may_give_check`).
+    fn quiesce(&mut self, state: &mut State, alpha: i32, beta: i32, ply: usize, may_check: bool) -> i32 {
         if !self.enter() {
             return 0;
         }
-        if let Some(score) = Self::rout_score(state, ply) {
+        if let Some(score) = Self::end_score(state, ply) {
             return score;
         }
-        let stand = self.eval.evaluate(state);
-        if stand >= beta || ply >= MAX_PLY {
-            return stand;
+        let checked = may_check && in_check(state, state.turn());
+        self.quiesce_moves(state, alpha, beta, ply, checked)
+    }
+
+    /// The moves of the quiescence search, after the node is counted and is not an end.
+    ///
+    /// A side that is not in check can stand pat, and searches its captures and promotions.
+    /// A side in check cannot stand pat: it searches its moves (`QUIET_EVASIONS`), and with no
+    /// legal move it loses. A side with few men that is not in check also loses if it has no
+    /// legal move.
+    fn quiesce_moves(&mut self, state: &mut State, mut alpha: i32, beta: i32, ply: usize, checked: bool) -> i32 {
+        if ply >= MAX_PLY {
+            return self.eval.evaluate(state);
         }
-        alpha = alpha.max(stand);
         let us = state.turn();
+        let mut best = -INFINITE;
+        if !checked {
+            if state.men(us).count_ones() <= FEW_MEN && !has_legal_move(state) {
+                return -MATE + ply as i32;
+            }
+            let stand = self.eval.evaluate(state);
+            if stand >= beta {
+                return stand;
+            }
+            alpha = alpha.max(stand);
+            best = stand;
+        }
         let mut list = MoveList::new();
-        pseudo_moves(state, us, true, &mut list);
+        if checked {
+            // Most moves leave the king in check. Only these moves can be legal.
+            evasion_moves(state, us, evasion_squares(state, us), &mut list);
+        } else {
+            pseudo_moves(state, us, true, &mut list);
+        }
         let (mut inline, mut heap) = ([0i32; MoveList::CAPACITY], Vec::new());
         let scores = score_slots(&mut inline, &mut heap, list.len());
         self.score_moves(state, &list, scores, Move::NULL, MAX_PLY);
-        let mut best = stand;
+        let mut quiet_evasions = 0;
         for i in 0..list.len() {
             let m = Self::pick(&mut list, scores, i);
-            if captures_royal(state, m) {
-                return MATE - ply as i32 - 1;
+            // The captures come first. A side that has a move that is not a loss searches only
+            // some quiet moves; thus a side with no legal move is still found.
+            let quiet = checked && is_quiet(state, m);
+            if quiet && quiet_evasions >= QUIET_EVASIONS && best > -MATE_BOUND {
+                continue;
             }
             let undo = state.make(m);
             if in_check(state, us) {
                 state.unmake(m, undo);
                 continue;
             }
-            let score = -self.quiesce(state, -beta, -alpha, ply + 1);
+            quiet_evasions += quiet as u32;
+            let may_check = may_give_check(state, m, &undo);
+            let score = -self.quiesce(state, -beta, -alpha, ply + 1, may_check);
             state.unmake(m, undo);
             if self.stopped {
                 return 0;
@@ -284,28 +352,39 @@ impl Searcher {
                 }
             }
         }
-        best
+        // In check with no legal move: the side loses.
+        if best == -INFINITE { -MATE + ply as i32 } else { best }
     }
 
-    fn negamax(&mut self, state: &mut State, mut depth: i32, mut alpha: i32, beta: i32, ply: usize, null: bool) -> i32 {
+    /// `null`: a null move is permitted. `may_check`: false if the move before cannot have given
+    /// check (`movegen::may_give_check`).
+    #[allow(clippy::too_many_arguments)]
+    fn negamax(
+        &mut self,
+        state: &mut State,
+        mut depth: i32,
+        mut alpha: i32,
+        beta: i32,
+        ply: usize,
+        null: bool,
+        may_check: bool,
+    ) -> i32 {
+        if !self.enter() {
+            return 0;
+        }
+        // The ends of the battle come before the depth: a node at the horizon can be an end.
+        if let Some(score) = Self::end_score(state, ply) {
+            return score;
+        }
         let us = state.turn();
-        let checked = in_check(state, us);
+        let checked = may_check && in_check(state, us);
         // A check makes the search one half move longer, thus the quiescence search never
         // starts with a king in check.
         if checked {
             depth += 1;
         }
         if depth <= 0 {
-            return self.quiesce(state, alpha, beta, ply);
-        }
-        if !self.enter() {
-            return 0;
-        }
-        if let Some(score) = Self::rout_score(state, ply) {
-            return score;
-        }
-        if state.clock >= CLOCK_LIMIT {
-            return if has_legal_move(state) { 0 } else { -MATE + ply as i32 };
+            return self.quiesce_moves(state, alpha, beta, ply, checked);
         }
         if ply >= MAX_PLY - 1 {
             return self.eval.evaluate(state);
@@ -341,7 +420,7 @@ impl Searcher {
             let officers = state.men(us) & !state.kind_set(Kind::Pawn);
             if officers.count_ones() >= 2 && state.men(us).count_ones() >= 4 && self.eval.evaluate(state) >= beta {
                 let null_undo = state.make_null();
-                let score = -self.negamax(state, depth - 3 - depth / 4, -beta, -beta + 1, ply + 1, false);
+                let score = -self.negamax(state, depth - 3 - depth / 4, -beta, -beta + 1, ply + 1, false, true);
                 state.unmake_null(null_undo);
                 if self.stopped {
                     return 0;
@@ -364,9 +443,6 @@ impl Searcher {
         let mut legal = 0;
         for i in 0..list.len() {
             let m = Self::pick(&mut list, scores, i);
-            if captures_royal(state, m) {
-                return MATE - ply as i32 - 1;
-            }
             let quiet = is_quiet(state, m);
             let undo = state.make(m);
             if in_check(state, us) {
@@ -374,22 +450,24 @@ impl Searcher {
                 continue;
             }
             legal += 1;
+            let may_check = may_give_check(state, m, &undo);
             let score = if legal == 1 {
-                -self.negamax(state, depth - 1, -beta, -alpha, ply + 1, true)
+                -self.negamax(state, depth - 1, -beta, -alpha, ply + 1, true, may_check)
             } else {
                 let mut reduction = 0;
                 if self.options.lmr && depth >= 3 && legal > 3 && quiet && !checked && scores[i] < 899_999 {
                     reduction = if legal > 8 && depth >= 6 { 2 } else { 1 };
-                    if in_check(state, us.other()) {
+                    if may_check && in_check(state, us.other()) {
                         reduction = 0;
                     }
                 }
-                let mut score = -self.negamax(state, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1, true);
+                let mut score =
+                    -self.negamax(state, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1, true, may_check);
                 if score > alpha && reduction > 0 && !self.stopped {
-                    score = -self.negamax(state, depth - 1, -alpha - 1, -alpha, ply + 1, true);
+                    score = -self.negamax(state, depth - 1, -alpha - 1, -alpha, ply + 1, true, may_check);
                 }
                 if score > alpha && score < beta && !self.stopped {
-                    score = -self.negamax(state, depth - 1, -beta, -alpha, ply + 1, true);
+                    score = -self.negamax(state, depth - 1, -beta, -alpha, ply + 1, true, may_check);
                 }
                 score
             };
@@ -514,12 +592,14 @@ pub fn search(
     let mut roots: Vec<RootMove> = Vec::new();
     for i in 0..list.len() {
         let m = Searcher::pick(&mut list, scores, i);
-        if captures_royal(state, m) {
-            return Some(SearchResult { mv: m, score: MATE - 1, depth: 1, nodes: 0, pv: vec![m] });
-        }
         let undo = state.make(m);
         let legal = !in_check(state, us);
         state.unmake(m, undo);
+        // A legal capture of the royal king wins at once. A capture of the king that leaves
+        // the own king in check is not legal, as each such move.
+        if legal && captures_royal(state, m) {
+            return Some(SearchResult { mv: m, score: MATE - 1, depth: 1, nodes: 0, pv: vec![m] });
+        }
         if legal {
             let code = (m.from as u64) << 16
                 | (m.to as u64) << 8
@@ -533,6 +613,9 @@ pub fn search(
     let mut result = SearchResult { mv: first, score: 0, depth: 0, nodes: 0, pv: vec![first] };
 
     for depth in 1..=limits.max_depth.max(1) as i32 {
+        // Depth 1 always completes for each root move, thus the result is never a move that
+        // the search did not look at. The node limit applies from depth 2.
+        searcher.max_nodes = if depth == 1 { u64::MAX } else { limits.max_nodes };
         // The best sum of score and bonus in this iteration.
         let mut best_sum = -INFINITE;
         let mut best_index = 0;
@@ -543,10 +626,10 @@ pub fn search(
             let floor = if index == 0 { -INFINITE } else { best_sum - root.bonus };
             let mut score = -INFINITE;
             if index > 0 {
-                score = -searcher.negamax(state, depth - 1, -floor - 1, -floor, 1, true);
+                score = -searcher.negamax(state, depth - 1, -floor - 1, -floor, 1, true, true);
             }
             if (index == 0 || score > floor) && !searcher.stopped {
-                score = -searcher.negamax(state, depth - 1, -INFINITE, -floor, 1, true);
+                score = -searcher.negamax(state, depth - 1, -INFINITE, -floor, 1, true, true);
             }
             state.unmake(root.mv, undo);
             if searcher.stopped {

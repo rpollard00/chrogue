@@ -256,6 +256,53 @@ fn a_king_move_to_a_castle_square_gives_one_move() {
 }
 
 #[test]
+fn a_castle_that_is_not_legal_keeps_the_king_move_to_its_square() {
+    // A castle e1-d1 with the rook d2-f1. The rook on d2 closes the d file against the black
+    // rook on d8. The castle opens the file, thus it is not legal, but the king step e1-d1 is.
+    let castle = Castle {
+        king_from: square("e1"),
+        king_to: square("d1"),
+        partner: Kind::Rook,
+        partner_from: square("d2"),
+        partner_to: square("f1"),
+        empty: 0,
+        safe: 0,
+    };
+    let side = SideRules::standard().with_castles(vec![castle]);
+    let piece =
+        |kind, color, moved, s: &str| Placement { piece: Piece { id: 0, kind, color, moved }, square: square(s) };
+    let pieces = |black_rook: &str| {
+        vec![
+            piece(Kind::King, Color::White, false, "e1"),
+            piece(Kind::Rook, Color::White, false, "d2"),
+            piece(Kind::Pawn, Color::White, true, "a4"),
+            piece(Kind::King, Color::Black, false, "h8"),
+            piece(Kind::Rook, Color::Black, true, black_rook),
+        ]
+    };
+    let to_d1 = |moves: &[Move]| -> Vec<Special> {
+        moves.iter().filter(|m| (m.from, m.to) == (square("e1"), square("d1"))).map(|m| m.special).collect()
+    };
+    let mut state = State::new(&pieces("d8"), white(side.clone())).unwrap();
+    assert_eq!(to_d1(&legal(&mut state)), vec![Special::None]);
+    assert_eq!(to_d1(&moves_from_list(&state, "e1")), vec![Special::None]);
+    // With the black rook on a8, the castle is legal and is the only move to d1.
+    let mut state = State::new(&pieces("a8"), white(side)).unwrap();
+    assert_eq!(to_d1(&legal(&mut state)), vec![Special::Castle]);
+}
+
+#[test]
+fn a_king_cannot_make_en_passant_squares() {
+    // Else an en passant capture could remove a king that no piece attacks.
+    let double = Atom::slide(&[(0, 1)], Mode::MoveOnly).max_steps(2).makes_en_passant();
+    let king = SideRules::standard().with_atom(Kind::King, double.clone());
+    assert_eq!(king.validate(), Err(RulesError::KingMakesEnPassant));
+    assert!(matches!(State::new(&[], Rules::new(SideRules::standard(), king)), Err(StateError::Rules(_))));
+    // The same atom is valid for an officer.
+    assert!(SideRules::standard().with_atom(Kind::Queen, double).validate().is_ok());
+}
+
+#[test]
 fn a_move_list_has_no_limit_and_legal_moves_appends_to_it() {
     // A king and 15 queens that also slide as nightriders and leap as camels.
     let amazon = SideRules::standard()
@@ -285,8 +332,10 @@ fn a_move_list_has_no_limit_and_legal_moves_appends_to_it() {
     let all = legal(&mut state);
     assert_eq!(all, pseudo);
     assert_eq!(perft(&mut state, 1), pseudo.len() as u64);
-    // The search gives a move.
-    assert!(chrogue_engine::choose_move(&mut state, &chrogue_engine::Level::nodes("test", 2000), 1).is_some());
+    // The search gives a move. (`choose_move` gives none: Black has no piece, thus the battle
+    // has ended by rout.)
+    let (limits, variant) = (chrogue_engine::Limits::nodes(2000), chrogue_engine::EvalVariant::Derived);
+    assert!(chrogue_engine::search(&mut state, &limits, variant, chrogue_engine::Level::OPTIONS, 0, 1).is_some());
 
     // A list goes back from the heap when it gets small.
     list.retain(|m| m.from == 0);

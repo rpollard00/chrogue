@@ -228,6 +228,12 @@ pub struct SideTables {
     pub unmoved_leap_attackers: [[Bitboard; 64]; Kind::COUNT],
     pub unmoved_leap_attacker_kinds: Vec<Kind>,
     pub slide_attackers: Vec<SlideAttackGroup>,
+    /// `attack_zone[kind][target]`: the squares from which a piece of the kind can attack the
+    /// target on an empty board, by a leap or a slide, with or without a condition.
+    pub attack_zone: [[Bitboard; 64]; Kind::COUNT],
+    /// `slide_zone[target]`: the squares of the lines along which a slide of this side can
+    /// attack the target. A piece that leaves such a square can open a line.
+    pub slide_zone: [Bitboard; 64],
     /// The castles, with the squares of this color.
     pub castles: Vec<Castle>,
     /// True if the movement of the king can go from the `from` square of a castle to its `to`
@@ -668,8 +674,22 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
         moved_keyed |= 1 << Kind::King.index() | 1 << castle.partner.index();
     }
 
+    let attack_zone: [[Bitboard; 64]; Kind::COUNT] = std::array::from_fn(|k| {
+        std::array::from_fn(|target| {
+            let leaps = leap_attackers[k][target] | unmoved_leap_attackers[k][target];
+            slide_attackers
+                .iter()
+                .filter(|group| group.kinds.contains(&Kind::ALL[k]))
+                .fold(leaps, |zone, group| zone | group.reach[target])
+        })
+    });
+    let slide_zone: [Bitboard; 64] =
+        std::array::from_fn(|target| slide_attackers.iter().fold(0, |zone, group| zone | group.reach[target]));
+
     SideTables {
         always,
+        attack_zone,
+        slide_zone,
         leap_attacker_kinds: attacker_kinds(&leap_attackers),
         unmoved_leap_attacker_kinds: attacker_kinds(&unmoved_leap_attackers),
         leap_attackers,

@@ -2,19 +2,13 @@
 //!
 //! It is a negamax search with a fixed depth and a quiescence search of 4 half moves. Its
 //! evaluation has fixed piece values, thus it does not see the movement rules of the battle.
-//! The game does not use this module. The self-play tool measures the new search against it.
+//! The game does not use this module. The self-play tool measures the search of the engine
+//! against it.
 
-use crate::movegen::{in_check, legal_moves, pseudo_moves};
-use crate::rng::Rng;
-use crate::search::SearchResult;
-use crate::state::State;
-use crate::types::{Color, Kind, Move, MoveList, Special};
+use chrogue_engine::eval::FIXED_VALUES;
+use chrogue_engine::rng::Rng;
+use chrogue_engine::{Color, Kind, Move, MoveList, SearchResult, Special, State, in_check, legal_moves, pseudo_moves};
 
-/// The piece values of ordinary chess in centipawns: pawn, knight, bishop, rook, queen, king.
-///
-/// The evaluation of the game does not read these numbers. They are for this baseline, for
-/// the `FixedValues` opponent of the self-play tool, and for the tests of the derived values.
-pub const FIXED_VALUES: [i32; Kind::COUNT] = [100, 320, 330, 500, 900, 0];
 const MATE: i32 = 100_000;
 const BARE: i32 = 50_000;
 const QUIESCENCE_DEPTH: u32 = 4;
@@ -138,4 +132,28 @@ pub fn choose_move(state: &mut State, depth: u32, noise_cp: i32, seed: u64) -> O
     let (mv, score) = best?;
     debug_assert!(mv.special != Special::Castle || state.piece_at(mv.from).is_some());
     Some(SearchResult { mv, score, depth, nodes, pv: vec![mv] })
+}
+
+#[cfg(test)]
+mod tests {
+    use chrogue_engine::fen::from_fen;
+    use chrogue_engine::{Color, Rules};
+
+    use super::choose_move;
+
+    #[test]
+    fn the_reference_gives_no_move_when_the_side_has_no_legal_move() {
+        let mut state = from_fen("k7/p1K5/P7/8/8/8/8/8", Color::Black, Rules::standard()).unwrap();
+        assert_eq!(choose_move(&mut state, 2, 0, 1), None);
+    }
+
+    #[test]
+    fn the_same_position_and_seed_give_the_same_move() {
+        let fen = "r2q1rk1/pp2bppp/2n1bn2/2pp4/3P4/2N1PN2/PP2BPPP/R1BQ1RK1";
+        let mut state = from_fen(fen, Color::White, Rules::standard()).unwrap();
+        let first = choose_move(&mut state, 2, 40, 42).unwrap();
+        for _ in 0..3 {
+            assert_eq!(choose_move(&mut state, 2, 40, 42).unwrap(), first);
+        }
+    }
 }

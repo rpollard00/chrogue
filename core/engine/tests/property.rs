@@ -11,11 +11,12 @@
 
 use std::collections::BTreeSet;
 
+use chrogue_engine::movegen::{evasion_moves, evasion_squares, may_give_check};
 use chrogue_engine::rng::Rng;
 use chrogue_engine::zobrist::key_from_scratch;
 use chrogue_engine::{
     Atom, Bitboard, Castle, Color, Condition, Kind, Mode, Move, MoveList, Offset, Piece, Placement, Promotion,
-    Promotions, Rules, SideRules, Special, Square, State, is_attacked, pseudo_moves,
+    Promotions, Rules, SideRules, Special, Square, State, in_check, is_attacked, legal_moves, pseudo_moves,
 };
 
 /// The number of rule sets of the comparison with the naive generator.
@@ -154,6 +155,10 @@ fn random_side(rng: &mut Rng) -> SideRules {
             _ => (rng.below(12) == 0).then(|| random_promotion(rng)),
         };
         side = side.with_promotion(kind, promotion);
+    }
+    // A king never makes en passant squares (`RulesError::KingMakesEnPassant`).
+    for atom in &mut side.kinds[Kind::King.index()].atoms {
+        atom.makes_en_passant = false;
     }
     // A move has one special property: an atom that makes en passant squares must reset the
     // clock if another atom of the kind resets it.
@@ -372,7 +377,18 @@ fn naive_piece_moves(state: &State, from: Square, piece: Piece, captures_only: b
     }
 }
 
-/// The castles of a color that are possible now. The castle replaces each move of the king
+/// True if the king of `color` on the lowest square is attacked on this board. A side with no
+/// king is never in check.
+fn naive_in_check(state: &State, board: &[Option<Piece>; 64], color: Color) -> bool {
+    let placements: Vec<Placement> =
+        (0..64).filter_map(|s| board[s as usize].map(|piece| Placement { piece, square: s })).collect();
+    let after = State::with_tables(&placements, state.shared_tables()).unwrap();
+    let king =
+        (0..64).find(|&s| board[s as usize].is_some_and(|piece| piece.kind == Kind::King && piece.color == color));
+    king.is_some_and(|king| naive_attacks(&after, color.other()) & 1 << king != 0)
+}
+
+/// The castles of a color that are possible now. A legal castle replaces each move of the king
 /// with the same squares.
 fn naive_castles(state: &State, color: Color, moves: &mut Vec<Key>) {
     let attacked = naive_attacks(state, color.other());
@@ -389,7 +405,11 @@ fn naive_castles(state: &State, color: Color, moves: &mut Vec<Key>) {
             && empty
             && attacked & castle.safe == 0
         {
-            moves.retain(|&(from, to, ..)| (from, to) != (castle.king_from, castle.king_to));
+            let castle_move =
+                Move { from: castle.king_from, to: castle.king_to, promo: None, special: Special::Castle };
+            if !naive_in_check(state, &naive_make(state, castle_move).0, color) {
+                moves.retain(|&(from, to, ..)| (from, to) != (castle.king_from, castle.king_to));
+            }
             moves.push((castle.king_from, castle.king_to, None, Special::Castle));
         }
     }
@@ -488,6 +508,9 @@ struct Seen {
     moves: usize,
     special: [usize; 5],
     promotions: usize,
+    /// States where a side is in check, and the legal moves of pieces that are not a king there.
+    checks: usize,
+    evasions: usize,
 }
 
 /// Compares the engine with the naive generator in one state.
@@ -497,8 +520,12 @@ fn compare(state: &State, label: &str, seen: &mut Seen) {
             let mut list = MoveList::new();
             pseudo_moves(state, color, captures_only, &mut list);
             let engine: Vec<Key> = list.iter().map(|m| (m.from, m.to, m.promo, m.special)).collect();
-            let distinct: BTreeSet<_> =
-                engine.iter().map(|&(from, to, promo, _)| (from, to, promo.map(|kind| kind as u8))).collect();
+            // A castle that is not legal and the king move to its square have the same squares.
+            // The legality filter removes the castle.
+            let distinct: BTreeSet<_> = engine
+                .iter()
+                .map(|&(from, to, promo, special)| (from, to, promo.map(|kind| kind as u8), special == Special::Castle))
+                .collect();
             assert_eq!(distinct.len(), engine.len(), "{label}: two moves with the same squares");
             let naive = naive_moves(state, color, captures_only);
             assert_eq!(
@@ -516,6 +543,22 @@ fn compare(state: &State, label: &str, seen: &mut Seen) {
                     seen.promotions += promo.is_some() as usize;
                 }
             }
+        }
+        // The legal moves of the side never have two moves with the same squares.
+        let mut legal = if color == state.turn() { state.clone() } else { state.clone().with_turn(color) };
+        let mut list = MoveList::new();
+        legal_moves(&mut legal, &mut list);
+        let distinct: BTreeSet<_> = list.iter().map(|m| (m.from, m.to, m.promo.map(|kind| kind as u8))).collect();
+        assert_eq!(distinct.len(), list.len(), "{label}: two legal moves with the same squares");
+        // In check, the legal moves of `evasion_moves` are all the legal moves, in the same order.
+        if in_check(&legal, color) {
+            seen.checks += 1;
+            let mut evasions = MoveList::new();
+            evasion_moves(&legal, color, evasion_squares(&legal, color), &mut evasions);
+            let evasions: Vec<Move> =
+                evasions.iter().copied().filter(|&m| chrogue_engine::is_legal(&mut legal, m, color)).collect();
+            assert_eq!(evasions, list.as_slice(), "{label}: the evasions differ from the legal moves");
+            seen.evasions += evasions.iter().filter(|m| legal.piece_at(m.from).unwrap().kind != Kind::King).count();
         }
         let engine = (0..64).filter(|&s| is_attacked(state, s, color)).fold(0, |set: Bitboard, s| set | 1 << s);
         assert_eq!(
@@ -554,16 +597,20 @@ fn random_rules_agree_with_a_naive_generator() {
     assert!(seen.moves > 30 * RULE_SETS, "{seen:?}");
     assert!(double > 5000 && en_passant > 500 && backward > 5000 && castle > RULE_SETS / 10, "{seen:?}");
     assert!(seen.promotions > 10_000 && ep_states > 2000, "{seen:?}, {ep_states} states with en passant");
+    assert!(seen.checks > 1000 && seen.evasions > 1000, "{seen:?}");
 }
 
 /// Makes and takes back each pseudo move to `depth`, and compares each `make` with `naive_make`.
-fn walk_tree(state: &mut State, depth: u32, counts: &mut [usize; 6]) {
+fn walk_tree(state: &mut State, depth: u32, counts: &mut [usize; 7]) {
     if depth == 0 {
         return;
     }
     let before = state.clone();
     let before_key = state.key();
     let mover = state.turn();
+    // The search skips `in_check` after a move that cannot give check. This is valid when the
+    // other side is not in check before the move.
+    let other_safe = !in_check(state, mover.other());
     let mut list = MoveList::new();
     pseudo_moves(state, mover, false, &mut list);
     for &m in &list {
@@ -584,6 +631,13 @@ fn walk_tree(state: &mut State, depth: u32, counts: &mut [usize; 6]) {
         }
         assert!(state.is_consistent(), "the bitboards do not agree with the mailbox after {m:?}");
         assert_eq!(state.key(), key_from_scratch(state), "the key is wrong after {m:?}");
+        if !in_check(state, mover) {
+            assert_no_royal_capture(state, mover);
+            if other_safe && in_check(state, mover.other()) {
+                counts[6] += 1;
+                assert!(may_give_check(state, m, &undo), "{m:?} gives check, but `may_give_check` is false");
+            }
+        }
         walk_tree(state, depth - 1, counts);
         state.unmake(m, undo);
         assert!(*state == before, "the unmake of {m:?} did not give back the state");
@@ -591,10 +645,23 @@ fn walk_tree(state: &mut State, depth: u32, counts: &mut [usize; 6]) {
     }
 }
 
+/// After a legal move of `mover`, no pseudo move of the other side removes the royal king of
+/// `mover` (the king on the lowest square): not by a move to its square, and not by an en
+/// passant capture. The search relies on this: only its root can capture a king.
+fn assert_no_royal_capture(state: &State, mover: Color) {
+    let Some(king) = state.king_square(mover) else { return };
+    let mut list = MoveList::new();
+    pseudo_moves(state, state.turn(), false, &mut list);
+    for &m in &list {
+        let victim = if m.special == Special::EnPassant { state.ep_victim() } else { m.to };
+        assert!(victim != king, "{m:?} captures the king of a side that is not in check");
+    }
+}
+
 #[test]
 fn make_and_unmake_give_back_the_state_for_random_rules() {
     let mut rng = Rng::new(0x5EED_0002);
-    let mut counts = [0; 6];
+    let mut counts = [0; 7];
     for _ in 0..WALKS {
         let rules = Rules::new(random_side(&mut rng), random_side(&mut rng));
         let placements = random_placements(&mut rng, &rules);
@@ -602,12 +669,14 @@ fn make_and_unmake_give_back_the_state_for_random_rules() {
         let mut state = state.with_turn(Color::ALL[rng.below(2) as usize]);
         walk_tree(&mut state, 2, &mut counts);
     }
-    println!("moves by special property, and moves with two en passant squares or more: {counts:?}");
+    println!("moves by special property, moves with two en passant squares or more, and checks: {counts:?}");
     // Each special move occurs: double steps, en passant captures, backward steps, castles, and
     // moves that make more than one en passant square.
-    let [plain, double, en_passant, backward, castle, wide] = counts;
+    // The last count is the moves that give check.
+    let [plain, double, en_passant, backward, castle, wide, checks] = counts;
     assert!(
         plain > 500_000 && double > 5000 && en_passant > 300 && backward > 10_000 && castle > 1000 && wide > 1000,
         "{counts:?}"
     );
+    assert!(checks > 10_000, "{counts:?}");
 }
