@@ -28,6 +28,24 @@ A relic can change the rules of chess. The enemy AI must play good chess, or wea
 
 Thus the movement rules are data that the engine and the AI read. A new movement rule does not need new engine code. The Rust engine is built for this. It is not a line-by-line copy of the TypeScript engine.
 
+### A run weighs the army against relics
+
+It is always chess. A relic can make the chess unusual, but the game does not become a role-playing game or a tactics game.
+
+- In a run, the player weighs two uses of gold and of rewards: to build the army again, and to get relics.
+- The new relics and the new upgrades are experiments. The user expects that some of them do not stay.
+
+Decision source: the user gave this direction on 3 October 2026.
+
+### A run has four relic slots
+
+A run has 4 relic slots. In the camp, the player can discard a relic to make a slot free. Thus each relic is a decision: the player selects the relics that the army needs, and lets the others go.
+
+- The interface shows the slots and shows when each slot has a relic.
+- The debug menu sets the number of slots, from 0 to 10, for the experiment. The relic fan has space for 10 medals.
+
+Decision source: the user gave this decision on 3 October 2026. The first version had a limit of 10 relics with no discard.
+
 ### The core and the client talk through commands
 
 The core takes JSON commands and gives the state of the game (`core/PROTOCOL.md`).
@@ -73,6 +91,14 @@ Reason: it takes some minutes, opens many windows, and loads the workstation for
 
 Decision source: the user gave this decision on 3 October 2026.
 
+### The debug menu is in the game for now
+
+The client has a debug menu on each screen (`client/README.md`, "The debug menu"). It sets the relics, the levels of the AI, the limits of the enemy armies, and the seed of a run, thus a person can play a run again with different settings.
+
+The menu is available to each player at this time. A flag for it is a later task.
+
+Decision source: the user gave this decision on 3 October 2026.
+
 ## Deferred
 
 The user decided to wait on these items.
@@ -87,4 +113,6 @@ No decision at this time.
 - The phone layout of the client. The client has only the wide layout. The phone layout of the TypeScript game went away with that game, and the user wants a new plan.
 - A battle in progress is not saved. If the player starts the game again in a battle, the battle starts again from its first move.
 - The core describes the pawn moves and the castles as data, as it does for the other pieces. The user did not confirm this part.
+- An upgrade that adds relic slots. The user considers it. At this time, the debug menu sets the number of slots.
+- The settings of the debug menu are not saved. They go back to the defaults when the game starts again.
 - `core/PROTOCOL.md` has a list of open issues in the behavior of the core.
