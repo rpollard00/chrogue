@@ -40,7 +40,10 @@ fn walk(start: &State, rng: &mut Rng, games: u32) -> (u32, [u32; 4]) {
             special[0] += (m.special == Special::EnPassant) as u32;
             special[1] += (m.special == Special::Castle) as u32;
             special[2] += m.promo.is_some() as u32;
-            special[3] += (m.special == Special::Backward) as u32;
+            // A pawn step toward the first rank of its side: the backward step of `backpedal`.
+            let pawn = state.piece_at(m.from).is_some_and(|p| p.kind == Kind::Pawn);
+            let back = if state.turn() == Color::White { m.to < m.from } else { m.to > m.from };
+            special[3] += (pawn && back && m.to.abs_diff(m.from) == 8) as u32;
             state.make(m);
             made += 1;
         }
@@ -117,9 +120,9 @@ fn the_key_has_the_victim_of_an_en_passant_capture() {
     // The first move of a white pawn can also go two squares diagonally. Thus b2-b4 and a2-c4
     // both make the en passant square b3, with a different victim.
     let pawn = vec![
-        Atom::leap(&FORWARD, Mode::MoveOnly).resets_clock(),
-        Atom::slide(&[(0, 1), (1, 1)], Mode::MoveOnly).max_steps(2).if_unmoved().makes_en_passant().resets_clock(),
-        Atom::leap(&[(-1, 1), (1, 1)], Mode::CaptureOnly).captures_en_passant().resets_clock(),
+        Atom::leap(&FORWARD, Mode::MoveOnly),
+        Atom::slide(&[(0, 1), (1, 1)], Mode::MoveOnly).max_steps(2).if_unmoved().makes_en_passant(),
+        Atom::leap(&[(-1, 1), (1, 1)], Mode::CaptureOnly).captures_en_passant(),
     ];
     let rules = Rules::new(SideRules::standard().with_kind(Kind::Pawn, pawn), SideRules::standard());
     let piece =

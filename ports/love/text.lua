@@ -16,7 +16,7 @@ text.WIN = {
   },
 }
 text.DRAW = {
-  clock = '50 moves passed with no capture and no pawn advance. The battle is a draw.',
+  clock = '50 moves passed with no capture. The battle is a draw.',
   bare = 'Only the kings remain. The battle is a draw.',
 }
 text.OUTCOME = { victory = 'Victory', defeat = 'Defeat', draw = 'Draw' }

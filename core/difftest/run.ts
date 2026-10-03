@@ -299,7 +299,7 @@ interface RustPlayout {
 
 const moveKey = (m: Move): string =>
   `${m.from}>${m.to} promo=${m.promo ?? '-'} ep=${m.ep ?? '-'} epCapture=${m.epCapture ? 1 : 0}`
-  + ` back=${m.back ? 1 : 0} castle=${m.castle ? m.castle.join('>') : '-'}`;
+  + ` castle=${m.castle ? m.castle.join('>') : '-'}`;
 const moveKeys = (moves: Move[]): string[] => moves.map(moveKey).sort();
 
 const stateKey = (state: PlainState): string =>
@@ -380,7 +380,8 @@ function compareAnalysis(job: AnalyzeJob, rust: RustAnalysis): void {
     if (m.ep !== undefined) seen.ep++;
     if (m.epCapture) seen.epCapture++;
     if (m.epCapture && m.promo) seen.epPromo++;
-    if (m.back) seen.back++;
+    // A pawn step toward the first rank of its side: the backward step of backpedal.
+    if (state.board[m.from]?.type === 'p' && m.to - m.from === (state.turn === 'w' ? -8 : 8)) seen.back++;
     if (m.castle) seen.castle[`${m.from === 4 ? 'w' : 'b'}${m.to > m.from ? 'K' : 'Q'}`]++;
   }
 

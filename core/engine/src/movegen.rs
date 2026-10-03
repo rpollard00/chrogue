@@ -342,7 +342,7 @@ fn capture_reach(tables: &KindTables, group: &Group, leaps: &LeapSet, from: Squa
 /// - A target in the promotion zone that is not behind the piece gives one move for each
 ///   promotion kind. A promotion makes no en passant squares.
 /// - A target is a `DoubleStep` move if a slide of a group with `makes_en_passant` gives it
-///   after one square or more. A quiet move of a group with `keeps_clock` is a `Backward` move.
+///   after one square or more.
 #[allow(clippy::too_many_arguments)]
 #[inline(never)]
 fn add_group_moves(
@@ -379,14 +379,12 @@ fn add_group_moves(
         if captures_only {
             targets &= captures | promo;
         }
-        let quiet = if group.keeps_clock { Special::Backward } else { Special::None };
         while targets != 0 {
             let to = pop_square(&mut targets);
-            let special = if quiets & bit(to) == 0 { Special::None } else { quiet };
             if promo & bit(to) != 0 {
-                push_promotions(list, from, to, &tables.promotions, special);
+                push_promotions(list, from, to, &tables.promotions, Special::None);
             } else {
-                let special = if trail & bit(to) != 0 { Special::DoubleStep } else { special };
+                let special = if trail & bit(to) != 0 { Special::DoubleStep } else { Special::None };
                 list.push(Move { from, to, promo: None, special });
             }
         }

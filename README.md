@@ -64,7 +64,7 @@ To change the target, set `CHROGUE_SSH_TARGET`, `CHROGUE_NETWORK`, or `CHROGUE_A
 - You win a battle when you checkmate the enemy king.
 - You also win when the enemy king is alone, or when the enemy has no legal move.
 - The same conditions apply to you. If you lose a battle, the run ends.
-- If 50 moves pass with no capture and no pawn advance, the battle is a draw. You continue without a reward.
+- If 50 moves pass with no capture, the battle is a draw. You continue without a reward.
 - Castling and en passant follow the usual chess rules.
 
 A run has 8 floors. Floor 4 and floor 8 are boss floors, and a boss has traits that change its moves.

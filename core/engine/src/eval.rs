@@ -508,7 +508,7 @@ impl Evaluator {
         let white = score[0] - score[1];
         let mut result = if state.turn() == Color::White { white } else { -white } + TEMPO;
         // The battle is a draw when the clock gets to its limit. The score goes to 0 before that,
-        // thus the side that is ahead prefers a capture or a pawn advance.
+        // thus the side that is ahead prefers a capture.
         if state.clock > CLOCK_FADE_START {
             let left = CLOCK_LIMIT.saturating_sub(state.clock) as i32;
             result = result * left / (CLOCK_LIMIT - CLOCK_FADE_START) as i32;

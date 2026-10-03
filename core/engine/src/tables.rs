@@ -109,9 +109,6 @@ pub struct Group {
     pub condition: Condition,
     pub makes_en_passant: bool,
     pub captures_en_passant: bool,
-    /// The quiet moves of the group get `Special::Backward`: the group does not reset the clock,
-    /// and another group of the kind does.
-    pub keeps_clock: bool,
     /// The slides of the group: `KindTables::group_slides[slides.0..slides.1]`.
     pub slides: (u16, u16),
 }
@@ -165,16 +162,13 @@ pub struct KindTables {
     pub en_passant_reach: [Bitboard; 64],
     /// The atoms with `Condition::Unmoved`, of all groups.
     pub unmoved: Steps,
-    /// True if the kind has one group with no condition, no en passant property, and no
-    /// `Backward` moves, and no promotion. The move generation of such a kind needs only
+    /// True if the kind has one group with no condition and no en passant property, and no
+    /// promotion. The move generation of such a kind needs only
     /// `SideTables::always`, and the kind has no probes.
     pub simple: bool,
     pub has_unmoved: bool,
     /// A group of the kind can capture en passant.
     pub captures_en_passant: bool,
-    /// An atom of the kind resets the clock. Then each quiet move of the kind resets it, except
-    /// a `Backward` move.
-    pub resets_clock: bool,
     pub promotions: Option<Promotions>,
     /// The squares where the kind promotes.
     pub promo_zone: Bitboard,
@@ -241,8 +235,6 @@ pub struct SideTables {
     pub king_move_to_castle_square: bool,
     /// Bit `kind`: an atom or a castle reads the `moved` flag of the kind. See `zobrist`.
     pub moved_keyed: u8,
-    /// Bit `kind`: `KindTables::resets_clock`.
-    pub resets_clock: u8,
 }
 
 impl SideTables {
@@ -366,7 +358,6 @@ fn kind_tables(kind: Kind, rules: &SideRules, color: Color) -> (KindTables, Step
     let forward = color.forward();
     let kind_rules = rules.kind(kind);
     let atoms = &kind_rules.atoms;
-    let resets_clock = atoms.iter().any(|atom| atom.resets_clock);
 
     // The groups in the order of their first atom, with the steps of their atoms.
     let mut built: Vec<(Atom, Group, Steps)> = Vec::new();
@@ -382,7 +373,6 @@ fn kind_tables(kind: Kind, rules: &SideRules, color: Color) -> (KindTables, Step
                     condition: atom.condition,
                     makes_en_passant: atom.makes_en_passant,
                     captures_en_passant: false,
-                    keeps_clock: resets_clock && !atom.resets_clock,
                     slides: (0, 0),
                 };
                 built.push((atom.clone(), group, Steps::new()));
@@ -440,18 +430,15 @@ fn kind_tables(kind: Kind, rules: &SideRules, color: Color) -> (KindTables, Step
     });
     let leap_attacks_only = !unmoved.can_capture() && always.slides.iter().all(|slide| !slide.capture);
     let simple = groups.len() <= 1
-        && groups.iter().all(|group| {
-            group.condition == Condition::Always
-                && !group.makes_en_passant
-                && !group.captures_en_passant
-                && !group.keeps_clock
-        })
+        && groups
+            .iter()
+            .all(|group| group.condition == Condition::Always && !group.makes_en_passant && !group.captures_en_passant)
         && promotions.is_none();
     // A simple kind needs no probes.
     let (probes, probe_ranges) = if simple {
         (Vec::new(), [[(0, 0); 2]; 64])
     } else {
-        build_probes(atoms, &group_of, &groups, forward, &promo_targets, resets_clock)
+        build_probes(atoms, &group_of, &groups, forward, &promo_targets)
     };
     let tables = KindTables {
         has_unmoved: groups.iter().any(|group| group.condition == Condition::Unmoved),
@@ -464,7 +451,6 @@ fn kind_tables(kind: Kind, rules: &SideRules, color: Color) -> (KindTables, Step
         en_passant_reach,
         unmoved,
         simple,
-        resets_clock,
         promotions,
         promo_zone,
         promo_targets,
@@ -491,7 +477,6 @@ fn build_probes(
     groups: &[Group],
     forward: i8,
     promo_targets: &[Bitboard; 64],
-    resets_clock: bool,
 ) -> (Vec<Probe>, [[(u32, u32); 2]; 64]) {
     let mut probes = Vec::new();
     let mut ranges = [[(0, 0); 2]; 64];
@@ -525,18 +510,11 @@ fn build_probes(
             // Ascending targets. For one target, a probe that makes en passant squares comes
             // first, because the group gives its move that property.
             list.sort_by_key(|(p, trail)| (p.to, !trail));
-            let keeps = group.keeps_clock && resets_clock;
             let group_start = probes.len();
             for (raw, trail) in list {
                 let trail = trail && !raw.promo;
-                let quiet_special = if trail {
-                    Special::DoubleStep
-                } else if keeps {
-                    Special::Backward
-                } else {
-                    Special::None
-                };
-                let capture_special = if trail { Special::DoubleStep } else { Special::None };
+                let quiet_special = if trail { Special::DoubleStep } else { Special::None };
+                let capture_special = quiet_special;
                 // A probe never gives a move if an earlier probe goes to the same square over
                 // fewer squares and can do all that it can do, whenever this probe can be used.
                 let target = bit(raw.to);
@@ -661,13 +639,9 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
     });
 
     let mut moved_keyed = 0u8;
-    let mut resets = 0u8;
     for kind in Kind::ALL {
         if kinds[kind.index()].has_unmoved {
             moved_keyed |= 1 << kind.index();
-        }
-        if kinds[kind.index()].resets_clock {
-            resets |= 1 << kind.index();
         }
     }
     for castle in &castles {
@@ -699,6 +673,5 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
         castles,
         king_move_to_castle_square,
         moved_keyed,
-        resets_clock: resets,
     }
 }

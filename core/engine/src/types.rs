@@ -129,9 +129,6 @@ pub enum Special {
     /// The move captures en passant: the captured piece is the piece that made the en passant
     /// squares, not a piece on the `to` square.
     EnPassant,
-    /// A move that is not a capture and does not reset the clock, of a kind that has an atom
-    /// that resets the clock. The backward step of the pawn.
-    Backward,
     /// The king and a partner piece move by a row of `SideRules::castles`. See
     /// `Rules::castle_partner`.
     Castle,

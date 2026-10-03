@@ -74,8 +74,6 @@ pub struct Atom {
     /// The atom can capture en passant: it can go to an en passant square as if the square has
     /// the piece that made it, and that piece is captured. The atom must be able to capture.
     pub captures_en_passant: bool,
-    /// A move of this atom that is not a capture resets the clock. A capture always resets it.
-    pub resets_clock: bool,
 }
 
 impl Atom {
@@ -91,7 +89,6 @@ impl Atom {
             condition: Condition::Always,
             makes_en_passant: false,
             captures_en_passant: false,
-            resets_clock: false,
         }
     }
 
@@ -124,19 +121,12 @@ impl Atom {
         self
     }
 
-    /// The same atom; its moves reset the clock.
-    pub fn resets_clock(mut self) -> Atom {
-        self.resets_clock = true;
-        self
-    }
-
     /// True if two atoms give their moves the same properties. The move generation puts such
     /// atoms in one group. See `core/README.md`.
     pub fn same_group(&self, other: &Atom) -> bool {
         self.condition == other.condition
             && self.makes_en_passant == other.makes_en_passant
             && self.captures_en_passant == other.captures_en_passant
-            && self.resets_clock == other.resets_clock
     }
 }
 
@@ -293,10 +283,6 @@ pub enum RulesError {
     BadPromotion(Kind),
     /// The list of promotion kinds is empty.
     NoPromotion,
-    /// An atom of this kind makes en passant squares and does not reset the clock, but another
-    /// atom of the kind resets the clock. A move has one special property only, thus the
-    /// engine cannot give such a move both properties.
-    EnPassantKeepsClock(Kind),
     /// An atom of the king makes en passant squares. Then an en passant capture could remove a
     /// king that no piece attacks.
     KingMakesEnPassant,
@@ -320,11 +306,6 @@ impl std::fmt::Display for RulesError {
                 write!(f, "The promotion kind {} is a pawn, a king, or in the list two times", kind.letter())
             }
             RulesError::NoPromotion => write!(f, "The list of promotion kinds is empty"),
-            RulesError::EnPassantKeepsClock(kind) => write!(
-                f,
-                "An atom of kind {} makes en passant squares and keeps the clock, but another atom resets it",
-                kind.letter()
-            ),
             RulesError::KingMakesEnPassant => write!(f, "An atom of the king makes en passant squares"),
             RulesError::BadCastle(index) => write!(f, "The castle at index {index} is not valid"),
         }
@@ -334,12 +315,12 @@ impl std::fmt::Display for RulesError {
 impl std::error::Error for RulesError {}
 
 /// The atoms of the pawn of ordinary chess: the step, the double step on the first move, and
-/// the diagonal captures. All of them reset the clock.
+/// the diagonal captures.
 pub fn standard_pawn_atoms() -> Vec<Atom> {
     vec![
-        Atom::leap(&FORWARD, Mode::MoveOnly).resets_clock(),
-        Atom::slide(&FORWARD, Mode::MoveOnly).max_steps(2).if_unmoved().makes_en_passant().resets_clock(),
-        Atom::leap(&FORWARD_DIAG, Mode::CaptureOnly).captures_en_passant().resets_clock(),
+        Atom::leap(&FORWARD, Mode::MoveOnly),
+        Atom::slide(&FORWARD, Mode::MoveOnly).max_steps(2).if_unmoved().makes_en_passant(),
+        Atom::leap(&FORWARD_DIAG, Mode::CaptureOnly).captures_en_passant(),
     ]
 }
 
@@ -412,7 +393,7 @@ impl SideRules {
         self
     }
 
-    /// Pawns can move one square backward to an empty square. The step does not reset the clock.
+    /// Pawns can move one square backward to an empty square.
     pub fn backpedal(mut self) -> SideRules {
         let step = Atom::leap(&BACKWARD, Mode::MoveOnly);
         let atoms = &mut self.kinds[Kind::Pawn.index()].atoms;
@@ -476,7 +457,6 @@ impl SideRules {
             {
                 return Err(RulesError::BadPromoDistance(promotion.distance));
             }
-            let resets = rules.atoms.iter().any(|atom| atom.resets_clock);
             for atom in &rules.atoms {
                 if !(1..=Atom::MAX_STEPS).contains(&atom.max_steps) {
                     return Err(RulesError::BadSteps(kind, atom.max_steps));
@@ -485,9 +465,6 @@ impl SideRules {
                     if (df, dr) == (0, 0) || df.abs() > 7 || dr.abs() > 7 {
                         return Err(RulesError::BadOffset(kind, (df, dr)));
                     }
-                }
-                if atom.makes_en_passant && !atom.resets_clock && resets {
-                    return Err(RulesError::EnPassantKeepsClock(kind));
                 }
                 if atom.makes_en_passant && kind == Kind::King {
                     return Err(RulesError::KingMakesEnPassant);

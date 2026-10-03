@@ -44,8 +44,6 @@ export interface Move {
   /** The en passant target square that this move makes. */
   ep?: Square;
   epCapture?: true;
-  /** A backward pawn move. It does not reset the draw clock. */
-  back?: true;
   /** The rook move of a castle: [from, to]. */
   castle?: [Square, Square];
 }
@@ -54,7 +52,7 @@ export interface State {
   board: (Piece | null)[];
   turn: Color;
   ep: Square;
-  /** The number of half moves with no capture and no pawn advance. */
+  /** The number of half moves with no capture. */
   clock: number;
   rules: Record<Color, RuleSet>;
 }

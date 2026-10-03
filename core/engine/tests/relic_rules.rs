@@ -23,8 +23,6 @@ fn forced_march_lets_a_moved_pawn_move_two_squares() {
 fn backpedal_lets_a_pawn_move_backward_to_an_empty_square() {
     let mut state = from_fen("4k3/7p/8/8/8/4P3/8/4K3", Color::White, white(SideRules::standard().backpedal()));
     assert_eq!(targets(&mut state, "e3"), squares(&["e2", "e4"]));
-    let back = legal(&mut state).into_iter().find(|m| m.to == square("e2")).unwrap();
-    assert_eq!(back.special, Special::Backward);
 }
 
 #[test]
@@ -101,14 +99,14 @@ fn outcome_finds_two_lone_kings_and_the_clock() {
 }
 
 #[test]
-fn the_clock_obeys_captures_pawn_advances_and_backward_steps() {
-    let mut state = from_fen("4k3/7p/8/8/8/4P3/8/4K3", Color::White, white(SideRules::standard().backpedal()));
+fn only_a_capture_resets_the_clock() {
+    // The pawn on e3 can step back, advance, or capture the knight on d4.
+    let mut state = from_fen("4k3/7p/8/8/3n4/4P3/8/4K3", Color::White, white(SideRules::standard().backpedal()));
     state.clock = 7;
     let moves = legal(&mut state);
-    let back = *moves.iter().find(|m| m.special == Special::Backward).unwrap();
-    let advance = *moves.iter().find(|m| m.to == square("e4")).unwrap();
+    let to = |name: &str| *moves.iter().find(|m| m.from == square("e3") && m.to == square(name)).unwrap();
     let king = *moves.iter().find(|m| m.from == square("e1")).unwrap();
-    for (m, clock) in [(back, 8), (advance, 0), (king, 8)] {
+    for (m, clock) in [(to("e2"), 8), (to("e4"), 8), (king, 8), (to("d4"), 0)] {
         let undo = state.make(m);
         assert_eq!(state.clock, clock);
         state.unmake(m, undo);

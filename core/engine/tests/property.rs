@@ -63,9 +63,6 @@ fn random_atom(rng: &mut Rng) -> Atom {
     if rng.below(4) == 0 {
         atom = atom.captures_en_passant();
     }
-    if rng.below(3) == 0 {
-        atom = atom.resets_clock();
-    }
     atom
 }
 
@@ -88,9 +85,6 @@ fn random_pawn_atom(rng: &mut Rng) -> Atom {
     }
     if rng.below(2) == 0 {
         atom = atom.captures_en_passant();
-    }
-    if rng.below(2) == 0 {
-        atom = atom.resets_clock();
     }
     atom
 }
@@ -159,15 +153,6 @@ fn random_side(rng: &mut Rng) -> SideRules {
     // A king never makes en passant squares (`RulesError::KingMakesEnPassant`).
     for atom in &mut side.kinds[Kind::King.index()].atoms {
         atom.makes_en_passant = false;
-    }
-    // A move has one special property: an atom that makes en passant squares must reset the
-    // clock if another atom of the kind resets it.
-    for kind in &mut side.kinds {
-        if kind.atoms.iter().any(|atom| atom.resets_clock) {
-            for atom in kind.atoms.iter_mut().filter(|atom| atom.makes_en_passant) {
-                atom.resets_clock = true;
-            }
-        }
     }
     let castles = match rng.below(4) {
         0 => Vec::new(),
@@ -277,8 +262,8 @@ fn naive_attacks(state: &State, color: Color) -> Bitboard {
 
 type Key = (Square, Square, Option<Kind>, Special);
 
-fn group_key(atom: &Atom) -> (Condition, bool, bool, bool) {
-    (atom.condition, atom.makes_en_passant, atom.captures_en_passant, atom.resets_clock)
+fn group_key(atom: &Atom) -> (Condition, bool, bool) {
+    (atom.condition, atom.makes_en_passant, atom.captures_en_passant)
 }
 
 /// The moves of one piece.
@@ -286,7 +271,6 @@ fn naive_piece_moves(state: &State, from: Square, piece: Piece, captures_only: b
     let color = piece.color;
     let forward = color.forward();
     let rules = state.rules().side(color).kind(piece.kind);
-    let resets = rules.atoms.iter().any(|atom| atom.resets_clock);
     let foe = |p: &Option<Piece>| p.is_some_and(|p| p.color != color);
     let promotes = |to: Square| {
         rules.promotion.is_some_and(|promotion| {
@@ -332,10 +316,9 @@ fn naive_piece_moves(state: &State, from: Square, piece: Piece, captures_only: b
 
     let mut given = BTreeSet::new();
     let mut ep_given = BTreeSet::new();
-    for ((_, makes_ep, _, group_resets), atoms) in &groups {
-        let keeps = resets && !group_resets;
-        // to -> (quiet, capture, passes squares)
-        let mut targets: Vec<(Square, bool, bool, bool)> = Vec::new();
+    for ((_, makes_ep, _), atoms) in &groups {
+        // to -> (capture, passes squares)
+        let mut targets: Vec<(Square, bool, bool)> = Vec::new();
         for atom in atoms {
             for reached in walk(state, from, atom, forward) {
                 let quiet = reached.piece.is_none() && atom.mode.can_move();
@@ -345,12 +328,12 @@ fn naive_piece_moves(state: &State, from: Square, piece: Piece, captures_only: b
                 }
                 let trail = *makes_ep && reached.passed >= 1;
                 match targets.iter_mut().find(|t| t.0 == reached.to) {
-                    Some(t) => t.3 |= trail,
-                    None => targets.push((reached.to, quiet, capture, trail)),
+                    Some(t) => t.2 |= trail,
+                    None => targets.push((reached.to, capture, trail)),
                 }
             }
         }
-        for &(to, quiet, capture, trail) in &targets {
+        for &(to, capture, trail) in &targets {
             if !given.insert(to) || all_ep.contains(&to) {
                 continue;
             }
@@ -358,13 +341,7 @@ fn naive_piece_moves(state: &State, from: Square, piece: Piece, captures_only: b
                 continue;
             }
             // A promotion makes no en passant squares.
-            let special = if trail && !promotes(to) {
-                Special::DoubleStep
-            } else if quiet && keeps {
-                Special::Backward
-            } else {
-                Special::None
-            };
+            let special = if trail && !promotes(to) { Special::DoubleStep } else { Special::None };
             push(moves, to, special);
         }
         if victim_is_foe {
@@ -466,8 +443,6 @@ fn naive_trail(state: &State, m: Move) -> Bitboard {
 fn naive_make(state: &State, m: Move) -> ([Option<Piece>; 64], u32, Bitboard) {
     let mut board = *state.board();
     let mut piece = board[m.from as usize].take().unwrap();
-    let rules = state.rules().side(piece.color);
-    let resets = rules.atoms(piece.kind).iter().any(|atom| atom.resets_clock);
     let mut captured = false;
     if m.special == Special::Castle {
         let (partner_from, partner_to) = state.rules().castle_partner(piece.color, m).unwrap();
@@ -486,7 +461,7 @@ fn naive_make(state: &State, m: Move) -> ([Option<Piece>; 64], u32, Bitboard) {
     piece.kind = m.promo.unwrap_or(kind);
     piece.moved = true;
     board[m.to as usize] = Some(piece);
-    let clock = if captured || (resets && m.special != Special::Backward) { 0 } else { state.clock + 1 };
+    let clock = if captured { 0 } else { state.clock + 1 };
     (board, clock, naive_trail(state, m))
 }
 
@@ -506,7 +481,7 @@ fn sorted(moves: impl IntoIterator<Item = Key>) -> Vec<(Square, Square, Option<u
 #[derive(Default, Debug)]
 struct Seen {
     moves: usize,
-    special: [usize; 5],
+    special: [usize; 4],
     promotions: usize,
     /// States where a side is in check, and the legal moves of pieces that are not a king there.
     checks: usize,
@@ -593,15 +568,15 @@ fn random_rules_agree_with_a_naive_generator() {
     println!("{seen:?}, {ep_states} states with en passant squares");
     // The random positions must give many moves and each kind of special move, else the test
     // shows little.
-    let [_, double, en_passant, backward, castle] = seen.special;
+    let [_, double, en_passant, castle] = seen.special;
     assert!(seen.moves > 30 * RULE_SETS, "{seen:?}");
-    assert!(double > 5000 && en_passant > 500 && backward > 5000 && castle > RULE_SETS / 10, "{seen:?}");
+    assert!(double > 5000 && en_passant > 500 && castle > RULE_SETS / 10, "{seen:?}");
     assert!(seen.promotions > 10_000 && ep_states > 2000, "{seen:?}, {ep_states} states with en passant");
     assert!(seen.checks > 1000 && seen.evasions > 1000, "{seen:?}");
 }
 
 /// Makes and takes back each pseudo move to `depth`, and compares each `make` with `naive_make`.
-fn walk_tree(state: &mut State, depth: u32, counts: &mut [usize; 7]) {
+fn walk_tree(state: &mut State, depth: u32, counts: &mut [usize; 6]) {
     if depth == 0 {
         return;
     }
@@ -621,7 +596,7 @@ fn walk_tree(state: &mut State, depth: u32, counts: &mut [usize; 7]) {
         assert!(!friend || m.special == Special::Castle, "{m:?} captures a friend");
         counts[m.special as usize] += 1;
         let (board, clock, ep) = naive_make(state, m);
-        counts[5] += (ep.count_ones() > 1) as usize;
+        counts[4] += (ep.count_ones() > 1) as usize;
         let undo = state.make(m);
         assert_eq!(state.board(), &board, "the board after {m:?}. Rules: {:?}", state.rules().side(mover));
         assert_eq!(state.clock, clock, "the clock after {m:?}");
@@ -634,7 +609,7 @@ fn walk_tree(state: &mut State, depth: u32, counts: &mut [usize; 7]) {
         if !in_check(state, mover) {
             assert_no_royal_capture(state, mover);
             if other_safe && in_check(state, mover.other()) {
-                counts[6] += 1;
+                counts[5] += 1;
                 assert!(may_give_check(state, m, &undo), "{m:?} gives check, but `may_give_check` is false");
             }
         }
@@ -661,7 +636,7 @@ fn assert_no_royal_capture(state: &State, mover: Color) {
 #[test]
 fn make_and_unmake_give_back_the_state_for_random_rules() {
     let mut rng = Rng::new(0x5EED_0002);
-    let mut counts = [0; 7];
+    let mut counts = [0; 6];
     for _ in 0..WALKS {
         let rules = Rules::new(random_side(&mut rng), random_side(&mut rng));
         let placements = random_placements(&mut rng, &rules);
@@ -670,13 +645,10 @@ fn make_and_unmake_give_back_the_state_for_random_rules() {
         walk_tree(&mut state, 2, &mut counts);
     }
     println!("moves by special property, moves with two en passant squares or more, and checks: {counts:?}");
-    // Each special move occurs: double steps, en passant captures, backward steps, castles, and
+    // Each special move occurs: double steps, en passant captures, castles, and
     // moves that make more than one en passant square.
     // The last count is the moves that give check.
-    let [plain, double, en_passant, backward, castle, wide, checks] = counts;
-    assert!(
-        plain > 500_000 && double > 5000 && en_passant > 300 && backward > 10_000 && castle > 1000 && wide > 1000,
-        "{counts:?}"
-    );
+    let [plain, double, en_passant, castle, wide, checks] = counts;
+    assert!(plain > 500_000 && double > 5000 && en_passant > 300 && castle > 1000 && wide > 1000, "{counts:?}");
     assert!(checks > 10_000, "{counts:?}");
 }

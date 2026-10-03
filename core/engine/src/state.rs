@@ -30,8 +30,6 @@ pub struct State {
     pub clock: u32,
     /// The piece keys of the battle: `zobrist::piece_keys`.
     piece_keys: &'static zobrist::PieceKeys,
-    /// Bit `8 * color + kind`: `SideTables::resets_clock`.
-    resets_clock: u16,
     tables: Arc<Tables>,
 }
 
@@ -104,9 +102,6 @@ impl State {
 
     /// Makes a state that shares the tables of a battle.
     pub fn with_tables(pieces: &[Placement], tables: Arc<Tables>) -> Result<State, StateError> {
-        let flags = |get: fn(&crate::tables::SideTables) -> u8| {
-            get(tables.side(Color::White)) as u16 | (get(tables.side(Color::Black)) as u16) << 8
-        };
         let mut state = State {
             board: [None; 64],
             by_color: [0; 2],
@@ -117,7 +112,6 @@ impl State {
             ep_victim: 0,
             clock: 0,
             piece_keys: zobrist::piece_keys(tables.all_moved_keyed()),
-            resets_clock: flags(|side| side.resets_clock),
             tables,
         };
         for placement in pieces {
@@ -314,9 +308,8 @@ impl State {
             self.ep = side.trail_squares(undo.kind, undo.moved, m.from, m.to, self.occupied());
             self.ep_victim = m.to;
         }
-        let resets = self.resets_clock >> (8 * mover.index() + undo.kind.index()) & 1 != 0;
-        self.clock =
-            if undo.captured.is_some() || (resets && m.special != Special::Backward) { 0 } else { self.clock + 1 };
+        // Only a capture resets the clock.
+        self.clock = if undo.captured.is_some() { 0 } else { self.clock + 1 };
         self.turn = mover.other();
         undo
     }

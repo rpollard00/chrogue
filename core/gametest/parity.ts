@@ -216,6 +216,10 @@ function mates(state: State, m: Move): boolean {
   return end?.reason === 'checkmate';
 }
 
+// A pawn step toward the first rank of its side: the backward step of backpedal.
+const isBack = (state: State, m: Move): boolean =>
+  state.board[m.from]?.type === 'p' && m.to - m.from === (state.turn === 'w' ? -8 : 8);
+
 function chooseMove(state: State, legal: Move[], style: Style, rng: Rng): Move {
   const castles = legal.filter((m) => m.castle);
   if (castles.length && rng.chance(0.5)) return rng.pick(castles);
@@ -236,7 +240,7 @@ function chooseMove(state: State, legal: Move[], style: Style, rng: Rng): Move {
     case 'pawns': {
       const promos = legal.filter((m) => m.promo);
       if (promos.length) return rng.pick(promos);
-      const pushes = legal.filter((m) => pawn(m) && !m.back);
+      const pushes = legal.filter((m) => pawn(m) && !isBack(state, m));
       return pushes.length && rng.chance(0.7) ? rng.pick(pushes) : rng.pick(legal);
     }
   }
@@ -312,6 +316,7 @@ async function playBattle(core: Core, rng: Rng, n: number, meta: Meta, stats: St
       return;
     }
     const move = chooseMove(battle.state, legal, style, rng);
+    const wasBack = isBack(battle.state, move);
     const report = playMove(battle, run, move);
     const reply = await core.ok(white ? 'move' : 'debug_enemy_move', { from: move.from, to: move.to, promo: move.promo });
     view = reply.view;
@@ -320,7 +325,7 @@ async function playBattle(core: Core, rng: Rng, n: number, meta: Meta, stats: St
     if (move.promo) stats.promotions++;
     if (move.castle) stats.castles++;
     if (move.epCapture) stats.enPassant++;
-    if (move.back) stats.backward++;
+    if (wasBack) stats.backward++;
 
     const events: Json[] = reply.events;
     const capture = events.find((e) => e.type === 'capture');

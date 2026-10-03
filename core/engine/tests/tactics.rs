@@ -346,7 +346,6 @@ fn backpedal_the_pawn_steps_back_to_block_a_check() {
     let fen = "6k1/1b6/8/8/8/6P1/2Q1n2P/7K";
     let (_, result) = solve_fen(fen, WHITE, white_has(&["backpedal"]), 20_000);
     assert_eq!(squares_of(result.mv), mv("g3", "g2"));
-    assert_eq!(result.mv.special, Special::Backward);
     assert!(result.score > 300, "score {}", result.score);
     // With the rules of chess, Black mates in 2.
     let (_, result) = solve_fen(fen, WHITE, standard(), 20_000);

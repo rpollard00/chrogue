@@ -37,7 +37,7 @@ pub fn pieces(state: &State) -> Vec<(Square, Piece)> {
     (0..64).filter_map(|s| state.piece_at(s).map(|p| (s, p))).collect()
 }
 
-/// The number of half moves with no capture and no pawn advance.
+/// The number of half moves with no capture.
 pub fn clock(state: &State) -> u32 {
     state.clock
 }
@@ -125,7 +125,6 @@ pub const fn special_name(special: Special) -> &'static str {
         Special::None => "none",
         Special::DoubleStep => "double_step",
         Special::EnPassant => "en_passant",
-        Special::Backward => "backward",
         Special::Castle => "castle",
     }
 }

@@ -149,7 +149,7 @@ function addPawnMoves(state: State, moves: Move[], from: Square, p: Piece, captu
   }
   const rb = r - dir;
   if (rules.backpedal && !capturesOnly && rb >= 0 && rb <= 7 && !board[rb * 8 + f]) {
-    moves.push({ from, to: rb * 8 + f, back: true });
+    moves.push({ from, to: rb * 8 + f });
   }
 }
 
@@ -221,7 +221,8 @@ export function makeMove(state: State, m: Move): Undo {
     rook.moved = true;
   }
   state.ep = m.ep ?? -1;
-  state.clock = undo.captured || (undo.type === 'p' && !m.back) ? 0 : state.clock + 1;
+  // Only a capture resets the clock.
+  state.clock = undo.captured ? 0 : state.clock + 1;
   state.turn = other(p.color);
   return undo;
 }

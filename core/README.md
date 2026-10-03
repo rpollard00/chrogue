@@ -61,9 +61,8 @@ Each kind, the pawn too, moves by a list of atoms. An `Atom` has these fields:
 - `condition`: `Condition::Always`, or `Condition::Unmoved`: only while the piece has not moved. Such an atom also attacks only while the piece has not moved.
 - `makes_en_passant`: The squares that a move of the atom passes become the en passant squares of the next half move, and the piece that moved is the victim of an en passant capture there. A move of one step passes no square. An atom of the king cannot have it (`RulesError::KingMakesEnPassant`): an en passant capture never removes a king.
 - `captures_en_passant`: The atom can go to an en passant square as if the square has the victim, and the victim is captured. The atom must be able to capture.
-- `resets_clock`: A move of the atom that is not a capture resets the 50-move clock. A capture always resets it.
 
-`Atom::leap(offsets, mode)` and `Atom::slide(dirs, mode)` make an atom with no condition and no property. The methods `max_steps(n)`, `if_unmoved()`, `makes_en_passant()`, `captures_en_passant()`, and `resets_clock()` add the others.
+`Atom::leap(offsets, mode)` and `Atom::slide(dirs, mode)` make an atom with no condition and no property. The methods `max_steps(n)`, `if_unmoved()`, `makes_en_passant()`, and `captures_en_passant()` add the others.
 
 ### The moves of a piece
 
@@ -73,7 +72,6 @@ The atoms of a kind with the same condition and the same three properties form o
 - A target that an earlier group gave is not given again. Thus the first group decides the properties of a move.
 - An en passant capture takes the place of a quiet move to the same square.
 - A target is a `Special::DoubleStep` move if a slide of a group with `makes_en_passant` gives it after one square or more. Its en passant squares are the squares that it passes on each such slide of the kind that can be used.
-- If a kind has an atom with `resets_clock`, a quiet move of a group without it is a `Special::Backward` move: it keeps the clock. The other quiet moves of the kind reset the clock. An atom with `makes_en_passant` in such a kind must also have `resets_clock` (`RulesError::EnPassantKeepsClock`), because a move has one special property only.
 
 ### Promotion
 
@@ -89,7 +87,7 @@ If the movement of the king can go to the `to` square of a castle, the engine gi
 
 `SideRules::standard()` is ordinary chess:
 
-- The pawn: `leap([(0, 1)], MoveOnly).resets_clock()`, `slide([(0, 1)], MoveOnly).max_steps(2).if_unmoved().makes_en_passant().resets_clock()`, and `leap([(-1, 1), (1, 1)], CaptureOnly).captures_en_passant().resets_clock()`, with `Promotion::STANDARD`.
+- The pawn: `leap([(0, 1)], MoveOnly)`, `slide([(0, 1)], MoveOnly).max_steps(2).if_unmoved().makes_en_passant()`, and `leap([(-1, 1), (1, 1)], CaptureOnly).captures_en_passant()`, with `Promotion::STANDARD`.
 - The officers: the knight leaps, the bishop, rook, and queen slides, and the king steps.
 - `Castle::STANDARD`.
 
@@ -98,7 +96,7 @@ The six rule flags of the TypeScript engine are edits of it:
 | Flag | Method | Edit |
 | --- | --- | --- |
 | `forcedMarch` | `forced_march()` | The pawn atoms with `makes_en_passant` lose their condition. |
-| `backpedal` | `backpedal()` | The pawn gets `leap([(0, -1)], MoveOnly)`. It has no `resets_clock`, thus its moves are `Backward` moves. |
+| `backpedal` | `backpedal()` | The pawn gets `leap([(0, -1)], MoveOnly)`. |
 | `earlyPromo` | `early_promo()` | The promotion distance of the pawn becomes 1. |
 | `kingKnight` | `king_knight()` | The king gets `leap(KNIGHT, MoveOrCapture)`. |
 | `longLeap` | `long_leap()` | The knight gets `leap(CAMEL, MoveOrCapture)`. |
@@ -152,8 +150,8 @@ Pawn moves. Pawns that capture straight ahead and not diagonally: replace the pa
 
 ```rust
 let side = SideRules::standard().with_kind(Kind::Pawn, vec![
-    Atom::leap(&FORWARD, Mode::MoveOrCapture).resets_clock(),
-    Atom::slide(&FORWARD, Mode::MoveOnly).max_steps(2).if_unmoved().makes_en_passant().resets_clock(),
+    Atom::leap(&FORWARD, Mode::MoveOrCapture),
+    Atom::slide(&FORWARD, Mode::MoveOnly).max_steps(2).if_unmoved().makes_en_passant(),
 ]);
 ```
 
@@ -161,9 +159,9 @@ A sideways step that only moves, a backward capture, and a diagonal move are add
 
 ```rust
 let side = SideRules::standard()
-    .with_atom(Kind::Pawn, Atom::leap(&[(-1, 0), (1, 0)], Mode::MoveOnly).resets_clock())
-    .with_atom(Kind::Pawn, Atom::leap(&[(-1, -1), (1, -1)], Mode::CaptureOnly).resets_clock())
-    .with_atom(Kind::Pawn, Atom::leap(&[(-1, 1), (1, 1)], Mode::MoveOnly).resets_clock());
+    .with_atom(Kind::Pawn, Atom::leap(&[(-1, 0), (1, 0)], Mode::MoveOnly))
+    .with_atom(Kind::Pawn, Atom::leap(&[(-1, -1), (1, -1)], Mode::CaptureOnly))
+    .with_atom(Kind::Pawn, Atom::leap(&[(-1, 1), (1, 1)], Mode::MoveOnly));
 ```
 
 En passant. A first step of up to three squares. A step of three squares makes two en passant squares, and an enemy pawn can capture on each of them:
@@ -171,12 +169,6 @@ En passant. A first step of up to three squares. A step of three squares makes t
 ```rust
 let mut side = SideRules::standard();
 side.kinds[Kind::Pawn.index()].atoms[1].max_steps = 3;
-```
-
-The clock. A move of an atom without `resets_clock` keeps the clock if another atom of the kind resets it, as the backward step does:
-
-```rust
-let side = SideRules::standard().with_atom(Kind::Pawn, Atom::leap(&BACKWARD, Mode::MoveOnly));
 ```
 
 A promotion. Pawns of one side promote one rank earlier, and only to a knight:
@@ -206,7 +198,8 @@ If the TypeScript engine also gets the rule, add its flag name to `SideRules::wi
 - A piece has its own `moved` flag. Castles and atoms with `Condition::Unmoved` read this flag. The state has no castling rights.
 - With `forcedMarch`, a pawn can do a double step from each rank, and the step makes an en passant square.
 - A double step into the promotion zone promotes and makes no en passant square. In general: a move that promotes makes no en passant squares.
-- A backward step is never a capture, never promotes, and does not reset the clock. In general: a move that goes backward never promotes.
+- A backward step is never a capture and never promotes. In general: a move that goes backward never promotes.
+- The clock counts the half moves since the last capture. Only a capture resets it: no other move does, standard or not. At 100 the battle is a draw.
 - An en passant capture removes the piece that made the en passant squares. With the six flags, only a pawn double step makes them. `State::with_en_passant` takes the square of a double step, and its pawn is the victim.
 - A side with no king is never in check. If a side has two kings, only the king on the lowest square can be in check.
 - A move can capture a king when the side that does not have the move is in check.

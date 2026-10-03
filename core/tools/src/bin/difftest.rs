@@ -246,13 +246,12 @@ fn read_move(value: &Value, state: &State) -> Res<Move> {
     let from = read_square(&value["from"])?;
     let to = read_square(&value["to"])?;
     let promo = if value["promo"].is_null() { None } else { Some(read_kind(&value["promo"])?) };
-    let flags = [!value["ep"].is_null(), value["epCapture"] == true, value["back"] == true, !value["castle"].is_null()];
+    let flags = [!value["ep"].is_null(), value["epCapture"] == true, !value["castle"].is_null()];
     let special = match flags {
-        [false, false, false, false] => Special::None,
-        [true, false, false, false] => Special::DoubleStep,
-        [false, true, false, false] => Special::EnPassant,
-        [false, false, true, false] => Special::Backward,
-        [false, false, false, true] => Special::Castle,
+        [false, false, false] => Special::None,
+        [true, false, false] => Special::DoubleStep,
+        [false, true, false] => Special::EnPassant,
+        [false, false, true] => Special::Castle,
         _ => return Err(format!("the move {value} has more than one special property")),
     };
     let m = Move { from, to, promo, special };
@@ -286,7 +285,6 @@ fn write_move(m: Move, state: &State) -> Value {
         Special::None => {}
         Special::DoubleStep => drop(out.insert("ep".to_string(), json!(en_passant_square(state, m)))),
         Special::EnPassant => drop(out.insert("epCapture".to_string(), json!(true))),
-        Special::Backward => drop(out.insert("back".to_string(), json!(true))),
         Special::Castle => {
             let color = state.piece_at(m.from).map_or(Color::White, |piece| piece.color);
             out.insert("castle".to_string(), json!(state.rules().castle_partner(color, m)));

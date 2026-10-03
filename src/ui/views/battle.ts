@@ -27,7 +27,7 @@ const WIN_TEXT: Record<Color, Record<'checkmate' | 'rout' | 'stalemate', string>
   },
 };
 const DRAW_TEXT: Record<'clock' | 'bare', string> = {
-  clock: '50 moves passed with no capture and no pawn advance. The battle is a draw.',
+  clock: '50 moves passed with no capture. The battle is a draw.',
   bare: 'Only the kings remain. The battle is a draw.',
 };
 

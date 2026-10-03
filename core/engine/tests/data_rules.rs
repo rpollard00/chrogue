@@ -383,11 +383,7 @@ fn rules_and_states_that_are_not_valid_give_an_error() {
     assert!(SideRules::from_flags(["noSuchFlag"]).is_err());
     assert!(SideRules::from_flags(chrogue_engine::rules::FLAG_NAMES).unwrap().validate().is_ok());
 
-    // An atom that makes en passant squares and keeps the clock, in a kind that resets it.
-    let keeps = Atom::slide(&[(0, 1)], Mode::MoveOnly).max_steps(3).makes_en_passant();
-    let keeps = SideRules::standard().with_atom(Kind::Pawn, keeps);
-    assert_eq!(keeps.validate(), Err(RulesError::EnPassantKeepsClock(Kind::Pawn)));
-    // The same atom is valid in a kind with no atom that resets the clock.
+    // An officer can have an atom that makes en passant squares.
     let rook = SideRules::standard().with_atom(Kind::Rook, Atom::slide(&ORTHO, Mode::MoveOnly).makes_en_passant());
     assert!(rook.validate().is_ok());
 

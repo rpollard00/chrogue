@@ -181,13 +181,13 @@ Each view has `screen`. The other fields depend on the screen.
 - `check`: the square of the king of the side to move if it is in check, else `null`.
 - `last`: the last move as `{"from", "to"}`, or `null`.
 - `moves`: in the phase `player`, each legal move of the player: `id` (the piece), `from`, `to`, `promo` (only on a promotion; a promotion has one move for each kind), `capture`, and `special`. A client does the selection, the target marks, and the promotion picker with this list. In the other phases the list is empty.
-- `special`: `none`, `double_step`, `en_passant`, `backward` (a pawn step back with Tactical Retreat), or `castle`.
+- `special`: `none`, `double_step`, `en_passant`, or `castle`.
 - `scout`: true if the player has the Scout upgrade. `enemy_moves`: with Scout in the phase `player`, the moves of each enemy piece as if the enemy had the move, with the field `preview` set to true. A client shows them as marks only.
 - `taken`: the kinds that each side captured: `{"w": [...], "b": [...]}`. `w` has the enemy pieces that the player captured.
 - `gold`: the gold of the run. `capture_gold`: the gold from captures in this battle, rounded as the game rounds it. `capture_gold_exact`: the same before rounding (Bounty gives halves).
 - `lost`: the ids of the units that the enemy captured. `rescued`: the ids of captured units that return after the battle (Second Wind).
 - `relics`: the relics of the player: `id`, `name`, `text`. `traits`: the traits of the enemy: `id`, `name`, `text` (the text for the enemy).
-- `clock`: the half moves with no capture and no pawn advance. At 100 the battle is a draw.
+- `clock`: the half moves since the last capture. Only a capture resets it. At 100 the battle is a draw.
 - `result`: `null` until the battle ends. Then:
   - `winner`: `w`, `b`, or `null` for a draw.
   - `reason`: see the codes below.
@@ -247,7 +247,7 @@ Each event is an object with `type`. The other fields depend on the type.
 The client has the interface text (key labels, status lines, result sentences). It selects the text with these codes:
 
 - `phase`: `player`, `enemy`, `over`.
-- `reason`: `checkmate`, `stalemate` (the side that has no legal move loses), `rout` (the loser has only its king), `bare` (only the kings remain, a draw), `clock` (50 moves with no capture and no pawn advance, a draw).
+- `reason`: `checkmate`, `stalemate` (the side that has no legal move loses), `rout` (the loser has only its king), `bare` (only the kings remain, a draw), `clock` (50 moves with no capture, a draw).
 - `outcome`: `victory`, `defeat`, `draw`. `next`: `camp`, `won`, `lost`.
 - `blocked`: `army_full` (the browser text is "Army full"), `owned` ("Owned").
 - reward `state`: `open`, `taken`, `skipped`. Result `row`: `captures`, `clear`, `bonus`. Over `row`: `floors`, `win`.
@@ -342,7 +342,6 @@ A won battle and a camp action (from the test `the_camp_example_is_real`: the ar
 
 ## Open issues
 
-- With Tactical Retreat (`backpedal`), a pawn can step back and forward again and again. The forward step is a pawn advance, thus it resets the 50-move clock, and the game has no rule for a repeated position. A battle can then continue with no end. The core keeps this rule of the TypeScript game and does not add a repetition rule.
 - A draw on the last floor: the run stays on floor 8, in the two games. `continue` opens the camp before floor 8 again, with no reward.
 - The camp can give a start where the enemy king is in check: a rook or a queen of the player on an open e-file against an enemy with no pawn on e7. As in the TypeScript game, `start_battle` starts that battle, and White can capture the king. The debug commands and saved data permit such a start too (`gametest/parity.ts` compares random starts of this kind with the TypeScript game). A rule that refuses it belongs in `start_battle`, and it changes the game: it is a decision for the design.
 - A battle can start in a position where the player has no legal move (for example, a debug army that is in checkmate at the start). As in the TypeScript game, the result is checked only after a move: the phase is `player` with no moves, and only `give_up` and `to_title` work.

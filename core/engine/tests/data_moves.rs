@@ -45,8 +45,8 @@ fn pawn(atoms: Vec<Atom>) -> SideRules {
 /// The step and the double step of the pawn of ordinary chess.
 fn pawn_steps() -> Vec<Atom> {
     vec![
-        Atom::leap(&FORWARD, Mode::MoveOnly).resets_clock(),
-        Atom::slide(&FORWARD, Mode::MoveOnly).max_steps(2).if_unmoved().makes_en_passant().resets_clock(),
+        Atom::leap(&FORWARD, Mode::MoveOnly),
+        Atom::slide(&FORWARD, Mode::MoveOnly).max_steps(2).if_unmoved().makes_en_passant(),
     ]
 }
 
@@ -54,7 +54,7 @@ fn pawn_steps() -> Vec<Atom> {
 fn pawns_that_capture_straight_ahead_and_not_diagonally() {
     // The forward step can also capture. The pawn has no diagonal capture.
     let mut atoms = pawn_steps();
-    atoms[0] = Atom::leap(&FORWARD, Mode::MoveOrCapture).resets_clock();
+    atoms[0] = Atom::leap(&FORWARD, Mode::MoveOrCapture);
     let rules = || white(pawn(atoms.clone()));
 
     // The pawn on e3 captures the pawn on e4, and not the pawn on d4.
@@ -80,35 +80,20 @@ fn pawns_that_capture_straight_ahead_and_not_diagonally() {
 #[test]
 fn a_sideways_pawn_step_that_only_moves() {
     let sidestep = |atom: Atom| white(SideRules::standard().with_atom(Kind::Pawn, atom));
-    let resets = || sidestep(Atom::leap(&[(-1, 0), (1, 0)], Mode::MoveOnly).resets_clock());
+    let rules = || sidestep(Atom::leap(&[(-1, 0), (1, 0)], Mode::MoveOnly));
 
     // The pawn on d4 steps to e4, and does not capture the knight on c4.
-    let mut state = from_fen("4k3/8/8/8/2nP4/8/8/4K3", Color::White, resets());
+    let mut state = from_fen("4k3/8/8/8/2nP4/8/8/4K3", Color::White, rules());
     assert_eq!(targets(&mut state, "d4"), squares(&["d5", "e4"]));
     // The step attacks no square: the king on e4 is not in check, and c4 is not attacked.
-    let check = from_fen("8/8/8/7k/3P4/8/8/4K3", Color::Black, resets());
+    let check = from_fen("8/8/8/7k/3P4/8/8/4K3", Color::Black, rules());
     assert!(!is_attacked(&check, square("e4"), Color::White) && !is_attacked(&check, square("c4"), Color::White));
-    assert!(!in_check(&from_fen("8/8/8/8/3Pk3/8/8/4K3", Color::Black, resets()), Color::Black));
-
-    // The atom tells if the step resets the clock. Without `resets_clock`, the step is a
-    // `Backward` move: it keeps the clock, as the backward step of `backpedal` does.
-    for (rules, special, clock) in
-        [(resets(), Special::None, 0), (sidestep(Atom::leap(&[(-1, 0), (1, 0)], Mode::MoveOnly)), Special::Backward, 8)]
-    {
-        let mut state = from_fen("4k3/8/8/8/2nP4/8/8/4K3", Color::White, rules);
-        state.clock = 7;
-        let m = find(&mut state, "d4", "e4");
-        assert_eq!(m.special, special);
-        state.make(m);
-        assert_eq!(state.clock, clock);
-    }
+    assert!(!in_check(&from_fen("8/8/8/8/3Pk3/8/8/4K3", Color::Black, rules()), Color::Black));
 }
 
 #[test]
 fn a_backward_pawn_capture() {
-    let back = || {
-        SideRules::standard().with_atom(Kind::Pawn, Atom::leap(&[(-1, -1), (1, -1)], Mode::CaptureOnly).resets_clock())
-    };
+    let back = || SideRules::standard().with_atom(Kind::Pawn, Atom::leap(&[(-1, -1), (1, -1)], Mode::CaptureOnly));
     let rules = || Rules::new(back(), back());
 
     // The pawn on e4 captures backward on d3, and forward on f5 as usual.
@@ -129,7 +114,7 @@ fn a_triple_first_step_makes_two_en_passant_squares() {
     // squares, and the pawn that moved is the victim of an en passant capture on each of them.
     let mut atoms = pawn_steps();
     atoms[1] = atoms[1].clone().max_steps(3);
-    atoms.push(Atom::leap(&FORWARD_DIAG, Mode::CaptureOnly).captures_en_passant().resets_clock());
+    atoms.push(Atom::leap(&FORWARD_DIAG, Mode::CaptureOnly).captures_en_passant());
     let triple = || pawn(atoms.clone());
     let rules = || Rules::new(triple(), triple());
 
