@@ -13,7 +13,7 @@ use crate::content::{self, FLOORS, RECRUIT_KINDS, RelicId, UpgradeId};
 use crate::protocol::{Code, Command, EventKind, Fail, MAX_REQUEST_BYTES, event, fail, gold_number};
 use crate::random::Dice;
 use crate::run::{ENEMY_PIECES_MAX, EnemyPiece, Meta, Offer, Phase, Run, RunSummary, UNIT_ID_MAX, Unit, UnitId};
-use crate::save::{self, Storage};
+use crate::save::{self, Doc, Storage};
 use crate::view;
 
 /// The reward cards of one camp visit and the card that the player took. It is None when the
@@ -102,7 +102,15 @@ pub struct Session {
     game: Game,
     storage: Box<dyn Storage>,
     debug: bool,
+    /// The `save_problem` events of the load. The first successful response has them.
+    pending: Vec<Value>,
+    /// The documents that the core could not use and could not set aside. The session does not
+    /// write or remove them.
+    frozen: Vec<Doc>,
 }
+
+/// The message of `save_failed` for a frozen document.
+const FROZEN: &str = "The core does not write over a saved file that it could not read or set aside";
 
 impl Session {
     /// A session with the saved data of the storage, on the title screen.
@@ -110,12 +118,36 @@ impl Session {
         Session::with_debug(storage, seed, false)
     }
 
-    /// A session that also accepts the debug commands if `debug` is true.
+    /// A session that also accepts the debug commands if `debug` is true. A saved document that
+    /// the core cannot use is set aside before the session writes anything, and the first
+    /// successful response tells it with a `save_problem` event.
     pub fn with_debug(mut storage: Box<dyn Storage>, seed: u64, debug: bool) -> Session {
-        let meta = save::load_meta(storage.as_mut());
-        let run = save::load_run(storage.as_mut());
-        let game = Game { meta, screen: Screen::Title { run }, dice: Dice::new(seed), barred: Vec::new(), quit: false };
-        Session { game, storage, debug }
+        let loaded = save::load(storage.as_mut());
+        let mut pending = Vec::new();
+        let mut frozen = Vec::new();
+        for problem in loaded.problems {
+            let (kept, message) = match storage.set_aside(problem.doc) {
+                Ok(kept) => (kept, problem.message),
+                Err(error) => {
+                    frozen.push(problem.doc);
+                    let what = problem.doc.name();
+                    (
+                        None,
+                        format!(
+                            "{}. The core could not set the file aside ({error}) and does not save the {what}",
+                            problem.message
+                        ),
+                    )
+                }
+            };
+            pending.push(event(
+                EventKind::SaveProblem,
+                json!({ "what": problem.doc.name(), "reason": problem.reason.code(), "message": message, "kept": kept }),
+            ));
+        }
+        let screen = Screen::Title { run: loaded.run };
+        let game = Game { meta: loaded.meta, screen, dice: Dice::new(seed), barred: Vec::new(), quit: false };
+        Session { game, storage, debug, pending, frozen }
     }
 
     pub fn screen(&self) -> &Screen {
@@ -164,12 +196,10 @@ impl Session {
             Ok(Ok(mut done)) => {
                 self.game = next;
                 self.persist(&mut done);
-                let mut reply = format!(
-                    "{{\"ok\":true,\"id\":{},\"events\":{},\"view\":{}",
-                    id,
-                    Value::Array(done.events),
-                    self.view()
-                );
+                let mut events = std::mem::take(&mut self.pending);
+                events.append(&mut done.events);
+                let mut reply =
+                    format!("{{\"ok\":true,\"id\":{},\"events\":{},\"view\":{}", id, Value::Array(events), self.view());
                 if let Some(data) = done.data {
                     reply.push_str(&format!(",\"data\":{data}"));
                 }
@@ -193,18 +223,21 @@ impl Session {
     }
 
     fn persist(&mut self, done: &mut Done) {
-        if done.save_meta
-            && let Err(message) = self.storage.save_meta(&save::meta_document(&self.game.meta))
-        {
-            done.push(EventKind::SaveFailed, json!({ "what": "meta", "message": message }));
-        }
-        if done.save_run {
-            let result = match self.game.screen.run() {
-                Some(run) => self.storage.save_run(&save::run_document(run)),
-                None => self.storage.clear_run(),
+        // The text of each document to save, or None to remove the saved run.
+        let meta = done.save_meta.then(|| Some(save::meta_document(&self.game.meta)));
+        let run = done.save_run.then(|| self.game.screen.run().map(save::run_document));
+        for (doc, text) in [(Doc::Meta, meta), (Doc::Run, run)] {
+            let Some(text) = text else { continue };
+            let result = if self.frozen.contains(&doc) {
+                Err(FROZEN.to_string())
+            } else {
+                match text {
+                    Some(text) => self.storage.save(doc, &text),
+                    None => self.storage.remove(doc),
+                }
             };
             if let Err(message) = result {
-                done.events.push(event(EventKind::SaveFailed, json!({ "what": "run", "message": message })));
+                done.push(EventKind::SaveFailed, json!({ "what": doc.name(), "message": message }));
             }
         }
     }
@@ -313,7 +346,9 @@ fn screen_event(done: &mut Done, screen: &Screen) {
 
 fn start_battle(game: &mut Game, mut run: Run, done: &mut Done) -> Result<(), Fail> {
     run.phase = Phase::Battle;
-    let battle = Battle::new(&run).map_err(|e| Fail::new(Code::Internal, e))?;
+    // Saved data and the debug commands check the board, thus only the camp can get here with
+    // a board that is not valid: a unit on the square of a debug enemy piece.
+    let battle = Battle::new(&run).map_err(|e| Fail::new(Code::Blocked, format!("The battle cannot start: {e}")))?;
     let def = run.floor_def();
     let start = json!({ "floor": run.floor, "name": def.name, "boss": def.boss });
     game.screen = Screen::Battle { run, battle: Box::new(battle) };
@@ -662,6 +697,23 @@ fn debug_command(game: &mut Game, command: Command, args: &Args, d: &mut Done) -
         let Game { screen, dice, barred, .. } = game;
         let Some(run) = screen.run_mut() else { return fail(Code::NoRun, "No run is in progress") };
         debug_run(run, command, args, dice, barred)?;
+        // A command that changes the pieces or their rules must leave a board that the engine
+        // takes as it is: no two pieces on one square, one king on each side. A check of the
+        // enemy king at the start is permitted here, as in the camp: `gametest/parity.ts` sets up
+        // such random boards and compares them with the TypeScript game.
+        let board = matches!(
+            command,
+            Command::DebugSetArmy
+                | Command::DebugSetEnemy
+                | Command::DebugAddUnit
+                | Command::DebugRemoveUnit
+                | Command::DebugSetFloor
+                | Command::DebugSetRelic
+                | Command::DebugSetTrait
+        );
+        if board {
+            Battle::new(run).map_err(|e| Fail::new(Code::BadArgs, format!("The board is not valid: {e}")))?;
+        }
         if command == Command::DebugSetDraft
             && let Screen::Camp { run, reward } = screen
         {

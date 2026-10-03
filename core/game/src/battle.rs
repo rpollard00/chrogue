@@ -116,7 +116,11 @@ impl Battle {
         for (_, effect) in effects(&run.relics) {
             if effect == Effect::ExtraPawn {
                 // The pawn goes to the first free square of rank 2, or of rank 3 if rank 2 is full.
-                if let Some(square) = (8..24).find(|&s| !pieces.iter().any(|p| p.square == s)) {
+                // The TypeScript game does not look at the enemy pieces here; the core skips
+                // their squares too, thus a debug enemy on rank 2 or 3 does not share a square.
+                let taken =
+                    |s: Square| pieces.iter().any(|p| p.square == s) || run.enemy.pieces.iter().any(|e| e.square == s);
+                if let Some(square) = (8..24).find(|&s| !taken(s)) {
                     pieces.push(Placement { piece: piece(CONSCRIPT_ID, Kind::Pawn, Color::White), square });
                 }
             }
@@ -130,11 +134,32 @@ impl Battle {
         pieces
     }
 
+    /// The battle of the run. An error if two pieces have one square or a side does not have
+    /// exactly one king.
     pub fn new(run: &Run) -> Result<Battle, String> {
         Battle::from_placements(run, &Battle::placements(run))
     }
 
+    /// The engine keeps the last piece of a square and accepts a side with no king or with two
+    /// kings, thus the game checks the pieces before it makes a battle.
     pub fn from_placements(run: &Run, pieces: &[Placement]) -> Result<Battle, String> {
+        let mut used = 0u64;
+        for placement in pieces {
+            if placement.square >= 64 {
+                return Err(format!("Square {} is not on the board", placement.square));
+            }
+            let bit = 1u64 << placement.square;
+            if used & bit != 0 {
+                return Err(format!("Two pieces are on square {}", placement.square));
+            }
+            used |= bit;
+        }
+        for (color, side) in [(Color::White, "The army"), (Color::Black, "The enemy")] {
+            let kings = pieces.iter().filter(|p| p.piece.color == color && p.piece.kind == Kind::King).count();
+            if kings != 1 {
+                return Err(format!("{side} must have one king, not {kings}"));
+            }
+        }
         let state = chess::new_state(pieces, content::rules_for(&run.relics), content::rules_for(&run.enemy.traits))?;
         Ok(Battle {
             state,

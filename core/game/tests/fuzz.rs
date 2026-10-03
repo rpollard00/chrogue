@@ -223,3 +223,158 @@ fn a_seed_and_the_requests_give_the_same_transcript() {
     assert_eq!(transcript(8), transcript(8));
     assert_ne!(transcript(8), transcript(9));
 }
+
+// ---- Saved files and debug boards ----
+
+const RELIC_IDS: [&str; 10] = [
+    "forcedMarch",
+    "backpedal",
+    "earlyPromo",
+    "kingKnight",
+    "longLeap",
+    "sidestep",
+    "bounty",
+    "secondWind",
+    "conscription",
+    "interest",
+];
+
+/// A huge or odd number for a count of saved data.
+fn big(g: &mut Gen) -> Value {
+    g.pick(&[
+        json!(0),
+        json!(5),
+        json!(u64::MAX),
+        json!(9_007_199_254_740_991u64),
+        json!(9_007_199_254_740_992u64),
+        json!(1e15),
+        json!(1e300),
+        json!(-1),
+        json!(2.5),
+    ])
+    .clone()
+}
+
+/// A run document with squares that often overlap, a king that is often missing, and huge numbers.
+fn run_doc(g: &mut Gen) -> String {
+    // The first piece is a king, with some exceptions; another piece is a second king at times.
+    let king = |g: &mut Gen, i: usize| {
+        if g.chance(if i == 0 { 0.9 } else { 0.03 }) { "k" } else { *g.pick(&["q", "r", "b", "n", "p"]) }
+    };
+    let army: Vec<Value> = (0..1 + g.below(16))
+        .map(|i| json!({ "id": if g.chance(0.05) { big(g) } else { json!(i + 1) }, "type": king(g, i), "home": if g.chance(0.03) { g.below(17) } else { i } }))
+        .collect();
+    let pieces: Vec<Value> = (0..1 + if g.chance(0.9) { g.below(16) } else { g.below(66) })
+        .map(|i| {
+            let square = if g.chance(0.97) { 63 - (i % 64) } else { g.below(65) };
+            json!({ "type": king(g, i), "square": square })
+        })
+        .collect();
+    let relics: Vec<&str> = (0..g.below(6)).map(|_| *g.pick(&RELIC_IDS)).collect();
+    let traits: Vec<&str> = (0..g.below(4)).map(|_| *g.pick(&RELIC_IDS[..6])).collect();
+    let gold = if g.chance(0.8) { json!(g.below(50)) } else { big(g) };
+    let floor = if g.chance(0.9) { json!(1 + g.below(8)) } else { big(g) };
+    let next_id = if g.chance(0.9) { json!(17 + g.below(20_000)) } else { big(g) };
+    let draft = if g.chance(0.5) {
+        Value::Null
+    } else {
+        json!([{ "kind": "piece", "type": "q" }, { "kind": "relic", "id": "bounty" }, { "kind": "gold", "amount": big(g) }])
+    };
+    json!({ "format": "chrogue.run", "version": if g.chance(0.95) { json!(1) } else { big(g) }, "data": {
+        "floor": floor, "gold": gold, "army": army, "nextId": next_id, "relics": relics,
+        "enemy": { "pieces": pieces, "traits": traits }, "phase": if g.chance(0.5) { "camp" } else { "battle" },
+        "draft": draft, "shop": [{ "kind": "piece", "type": "p" }, { "kind": "relic", "id": *g.pick(&RELIC_IDS) }, { "kind": "gold", "amount": big(g) }],
+    } })
+    .to_string()
+}
+
+fn meta_doc(g: &mut Gen) -> String {
+    let text = json!({ "format": "chrogue.meta", "version": 1, "data": {
+        "crowns": big(g), "best": big(g), "runs": big(g),
+        "upgrades": { "pawn": big(g), "gold": big(g), "bishop": big(g), "haggle": big(g), "scout": big(g) },
+    } })
+    .to_string();
+    // Sometimes a file that a crash cut.
+    if g.chance(0.1) { text[..g.below(text.len())].to_string() } else { text }
+}
+
+/// Each square has at most one piece, and at the start of a battle each side has one king.
+fn check_board(reply: &Value, request: &Value) {
+    let view = &reply["view"];
+    if view["screen"] != json!("battle") {
+        return;
+    }
+    let pieces = view["pieces"].as_array().unwrap();
+    let mut squares: Vec<u64> = pieces.iter().map(|p| p["square"].as_u64().unwrap()).collect();
+    squares.sort_unstable();
+    squares.dedup();
+    assert_eq!(squares.len(), pieces.len(), "two pieces on one square after {request}");
+    let started = reply["events"].as_array().is_some_and(|e| e.iter().any(|e| e["type"] == json!("battle_start")));
+    if started {
+        for color in ["w", "b"] {
+            let kings = pieces.iter().filter(|p| p["color"] == json!(color) && p["kind"] == json!("k")).count();
+            assert_eq!(kings, 1, "{color} has {kings} kings after {request}");
+        }
+    }
+}
+
+#[test]
+fn saved_files_and_debug_boards_that_are_not_valid_are_refused() {
+    let (mut loaded, mut boards) = (0, 0);
+    for seed in 0..300u64 {
+        let mut g = Gen(Dice::new(seed * 7 + 1));
+        let storage = MemoryStorage { meta: Some(meta_doc(&mut g)), run: Some(run_doc(&mut g)) };
+        let mut session = Session::with_debug(Box::new(storage), seed, true);
+        if session.view()["can_continue"] == json!(true) {
+            loaded += 1;
+            // A run that loads is a run that the game can continue.
+            let reply: Value = serde_json::from_str(&session.command("{\"cmd\":\"continue_run\"}")).unwrap();
+            assert_eq!(reply["ok"], json!(true), "seed {seed}: {}", reply["error"]);
+            check_board(&reply, &json!("continue_run"));
+        }
+        for step in 0..150 {
+            let before = session.view();
+            let request = match step % 25 {
+                7 | 17 => {
+                    let n = 1 + g.below(66);
+                    let king = g.chance(0.85);
+                    let pieces: Vec<Value> = (0..n)
+                        .map(|i| {
+                            let kind = if i == 0 && king { "k" } else { piece_kind(&mut g) };
+                            json!({ "kind": kind, "square": if g.chance(0.5) { (i * 13 + g.below(3)) % 64 } else { g.below(64) } })
+                        })
+                        .collect();
+                    json!({ "cmd": "debug_set_enemy", "pieces": pieces, "traits": [*g.pick(&RELIC_IDS[..6])] })
+                }
+                11 => {
+                    let units: Vec<Value> = (0..1 + g.below(16))
+                        .map(|i| json!({ "kind": if i == 0 { "k" } else { piece_kind(&mut g) }, "home": g.below(16) }))
+                        .collect();
+                    json!({ "cmd": "debug_set_army", "units": units })
+                }
+                3 => json!({ "cmd": "debug_set_relic", "relic": *g.pick(&RELIC_IDS), "on": g.chance(0.7) }),
+                13 => json!({ "cmd": "debug_add_unit", "kind": *g.pick(&["p", "n", "b", "r", "q"]) }),
+                21 => json!({ "cmd": "debug_set_floor", "floor": 1 + g.below(8) }),
+                // A debug board can start with no legal move for the player (see PROTOCOL.md).
+                _ if before["phase"] == json!("player") && before["moves"] == json!([]) => json!({ "cmd": "give_up" }),
+                _ => valid(&mut g, &before),
+            };
+            let reply: Value = serde_json::from_str(&session.command(&request.to_string())).unwrap();
+            let code = reply["error"]["code"].clone();
+            assert_ne!(code, json!("internal"), "seed {seed}: {request} -> {}", reply["error"]);
+            if reply["ok"] == json!(true) {
+                check_board(&reply, &request);
+            } else {
+                assert_eq!(session.view(), before, "the state changed after the refused request {request}");
+                let message = reply["error"]["message"].as_str().unwrap_or("");
+                if message.starts_with("The board is not valid") {
+                    assert_eq!(code, json!("bad_args"));
+                    boards += 1;
+                }
+            }
+        }
+    }
+    println!("saved runs that loaded: {loaded} of 300; debug boards refused: {boards}");
+    assert!(loaded > 10 && loaded < 290, "{loaded} saved runs loaded");
+    assert!(boards > 100, "{boards} debug boards were refused");
+}

@@ -8,15 +8,34 @@ Protocol version: 1. `hello` gives the version.
 
 ## Transport
 
-- `chrogue-core --stdio`: one request on each line of stdin, one response on each line of stdout. The process stops at the end of the input or after `quit`.
+- `chrogue-core --stdio`: one request on each line of stdin, one response on each line of stdout. The process stops at the end of the input or after `quit`. Stdio needs no token.
 - `chrogue-core --listen 127.0.0.1:PORT`: the first line on stdout is `{"listening":"127.0.0.1:N"}`. Then the process serves one TCP client at a time with the same lines. PORT 0 selects a free port. The process accepts only a loopback address.
+  - Each connection must authenticate first (see [Authentication](#authentication)).
   - The session continues when a client disconnects. A client that connects again gets the same screen and the same battle.
-  - When a client disconnects, the process waits for a new client for `--idle-ms` milliseconds (5000 by default), and then stops. Before the first client, the limit is 6 times longer. `--keep-alive` removes the limit. `quit` always stops the process.
-  - A second client that connects while one client is connected waits until the first client disconnects.
-- `--save-dir PATH` keeps the saved data in `PATH/meta.json` and `PATH/run.json`. `--no-save` keeps it in memory. One of the two is necessary.
-- `--seed N` sets the random numbers. All randomness comes from the seed: enemy armies, rewards, shop items, and the noise of the AI. The same seed and the same requests give the same responses, byte for byte.
+  - A newer client takes over: when a client authenticates while another client is connected, the core closes the older connection and serves the newer one. The session stays. Thus a client that hangs, or a connection that a client forgot, does not block the next client.
+  - The core writes each response with a limit of 5 seconds. If a client does not read its responses in that time, the core closes the connection. The session stays.
+  - Idle exit: the idle time counts from the last line that the core received from the connected client, or from the moment that the last connection closed, whichever is later. With no client connected, the process stops after `--idle-ms` milliseconds (5000 by default; before the first client, 6 times longer). With a client connected, it stops after `--client-idle-ms` milliseconds (1800000, 30 minutes, by default) with no line from that client. A client that waits longer than that for the player sends a request such as `view` from time to time. `--keep-alive` removes both limits. `quit` always stops the process. Each limit must be more than 0.
+- `--save-dir PATH` keeps the saved data in `PATH/meta.json` and `PATH/run.json`. `--no-save` keeps it in memory. One of the two is necessary. See [Saved data](#saved-data) for the lock and for files that the core cannot read.
+- `--seed N` sets the random numbers. N is a whole number from 0 to 18446744073709551615, with digits only. All randomness comes from the seed: enemy armies, rewards, shop items, and the noise of the AI. The same seed and the same requests give the same responses, byte for byte.
 - `--debug` permits the debug commands.
 - A line that is longer than 65536 bytes gets the error `too_long`. An empty line gets no response.
+- Exit codes: 0 after `quit`, at the end of stdin, or at the idle limit; 1 for an I/O error (for example, the port is in use); 2 for a usage error (a bad argument, a missing or bad `CHROGUE_TOKEN`); 3 if another live `chrogue-core` holds the lock of the save directory. The reason is on stderr.
+
+### Authentication
+
+With `--listen`, the core reads a token from the environment variable `CHROGUE_TOKEN`. The token is not a command-line flag, thus it does not show in a list of the processes. The variable is necessary with `--listen`: if it is missing, has fewer than 32 characters, has more than 1024 characters, or has a character that is not printable ASCII (a space, `"`, `\`, a control character, or a character above ASCII), the core writes the reason on stderr and exits with code 2. The program that starts the core makes a random token (for example 32 random bytes as 64 hex digits) and gives the same token to its client.
+
+1. The first line of each TCP connection must be exactly `{"auth":"<token>"}`: these bytes, with no spaces and no other fields, and then `\n` (a `\r` before the `\n` is permitted). The core compares the line with the expected line in constant time.
+2. The core answers `{"ok":true,"auth":true}`. Then the normal requests follow on the same connection. The client can send its first request immediately after the auth line, with no wait for the answer.
+3. If the first line is anything else, the core closes the connection with no answer, and it runs no command. Examples: a wrong token, an auth line with spaces or more fields, a request, an empty line, and a line that starts with an HTTP method (`GET `, `POST `, `PUT `, `OPTIONS `, `HEAD `, `DELETE `, `PATCH `, `CONNECT `, `TRACE `). The core closes an HTTP request as soon as it sees the method, thus a web page that sends a request to the port gets no answer.
+4. A connection that does not send its complete auth line within 3 seconds of the connect is closed. A connection that waits for its auth line does not delay another connection. The core keeps at most 8 connections that wait for their auth line; it closes more at once.
+
+### Saved data
+
+- The lock: with `--save-dir`, the core creates the file `PATH/chrogue-core.lock` (exclusively, if it is not there) and holds an operating-system lock on it for the life of the process (`flock` on Linux and macOS, `LockFileEx` on Windows, through `std::fs::File::try_lock`). The file has the PID of the core. If a live core holds the lock, a second core on the same directory writes `another chrogue-core (PID N) uses this save directory` on stderr and exits with code 3; the first core continues. The system releases the lock when a process ends in any way, thus a lock of a core that crashed or was killed is stale: no process holds it, and the next core takes it over (it writes `took over the stale lock` on stderr). A clean exit empties the file; the file stays. The check is the same on each system, and it does not depend on the PID, thus a PID that a new process uses again does not matter.
+- A save writes a temporary file with a name of its own (`meta.json.<pid>-<n>.tmp`), syncs it to the disk, and renames it over the document. On Unix, the core then syncs the directory. A start of the core removes the temporary files that a crash left.
+- A saved file that the core cannot use is never deleted or written over. That is a file that the core cannot read, that is not JSON (for example, a file that a crash cut, or JSON nested too deep), that is not a document of its format, whose data is not valid as a whole (see below), or that has a version newer than the version of the core. Before it writes anything, the core renames such a file to `<name>.bad-<unix time>` (for example `meta.json.bad-1759420800`; `-2`, `-3`, ... if that name is taken), loads no data from it, and puts a `save_problem` event in its first successful response. If the rename fails, the core does not write or remove that document in the session; each save of it then gives `save_failed`.
+- The checks of saved data are those of `src/game/storage.ts`, and more: a count (a floor, gold, an id, a level, an amount) is at most 2^53 - 1; a unit id is at most 19999 and appears one time; a relic id counts one time in a list; the enemy has at most 64 pieces; no two pieces are on one square (two enemy pieces, an enemy piece on the home square of a unit, or two units with one home); and each side has exactly one king. A start with the enemy king in check is valid (see [Open issues](#open-issues)). A run that fails a check is not valid as a whole. A field of the meta that is not valid counts as 0, and an unknown relic id, upgrade id, or offer is dropped, as in the browser game.
 
 ## Requests and responses
 
@@ -83,7 +102,7 @@ The `phase` of the battle view tells who acts: `player`, `enemy`, or `over`.
 | Command | Arguments | Phase | Effect |
 | --- | --- | --- | --- |
 | `move` | `from`, `to`, `promo` (optional: `q`, `r`, `b`, `n`) | `player` | Plays the move of the player. A promotion needs `promo` (error `promo_required`). After the move the phase is `enemy`, or `over`. |
-| `enemy_move` | | `enemy` | The AI of the floor selects and plays the enemy move. The command blocks until the move is done (up to about 100 ms on floor 8). |
+| `enemy_move` | | `enemy` | The AI of the floor selects and plays the enemy move. The command blocks until the move is done. On floor 8 a move usually takes less than 100 ms; a board with many queens (an army of 7 queens against 23 queens) takes up to about 190 ms. |
 | `give_up` | | `player`, `enemy` | Ends the run as a loss. Goes to `over`. |
 | `continue` | | `over` | Settles the battle: the gold, the lost units, and the promoted pieces go to the run. Goes to `camp`, or to `over` if the run is won or lost. |
 | `to_title` | | any | Goes to the title. The battle is not saved. `continue_run` starts it again from its start, as a reload of the browser game does. |
@@ -99,10 +118,10 @@ The client owns the pause before the enemy move. The browser game waits 350 ms a
 | `buy` | `index`: an item of `shop.offers` | Buys the item. Errors `bad_index`, `blocked`, `not_affordable`. |
 | `reroll` | | Pays `shop.reroll_cost` gold for new shop items. Error `not_affordable`. |
 | `place` | `unit`: a unit id, `square`: 0 to 15 | Moves the unit to the home square. If a unit is there, the two units swap. |
-| `start_battle` | | Starts the battle of the next floor. Error `reward_pending` while the reward is open. |
+| `start_battle` | | Starts the battle of the next floor. Error `reward_pending` while the reward is open. Error `blocked` if a unit is on the square of an enemy piece (only a debug enemy can be on the first two ranks); move the unit. |
 | `to_title` | | Goes to the title. The run is saved. |
 
-Each camp command except `place` and `to_title` gives the event `camp_action`. `place` gives `unit_placed`.
+`take_reward`, `skip_reward`, `buy`, and `reroll` give the event `camp_action`. `place` gives `unit_placed`. `start_battle` gives `screen` (`battle`) and `battle_start`. `to_title` gives `screen` (`title`).
 
 ### Over
 
@@ -115,6 +134,8 @@ Each camp command except `place` and `to_title` gives the event `camp_action`. `
 ### Debug commands
 
 These commands work only in a session with `--debug`. Else the error is `debug_disabled`. They are the debug menu of the browser game (`src/ui/debug.ts`), and some more commands for tests. A change of the meta or of the run is saved immediately. If the screen is a battle, the battle starts again, as the debug menu does when it closes. Each change gives the event `debug_changed`.
+
+A command that changes the pieces or their rules (`debug_set_army`, `debug_set_enemy`, `debug_add_unit`, `debug_remove_unit`, `debug_set_floor`, `debug_set_relic`, `debug_set_trait`) must leave a board that the engine can take as it is. Else the error is `bad_args` with a message that starts with `The board is not valid`, and the run does not change: two pieces on one square (two enemy pieces, or an enemy piece on the home square of a unit), or a side with no king or with two kings. An enemy piece on an empty home square is permitted. A start with the enemy king in check is permitted, as in the camp and in saved data (see [Open issues](#open-issues)). The pawn of Conscription goes to the first square of ranks 2 and 3 that no unit and no enemy piece has.
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
@@ -216,6 +237,7 @@ Each event is an object with `type`. The other fields depend on the type.
 | `run_end` | `won`, `cleared`, `bonus`, `crowns`, `new_best`, and `run` in a debug session | The run ended. `run` is the last state of the run in the format of the saved data. |
 | `debug_changed` | `what` | A debug command changed the data. |
 | `save_failed` | `what` (`meta` or `run`), `message` | The storage could not save. The game continues. |
+| `save_problem` | `what` (`meta` or `run`), `reason`, `message`, `kept` | A saved file at the start of the core could not be used (see [Saved data](#saved-data)). The session started with no data from it. The first successful response of the session has one event for each such file, before the events of the command; later responses do not have it. `reason`: `unreadable` (the core cannot read the file, or it is not JSON, for example a file that a crash cut), `invalid` (not a document of its format, an older version, or data that is not valid as a whole), or `newer_version` (a newer core wrote it; the core never writes over it). `kept`: the name of the copy in the save directory (`meta.json.bad-1759420800`), or `null` if the storage keeps no copy (`--no-save`) or the rename failed (then `message` tells it, and the core does not save that document in this session). A client tells the player that the saved progress or run could not be loaded and where the file is. |
 | `quit` | | The session stops. |
 
 ## Codes for the client text
@@ -247,7 +269,7 @@ The content text (the names and texts of relics, upgrades, floors, pieces, and o
 | `no_run` | The command needs a run, and no run is in progress or saved. |
 | `reward_pending` | The reward is open. Take it or skip it first. |
 | `reward_closed` | The camp has no open reward. |
-| `blocked` | The run cannot take the offer (see `blocked`), or a debug limit. |
+| `blocked` | The run cannot take the offer (see `blocked`), a debug limit, or the battle cannot start because a unit is on the square of an enemy piece. |
 | `not_affordable` | Not sufficient gold or crowns. |
 | `max_level` | The upgrade has its maximum level. |
 | `bad_index` | No card or item has this index. |
@@ -320,4 +342,5 @@ A won battle and a camp action (from the test `the_camp_example_is_real`: the ar
 
 - With Tactical Retreat (`backpedal`), a pawn can step back and forward again and again. The forward step is a pawn advance, thus it resets the 50-move clock, and the game has no rule for a repeated position. A battle can then continue with no end. The core keeps this rule of the TypeScript game and does not add a repetition rule.
 - A draw on the last floor: the TypeScript game goes to floor 9 and fails there (`generateEnemy(9)` throws). The core stays on floor 8: `continue` opens the camp before floor 8 again, with no reward.
+- The camp can give a start where the enemy king is in check: a rook or a queen of the player on an open e-file against an enemy with no pawn on e7. As in the TypeScript game, `start_battle` starts that battle, and White can capture the king. The debug commands and saved data permit such a start too (`gametest/parity.ts` compares random starts of this kind with the TypeScript game). A rule that refuses it belongs in `start_battle`, and it changes the game: it is a decision for the design.
 - A battle can start in a position where the player has no legal move (for example, a debug army that is in checkmate at the start). As in the TypeScript game, the result is checked only after a move: the phase is `player` with no moves, and only `give_up` and `to_title` work.

@@ -4,31 +4,28 @@
 use std::collections::BTreeSet;
 
 use chrogue_game::protocol::{Code, Command, EventKind};
-use chrogue_game::{MemoryStorage, Session, Storage};
+use chrogue_game::{Doc, MemoryStorage, Session, Storage};
 use serde_json::{Value, json};
 
 fn doc() -> String {
     std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../PROTOCOL.md")).unwrap()
 }
 
-/// A storage that cannot save.
+/// A storage that cannot save, with a meta that a crash cut.
 struct Broken;
 
 impl Storage for Broken {
-    fn load_meta(&mut self) -> Option<String> {
-        None
+    fn load(&mut self, doc: Doc) -> Result<Option<String>, String> {
+        Ok((doc == Doc::Meta).then(|| "{\"format\":\"chrogue.meta\",\"vers".to_string()))
     }
-    fn save_meta(&mut self, _: &str) -> Result<(), String> {
+    fn save(&mut self, _: Doc, _: &str) -> Result<(), String> {
         Err("read-only".into())
     }
-    fn load_run(&mut self) -> Option<String> {
-        None
-    }
-    fn save_run(&mut self, _: &str) -> Result<(), String> {
+    fn remove(&mut self, _: Doc) -> Result<(), String> {
         Err("read-only".into())
     }
-    fn clear_run(&mut self) -> Result<(), String> {
-        Err("read-only".into())
+    fn set_aside(&mut self, _: Doc) -> Result<Option<String>, String> {
+        Ok(Some("meta.json.bad-1".into()))
     }
 }
 

@@ -297,17 +297,17 @@ fn saved_data_survives_a_round_trip_and_unknown_ids_are_removed() {
     run.relics = vec![relic("bounty")];
     run.shop = vec![Offer::Relic(relic("interest")), Offer::Piece(Kind::Queen)];
     let mut saved = run_json(&run);
-    assert_eq!(parse_run(&saved), Some(run.clone()));
+    assert_eq!(parse_run(&saved), Ok(run.clone()));
 
     saved["relics"].as_array_mut().unwrap().push(json!("removedRelic"));
     let shop = saved["shop"].as_array_mut().unwrap();
     shop.push(json!({ "kind": "relic", "id": "removedRelic" }));
     shop.push(json!({ "kind": "unknownKind" }));
-    assert_eq!(parse_run(&saved), Some(run));
+    assert_eq!(parse_run(&saved), Ok(run));
     let mut no_army = saved.clone();
     no_army["army"] = json!([]);
-    assert_eq!(parse_run(&no_army), None);
-    assert_eq!(parse_run(&Value::Null), None);
+    assert!(parse_run(&no_army).is_err());
+    assert!(parse_run(&Value::Null).is_err());
 
     let meta = parse_meta(&json!({ "crowns": 4, "upgrades": { "pawn": 2, "removedUpgrade": 1 } }));
     assert_eq!(meta, meta_with(&[("pawn", 2)], 4));
@@ -352,4 +352,45 @@ fn the_debug_changes_keep_the_saved_data_valid() {
     let saved = send(json!({ "cmd": "view", "run": true }))["data"]["run"].clone();
     let run = parse_run(&saved).unwrap();
     assert_eq!(run_json(&run), saved);
+}
+
+/// The engine keeps the last piece of a square and takes a side with no king, thus the debug
+/// commands refuse such boards and change nothing.
+#[test]
+fn debug_boards_with_two_pieces_on_a_square_or_no_king_are_refused() {
+    let mut session = Session::with_debug(Box::new(MemoryStorage::default()), 1, true);
+    let mut send = |request: Value| -> Value { serde_json::from_str(&session.command(&request.to_string())).unwrap() };
+    let start = send(json!({ "cmd": "new_run" }))["view"].clone();
+    let refused = [
+        json!({ "cmd": "debug_set_enemy", "pieces": [{ "kind": "k", "square": 60 }, { "kind": "q", "square": 60 }] }),
+        json!({ "cmd": "debug_set_enemy", "pieces": [{ "kind": "k", "square": 60 }, { "kind": "q", "square": 4 }] }),
+        json!({ "cmd": "debug_set_enemy", "pieces": [{ "kind": "q", "square": 59 }] }),
+        json!({ "cmd": "debug_set_enemy", "pieces": [{ "kind": "k", "square": 60 }, { "kind": "k", "square": 62 }] }),
+        json!({ "cmd": "debug_set_army", "units": [{ "kind": "q", "home": 3 }] }),
+        json!({ "cmd": "debug_set_army", "units": [{ "kind": "k", "home": 4 }, { "kind": "r", "home": 4 }] }),
+    ];
+    for request in &refused {
+        let reply = send(request.clone());
+        assert_eq!(reply["error"]["code"], json!("bad_args"), "{request} -> {reply}");
+        assert_eq!(reply["view"], start, "{request}");
+    }
+    // An enemy pawn on the empty square 8, then a unit that the debug menu adds there: refused.
+    send(
+        json!({ "cmd": "debug_set_army", "units": [{ "kind": "k", "home": 4 }, { "kind": "p", "home": 0 }, { "kind": "p", "home": 1 }, { "kind": "p", "home": 2 }, { "kind": "p", "home": 3 }] }),
+    );
+    let reply = send(
+        json!({ "cmd": "debug_set_enemy", "pieces": [{ "kind": "k", "square": 60 }, { "kind": "p", "square": 5 }] }),
+    );
+    assert_eq!(reply["ok"], json!(true), "{reply}");
+    let before = reply["view"].clone();
+    let reply = send(json!({ "cmd": "debug_add_unit", "kind": "n" }));
+    assert_eq!(reply["error"]["code"], json!("bad_args"), "{reply}");
+    assert!(reply["error"]["message"].as_str().unwrap().contains("square 5"), "{reply}");
+    assert_eq!(reply["view"], before);
+    // The pawn of Conscription goes around an enemy piece on rank 2.
+    send(json!({ "cmd": "debug_set_enemy", "pieces": [{ "kind": "k", "square": 60 }, { "kind": "p", "square": 8 }] }));
+    let reply = send(json!({ "cmd": "debug_set_relic", "relic": "conscription", "on": true }));
+    let squares: Vec<u64> =
+        reply["view"]["pieces"].as_array().unwrap().iter().map(|p| p["square"].as_u64().unwrap()).collect();
+    assert!(squares.contains(&8) && squares.contains(&9), "{squares:?}");
 }

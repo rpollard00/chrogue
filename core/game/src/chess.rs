@@ -77,6 +77,11 @@ pub fn check_square(state: &State) -> Option<Square> {
     if engine::in_check(state, color) { state.king_square(color) } else { None }
 }
 
+/// True if the king of the side is in check. A side with no king is never in check.
+pub fn in_check(state: &State, color: Color) -> bool {
+    engine::in_check(state, color)
+}
+
 /// The move of the AI of a floor (1 to 8) for the side that has the move.
 pub fn ai_move(state: &mut State, floor: usize, seed: u64) -> Option<Move> {
     let level = engine::Level::LADDER[floor.clamp(1, engine::Level::LADDER.len()) - 1];

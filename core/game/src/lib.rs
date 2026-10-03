@@ -20,5 +20,5 @@ pub mod save;
 pub mod session;
 pub mod view;
 
-pub use save::{FileStorage, MemoryStorage, Storage};
+pub use save::{Doc, FileStorage, MemoryStorage, Storage};
 pub use session::{Screen, Session};

@@ -340,7 +340,7 @@ The TypeScript game in `src/game/` is the reference. `gametest/parity.ts` proves
 Run the commands from the `core/` directory, unless the command shows a different directory.
 
 - Server on stdio: `cargo run --release --bin chrogue-core -- --stdio --no-save`
-- Server on TCP: `cargo run --release --bin chrogue-core -- --listen 127.0.0.1:0 --save-dir /path/to/saves`
+- Server on TCP: `CHROGUE_TOKEN=$(openssl rand -hex 32) cargo run --release --bin chrogue-core -- --listen 127.0.0.1:0 --save-dir /path/to/saves`. The first line of a client is `{"auth":"<the token>"}` (see "Authentication" in `PROTOCOL.md`). Exit codes: 2 for a usage error or a bad token, 3 if another core holds the lock of the save directory.
 - Tests of the game layer and of the server: `cargo test --release -p chrogue-game -p chrogue-server`. With `-- --nocapture`, the fuzz test prints the error codes and the TCP test prints the round-trip times.
 - Parity with the TypeScript game, from the repository root: `bun core/gametest/parity.ts [--seed N] [--battles N]`
 - Whole runs with a bot, two times, with a comparison of the transcripts, from the repository root: `bun core/gametest/play.ts [--sessions N] [--runs N] [--seed N]`. The default (36 runs, two passes) takes about four minutes.
@@ -351,13 +351,13 @@ Run the commands from the `core/` directory, unless the command shows a differen
 - `game/src/content.rs`: The relics, upgrades, floors, prices, and constants as data. The text is a copy of the TypeScript text.
 - `game/src/run.rs`: `Meta`, `Run`, `Unit`, `Enemy`, `Offer`, the enemy of each floor, rewards, the shop, and upgrades.
 - `game/src/battle.rs`: One battle on the engine: relic effects, gold, lost and rescued units, the reward, and `settle`.
-- `game/src/save.rs`: The `Storage` trait, a file storage and a memory storage, and the check of saved data.
+- `game/src/save.rs`: The `Storage` trait, a file storage (with the lock of the directory and safe writes) and a memory storage, and the check of saved data. A file that the core cannot use is set aside as `<name>.bad-<unix time>`, never written over.
 - `game/src/session.rs`: `Screen`, `Session::command`, and the commands.
 - `game/src/view.rs`: The views of the screens and the content tables of `hello`.
 - `game/src/protocol.rs`: The names of the commands, events, and error codes.
 - `game/src/chess.rs`: The one module that calls the engine. A change of the engine API changes only this file.
 - `game/tests/`: The cases of `test/game.test.ts` (`game.rs`), saved data (`saved.rs`), random requests (`fuzz.rs`), and the check of `PROTOCOL.md` (`protocol_doc.rs`).
-- `server/src/main.rs`: The line transport. `server/tests/tcp.rs` starts the binary and tests TCP and stdio.
+- `server/src/main.rs`: The line transport: the command line, the auth line, the takeover by a newer client, the timeouts, and the idle exit. `server/tests/tcp.rs` starts the binary and tests TCP, stdio, the lock, and the command line.
 - `gametest/`: The Bun scripts `parity.ts` and `play.ts`, and the client `core.ts` that they share.
 
 ### Relics as data
@@ -370,4 +370,6 @@ To add a relic, add one entry to `RELICS` in `game/src/content.rs` and the same 
 
 - A draw on the last floor stays on the last floor. The TypeScript game goes to floor 9 and throws.
 - The AI of floor `n` is `Level::floor(n)` of the engine, not the `ai` field of `src/game/floors.ts`.
-- Saved data: a unit id is at most 19999 and appears one time, and a relic id appears one time in a list.
+- Saved data: a unit id is at most 19999 and appears one time, a relic id appears one time in a list, a count is at most 2^53 - 1, and the board must be valid (no two pieces on one square, one king on each side, and no check of the enemy king at the start of a battle). A file that the core cannot use is kept as `<name>.bad-<unix time>`; the browser game drops such data. The comment of `game/src/save.rs` has the list.
+- The pawn of Conscription does not go to the square of an enemy piece. The TypeScript game puts it there (only a debug enemy can be on rank 2 or 3).
+- The debug commands refuse two pieces on one square and a side with no king or two kings (see `PROTOCOL.md`).

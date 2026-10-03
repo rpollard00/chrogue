@@ -102,6 +102,7 @@ names! {
         RunEnd = "run_end",
         DebugChanged = "debug_changed",
         SaveFailed = "save_failed",
+        SaveProblem = "save_problem",
         Quit = "quit",
     }
 }

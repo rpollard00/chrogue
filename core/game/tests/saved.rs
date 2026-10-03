@@ -1,12 +1,14 @@
 //! Saved data: a run in camp reloads as it was, a run in the battle phase starts its battle
-//! again, bad files load as fresh data, and unknown ids are dropped.
+//! again, unknown ids are dropped, a file that the core cannot use is set aside and never
+//! written over, boards that are not valid do not load, and the lock of a save directory.
 
 use std::cell::RefCell;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use chrogue_game::{FileStorage, MemoryStorage, Session, Storage};
+use chrogue_game::save::{LOCK_FILE, OpenError};
+use chrogue_game::{Doc, FileStorage, MemoryStorage, Session, Storage};
 use serde_json::{Value, json};
 
 /// A storage that two sessions share, as two starts of the program share a directory.
@@ -14,20 +16,17 @@ use serde_json::{Value, json};
 struct Shared(Rc<RefCell<MemoryStorage>>);
 
 impl Storage for Shared {
-    fn load_meta(&mut self) -> Option<String> {
-        self.0.borrow_mut().load_meta()
+    fn load(&mut self, doc: Doc) -> Result<Option<String>, String> {
+        self.0.borrow_mut().load(doc)
     }
-    fn save_meta(&mut self, text: &str) -> Result<(), String> {
-        self.0.borrow_mut().save_meta(text)
+    fn save(&mut self, doc: Doc, text: &str) -> Result<(), String> {
+        self.0.borrow_mut().save(doc, text)
     }
-    fn load_run(&mut self) -> Option<String> {
-        self.0.borrow_mut().load_run()
+    fn remove(&mut self, doc: Doc) -> Result<(), String> {
+        self.0.borrow_mut().remove(doc)
     }
-    fn save_run(&mut self, text: &str) -> Result<(), String> {
-        self.0.borrow_mut().save_run(text)
-    }
-    fn clear_run(&mut self) -> Result<(), String> {
-        self.0.borrow_mut().clear_run()
+    fn set_aside(&mut self, doc: Doc) -> Result<Option<String>, String> {
+        self.0.borrow_mut().set_aside(doc)
     }
 }
 
@@ -98,36 +97,217 @@ fn temp_dir(name: &str) -> PathBuf {
     dir
 }
 
+fn open(dir: &Path) -> Box<FileStorage> {
+    Box::new(FileStorage::open(dir).unwrap())
+}
+
+/// The names of the files in a directory that start with `prefix`, sorted.
+fn files(dir: &Path, prefix: &str) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .filter(|n| n.starts_with(prefix))
+        .collect();
+    names.sort();
+    names
+}
+
+fn run_doc(data: Value) -> String {
+    json!({ "format": "chrogue.run", "version": 1, "data": data }).to_string()
+}
+
+/// A valid run in camp with these army units and enemy pieces: (kind, square).
+fn run_data(army: &[(&str, u64)], enemy: &[(&str, u64)], phase: &str) -> Value {
+    let army: Vec<Value> =
+        army.iter().enumerate().map(|(i, &(kind, home))| json!({ "id": i + 1, "type": kind, "home": home })).collect();
+    let pieces: Vec<Value> = enemy.iter().map(|&(kind, square)| json!({ "type": kind, "square": square })).collect();
+    json!({ "floor": 2, "gold": 3, "nextId": 20, "phase": phase, "army": army, "relics": [],
+            "enemy": { "pieces": pieces, "traits": [] }, "draft": null, "shop": [] })
+}
+
+const ARMY: [(&str, u64); 3] = [("k", 4), ("r", 0), ("p", 12)];
+const ENEMY: [(&str, u64); 2] = [("k", 60), ("p", 52)];
+
+/// The bad files of the old test and more. Each one is set aside with its bytes, the first
+/// response tells it, and the saves of the session never touch it.
 #[test]
-fn corrupt_or_foreign_files_load_as_fresh_data() {
-    let bad: [&[u8]; 12] = [
-        b"",
-        b"not json",
-        b"{\"format\":\"chrogue.meta\",\"version\":1,\"data\"",
-        b"[1,2,3]",
-        b"null",
-        b"{\"format\":\"something.else\",\"version\":1,\"data\":{\"crowns\":5}}",
-        b"{\"format\":\"chrogue.meta\",\"version\":99,\"data\":{\"crowns\":5}}",
-        b"{\"format\":\"chrogue.run\",\"version\":1,\"data\":{\"floor\":\"x\",\"gold\":-1}}",
-        b"{\"format\":\"chrogue.run\",\"version\":1,\"data\":{\"floor\":1e999}}",
-        b"{\"crowns\":5,\"best\":2}",
-        &[0xff, 0xfe, 0x00, 0x80, 0x7b],
-        b"{\"format\":\"chrogue.run\",\"version\":1,\"data\":{\"floor\":3,\"gold\":0,\"nextId\":9,\"army\":[{\"id\":1,\"type\":\"k\",\"home\":4},{\"id\":1,\"type\":\"q\",\"home\":5}],\"enemy\":{\"pieces\":[{\"type\":\"k\",\"square\":60}]}}}",
+fn a_file_that_the_core_cannot_use_is_kept_aside_and_never_written_over() {
+    // `F` is the format of the document under test.
+    let deep = format!("{{\"format\":\"F\",\"version\":1,\"data\":{}{}", "[".repeat(300), "]".repeat(300));
+    let bad: Vec<(&[u8], &str)> = vec![
+        (b"", "unreadable"),
+        (b"not json", "unreadable"),
+        (b"{\"format\":\"F\",\"version\":1,\"data\":{\"crowns\":5", "unreadable"),
+        (deep.as_bytes(), "unreadable"),
+        (b"{\"format\":\"F\",\"version\":2,\"data\":{\"crowns\":5,\"new_field\":true}}", "newer_version"),
+        (b"{\"format\":\"F\",\"version\":99,\"data\":null}", "newer_version"),
+        (b"[1,2,3]", "invalid"),
+        (b"null", "invalid"),
+        (b"{\"format\":\"something.else\",\"version\":1,\"data\":{\"crowns\":5}}", "invalid"),
+        (b"{\"format\":\"F\",\"version\":0,\"data\":{}}", "invalid"),
+        (b"{\"format\":\"F\",\"version\":\"1\",\"data\":{}}", "invalid"),
+        (b"{\"format\":\"F\",\"version\":1,\"data\":[]}", "invalid"),
+        (b"{\"crowns\":5,\"best\":2}", "invalid"),
+        (&[0xff, 0xfe, 0x00, 0x80, 0x7b], "unreadable"),
     ];
-    for (i, bytes) in bad.iter().enumerate() {
-        let dir = temp_dir(&format!("bad{i}"));
-        fs::write(dir.join("meta.json"), bytes).unwrap();
-        fs::write(dir.join("run.json"), bytes).unwrap();
-        let mut session = Session::new(Box::new(FileStorage::new(&dir)), 1);
-        let view = session.view();
-        assert_eq!(view["meta"], json!({ "crowns": 0, "best": 0, "runs": 0 }), "file {i}");
-        assert_eq!(view["can_continue"], json!(false), "file {i}");
-        // The session works, and the next save replaces the bad file.
-        send(&mut session, json!({ "cmd": "new_run" }));
-        let saved: Value = serde_json::from_str(&fs::read_to_string(dir.join("run.json")).unwrap()).unwrap();
-        assert_eq!(saved["format"], json!("chrogue.run"));
-        fs::remove_dir_all(&dir).unwrap();
+    for (i, &(template, reason)) in bad.iter().enumerate() {
+        for doc in [Doc::Meta, Doc::Run] {
+            let format = if doc == Doc::Meta { "chrogue.meta" } else { "chrogue.run" };
+            let bytes = match std::str::from_utf8(template) {
+                Ok(text) => text.replace("\"F\"", &format!("\"{format}\"")).into_bytes(),
+                Err(_) => template.to_vec(),
+            };
+            let dir = temp_dir(&format!("bad{i}-{}", doc.name()));
+            fs::write(dir.join(doc.file_name()), &bytes).unwrap();
+            let mut session = Session::with_debug(open(&dir), 1, true);
+            let view = session.view();
+            assert_eq!(view["meta"], json!({ "crowns": 0, "best": 0, "runs": 0 }), "file {i}");
+            assert_eq!(view["can_continue"], json!(false), "file {i}");
+            let kept = files(&dir, &format!("{}.bad-", doc.file_name()));
+            assert_eq!(kept.len(), 1, "file {i} {}: {kept:?}", doc.name());
+            assert!(!dir.join(doc.file_name()).exists(), "file {i}");
+
+            // The first response tells it.
+            let first = send(&mut session, json!({ "cmd": "view" }));
+            let problem = &first["events"][0];
+            assert_eq!(problem["type"], json!("save_problem"), "file {i}");
+            assert_eq!(problem["what"], json!(doc.name()));
+            assert_eq!(problem["reason"], json!(reason), "file {i} {}: {problem}", doc.name());
+            assert_eq!(problem["kept"], json!(kept[0]));
+            assert!(problem["message"].as_str().is_some_and(|m| !m.is_empty()));
+            assert_eq!(send(&mut session, json!({ "cmd": "view" }))["events"], json!([]), "only the first response");
+
+            // The session saves both documents; the kept file keeps its bytes.
+            send(&mut session, json!({ "cmd": "debug_set_crowns", "crowns": 3 }));
+            send(&mut session, json!({ "cmd": "new_run" }));
+            send(&mut session, json!({ "cmd": "give_up" }));
+            send(&mut session, json!({ "cmd": "new_run" }));
+            assert_eq!(fs::read(dir.join(&kept[0])).unwrap(), bytes, "file {i}");
+            assert_eq!(
+                problem["kept"].as_str().map(|k| k.starts_with(&format!("{}.bad-", doc.file_name()))),
+                Some(true)
+            );
+            assert_eq!(files(&dir, &format!("{}.bad-", doc.file_name())), kept);
+            for doc in [Doc::Meta, Doc::Run] {
+                let saved: Value =
+                    serde_json::from_str(&fs::read_to_string(dir.join(doc.file_name())).unwrap()).unwrap();
+                assert_eq!(saved["version"], json!(1));
+            }
+            assert_eq!(files(&dir, "").iter().filter(|n| n.ends_with(".tmp")).count(), 0);
+            drop(session);
+            fs::remove_dir_all(&dir).unwrap();
+        }
     }
+}
+
+/// A second bad file in the same second gets its own name.
+#[test]
+fn two_bad_files_get_two_names() {
+    let dir = temp_dir("twice");
+    for _ in 0..2 {
+        fs::write(dir.join("meta.json"), b"{").unwrap();
+        let mut session = Session::new(open(&dir), 1);
+        send(&mut session, json!({ "cmd": "view" }));
+    }
+    let kept = files(&dir, "meta.json.bad-");
+    assert_eq!(kept.len(), 2, "{kept:?}");
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A shared storage whose bad files cannot move: the session must not write or remove them.
+struct Stuck(Shared);
+
+impl Storage for Stuck {
+    fn load(&mut self, doc: Doc) -> Result<Option<String>, String> {
+        self.0.load(doc)
+    }
+    fn save(&mut self, doc: Doc, text: &str) -> Result<(), String> {
+        self.0.save(doc, text)
+    }
+    fn remove(&mut self, doc: Doc) -> Result<(), String> {
+        self.0.remove(doc)
+    }
+    fn set_aside(&mut self, _: Doc) -> Result<Option<String>, String> {
+        Err("read-only directory".into())
+    }
+}
+
+#[test]
+fn a_bad_file_that_cannot_move_is_never_written() {
+    let newer = r#"{"format":"chrogue.meta","version":7,"data":{"crowns":5}}"#.to_string();
+    let run = r#"{"format":"chrogue.run","version":1,"data":{"floor":"#.to_string();
+    let shared = Shared(Rc::new(RefCell::new(MemoryStorage { meta: Some(newer.clone()), run: Some(run.clone()) })));
+    let mut session = Session::with_debug(Box::new(Stuck(shared.clone())), 1, true);
+    let reply = send(&mut session, json!({ "cmd": "debug_set_crowns", "crowns": 9 }));
+    let events = reply["events"].as_array().unwrap();
+    let kinds: Vec<&str> = events.iter().map(|e| e["type"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["save_problem", "save_problem", "debug_changed", "save_failed"]);
+    assert_eq!(events[0]["kept"], Value::Null);
+    assert_eq!(events[0]["reason"], json!("newer_version"));
+    assert_eq!(events[1]["reason"], json!("unreadable"));
+    assert_eq!(events[3]["what"], json!("meta"));
+    send(&mut session, json!({ "cmd": "new_run" }));
+    send(&mut session, json!({ "cmd": "give_up" }));
+    let stored = shared.0.borrow();
+    assert_eq!(stored.meta, Some(newer));
+    assert_eq!(stored.run, Some(run));
+}
+
+#[test]
+fn boards_that_are_not_valid_do_not_load() {
+    let cases: Vec<(&str, Value)> = vec![
+        ("two enemy pieces on one square", run_data(&ARMY, &[("k", 60), ("q", 60)], "battle")),
+        ("two enemy pieces on one square in camp", run_data(&ARMY, &[("k", 60), ("p", 52), ("n", 52)], "camp")),
+        ("an enemy piece on a unit", run_data(&ARMY, &[("k", 60), ("q", 4)], "camp")),
+        ("two units on one home", run_data(&[("k", 4), ("r", 4)], &ENEMY, "camp")),
+        ("no enemy king", run_data(&ARMY, &[("q", 59)], "battle")),
+        ("two enemy kings", run_data(&ARMY, &[("k", 60), ("k", 62)], "battle")),
+        ("no king in the army", run_data(&[("q", 3), ("r", 0)], &ENEMY, "camp")),
+        ("gold above 2^53", {
+            let mut data = run_data(&ARMY, &ENEMY, "camp");
+            data["gold"] = json!(u64::MAX);
+            data
+        }),
+        ("a floor of 1e300", {
+            let mut data = run_data(&ARMY, &ENEMY, "camp");
+            data["floor"] = json!(1e300);
+            data
+        }),
+        ("65 enemy pieces", {
+            let pieces: Vec<(&str, u64)> = (0..65).map(|s| (if s == 63 { "k" } else { "p" }, s % 64)).collect();
+            run_data(&[("k", 4)], &pieces, "camp")
+        }),
+    ];
+    for (name, data) in cases {
+        let storage = MemoryStorage { meta: None, run: Some(run_doc(data)) };
+        let mut session = Session::new(Box::new(storage), 1);
+        assert_eq!(session.view()["can_continue"], json!(false), "{name}");
+        let problem = send(&mut session, json!({ "cmd": "view" }))["events"][0].clone();
+        assert_eq!((problem["what"].clone(), problem["reason"].clone()), (json!("run"), json!("invalid")), "{name}");
+    }
+
+    // The same boards that are valid load. A start with the enemy king in check is valid in
+    // camp and in a battle: an arrangement of the army in normal play can give it, and the
+    // core saves the run at the start of the battle.
+    for data in [
+        run_data(&ARMY, &ENEMY, "battle"),
+        run_data(&[("k", 4), ("p", 13)], &[("k", 20)], "camp"),
+        run_data(&[("k", 4), ("p", 13)], &[("k", 20)], "battle"),
+        run_data(&[("k", 12)], &[("k", 5)], "battle"),
+    ] {
+        let storage = MemoryStorage { meta: None, run: Some(run_doc(data.clone())) };
+        let mut session = Session::new(Box::new(storage), 1);
+        assert_eq!(session.view()["can_continue"], json!(true), "{data}");
+        assert_eq!(send(&mut session, json!({ "cmd": "view" }))["events"], json!([]));
+    }
+
+    // A meta with counts above 2^53 loads those fields as 0, as a field that is not a count.
+    let meta = json!({ "format": "chrogue.meta", "version": 1,
+        "data": { "crowns": u64::MAX, "best": 3, "runs": 9_007_199_254_740_992u64, "upgrades": { "pawn": u64::MAX, "scout": 1 } } });
+    let mut session = Session::new(Box::new(MemoryStorage { meta: Some(meta.to_string()), run: None }), 1);
+    assert_eq!(session.view()["meta"], json!({ "crowns": 0, "best": 3, "runs": 0 }));
+    let slots = send(&mut session, json!({ "cmd": "open_upgrades" }))["view"]["slots"].clone();
+    assert_eq!(slots[0]["level"], json!(0));
 }
 
 #[test]
@@ -145,7 +325,7 @@ fn unknown_relic_and_upgrade_ids_are_dropped() {
     } });
     fs::write(dir.join("meta.json"), meta.to_string()).unwrap();
     fs::write(dir.join("run.json"), run.to_string()).unwrap();
-    let mut session = Session::with_debug(Box::new(FileStorage::new(&dir)), 1, true);
+    let mut session = Session::with_debug(open(&dir), 1, true);
     assert_eq!(session.view()["meta"], json!({ "crowns": 7, "best": 3, "runs": 2 }));
     let camp = send(&mut session, json!({ "cmd": "continue_run" }))["view"].clone();
     let ids = |list: &Value| list.as_array().unwrap().iter().map(|r| r["id"].clone()).collect::<Vec<_>>();
@@ -169,13 +349,14 @@ fn unknown_relic_and_upgrade_ids_are_dropped() {
     send(&mut session, json!({ "cmd": "debug_set_crowns", "crowns": 8 }));
     let saved: Value = serde_json::from_str(&fs::read_to_string(dir.join("meta.json")).unwrap()).unwrap();
     assert_eq!(saved["data"]["upgrades"], json!({ "pawn": 2, "scout": 1 }));
+    drop(session);
     fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn the_game_saves_at_the_points_of_the_typescript_game() {
     let dir = temp_dir("points");
-    let mut session = Session::with_debug(Box::new(FileStorage::new(&dir)), 2, true);
+    let mut session = Session::with_debug(open(&dir), 2, true);
     let run_file = dir.join("run.json");
     let phase = || -> Option<Value> {
         let text = fs::read_to_string(&run_file).ok()?;
@@ -193,5 +374,36 @@ fn the_game_saves_at_the_points_of_the_typescript_game() {
     let meta: Value = serde_json::from_str(&fs::read_to_string(dir.join("meta.json")).unwrap()).unwrap();
     assert_eq!(meta["data"]["runs"], json!(1));
     assert_eq!(meta["data"]["crowns"], json!(1));
+    drop(session);
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_save_directory_has_one_core_at_a_time() {
+    let dir = temp_dir("lock");
+    let first = FileStorage::open(&dir).unwrap();
+    assert_eq!(first.recovered_lock(), None);
+    let pid = std::process::id().to_string();
+    assert_eq!(fs::read_to_string(dir.join(LOCK_FILE)).unwrap().trim(), pid);
+    match FileStorage::open(&dir) {
+        Err(OpenError::Locked { holder, .. }) => assert_eq!(holder.as_deref(), Some(pid.as_str())),
+        other => panic!("a second open got {other:?}"),
+    }
+    // A clean end empties the lock file; the next open finds no stale lock.
+    drop(first);
+    assert_eq!(fs::read_to_string(dir.join(LOCK_FILE)).unwrap(), "");
+    let second = FileStorage::open(&dir).unwrap();
+    assert_eq!(second.recovered_lock(), None);
+    drop(second);
+
+    // A lock file with a PID that no process locks: a core that crashed. The next open takes
+    // it over. A temporary file of a save that the crash stopped goes away.
+    fs::write(dir.join(LOCK_FILE), "4194999\n").unwrap();
+    fs::write(dir.join("meta.json.4194999-3.tmp"), "{\"format\":").unwrap();
+    let third = FileStorage::open(&dir).unwrap();
+    assert_eq!(third.recovered_lock(), Some("4194999"));
+    assert_eq!(fs::read_to_string(dir.join(LOCK_FILE)).unwrap().trim(), pid);
+    assert!(files(&dir, "").iter().all(|n| !n.ends_with(".tmp")));
+    drop(third);
     fs::remove_dir_all(&dir).unwrap();
 }
