@@ -223,6 +223,7 @@ local function parse(args)
     elseif name == '--keep-alive' then options.keepAlive = true
     elseif name == '--novsync' then options.novsync = true
     elseif name == '--no-auth' then options.noAuth = true
+    elseif name == '--embed' then options.embed = true
     end
     i = i + 1
   end
@@ -231,6 +232,8 @@ end
 function love.load(args)
   parse(args)
   local options = app.options
+  -- A page of a browser cannot start a program or open a socket, thus the core is always in the game there.
+  if love.system.getOS() == 'Web' then options.embed = true end
   if options.width or options.novsync then
     local w, h = options.width or lg.getWidth(), options.height or lg.getHeight()
     love.window.setMode(w, h, { resizable = true, minwidth = 640, minheight = 360, vsync = options.novsync and 0 or 1 })

@@ -61,7 +61,10 @@ local function target(app, step)
 end
 
 function script.load(path)
-  local chunk = assert(loadfile(path))
+  -- A path in the game folder (test/flow.lua) is for a game in one file, which has no folder on the disk.
+  local chunk, problem = loadfile(path)
+  if not chunk and love.filesystem.getInfo(path) then chunk, problem = love.filesystem.load(path) end
+  assert(chunk, problem)
   return { steps = chunk(), at = 1, waitUntil = nil, pending = false, since = nil, path = path, allowed = {}, last = nil }
 end
 
@@ -189,6 +192,8 @@ function script.update(self, app)
     elseif kind == 'log' then
       print(step[2])
     elseif kind == 'quit' then
+      -- A page of a browser has no exit code. The test of the web build waits for this line.
+      print('The script is at its end.')
       love.event.quit(0)
       self.at = #self.steps
     else

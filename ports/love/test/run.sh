@@ -38,6 +38,12 @@ run --size 1280x720 --seed 7 --debug --no-save --script "$here/test/input.lua"
 run --size 1920x1080 --seed 7 --debug --no-save --script "$here/test/input.lua"
 run --size 1280x720 --seed 7 --debug --no-save --script "$here/test/battle.lua"
 run --size 1280x720 --no-save --script "$here/test/icons.lua"
+# The core in the process of the game: the same session with no socket and no core program. Then a saved run: the
+# first game starts a battle and quits, and a second game on the same save folder continues the run.
+run --embed --size 1280x720 --seed 7 --debug --no-save --script "$here/test/flow.lua"
+rm -rf "$out/save-embed"
+run --embed --seed 7 --save-dir "$out/save-embed" --script "$here/test/saved-a.lua"
+run --embed --seed 7 --save-dir "$out/save-embed" --script "$here/test/saved-b.lua"
 
 # The notices about the saved data: the save folder cannot take a file.
 for size in 1280x720 1920x1080; do

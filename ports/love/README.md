@@ -27,6 +27,7 @@ The options come after the game folder. The client gives `--seed`, `--debug`, `-
 - `--keep-alive`: the core continues after the game stops. The game prints the address of the core.
 - `--connect HOST:PORT`: the client connects to a core that runs, and does not start a core. Set `CHROGUE_TOKEN` to the token of that core.
 - `--no-auth`: the client accepts a core that does not check the token of a connection. See "The token".
+- `--embed`: the core is in the process of the game, and the client uses no socket. See "The core in the process of the game".
 - `--script FILE`: a Lua file of test steps. See "Test scripts".
 - `--novsync`: no limit for the frames per second, for a measurement.
 
@@ -52,6 +53,20 @@ The client sends one request at a time. The other requests wait in a queue. Afte
 - Before the game stops its core with `kill`, it checks that the process number is still the core: `/proc/PID/cmdline` on Linux, `ps -p PID -o comm=` on macOS. It does not stop a different process.
 - A `save_failed` or `save_problem` event gives a notice at the top left corner of the window. The notice does not stop the game. It goes after 14 seconds, or when the player clicks it. The notice of `save_problem` gives the path of the file that the core kept aside.
 
+### The core in the process of the game
+
+With `--embed`, the client loads the library of the core (`../../core/embed`) with the FFI of LuaJIT, and starts no program. In a browser (`../web`), the client always uses this mode, and the library is a part of the build.
+
+1. Build the library. In `../../core`, run `cargo build --release`.
+2. In this folder, run `love . --embed`.
+
+The client looks for the library at `../../core/target/release/libchrogue_core.so`, from this folder (`libchrogue_core.dylib` on macOS, `chrogue_core.dll` on Windows). To use a different file, set `CHROGUE_CORE_LIB` to its path.
+
+- `--seed`, `--debug`, `--no-save`, and `--save-dir` have the same function. `--connect`, `--keep-alive`, and `--no-auth` have no function.
+- The client sends one request in each frame, and the core answers in the call. No token, no time limit, and no reconnection are necessary.
+- While the core selects the enemy move, the window does not draw. On floor 8, this time is 0.1 to 0.2 seconds.
+- If the library is missing, or if another core holds the lock of the save folder, the window shows the reason.
+
 ### The token
 
 Each connection starts with a token, thus a different program on the computer cannot send commands to the core.
@@ -70,7 +85,7 @@ To continue a battle in a new window:
 
 ## Test scripts
 
-`--script FILE` gives a Lua file that returns a list of steps. A click goes through `love.mousemoved`, `love.mousepressed`, and `love.mousereleased`, thus it uses the same path as a click of a person. With a script, an error stops the game with exit code 1.
+`--script FILE` gives a Lua file that returns a list of steps. The file is a path on the disk, or a path in the game folder (`test/flow.lua`) for a game in one file. A click goes through `love.mousemoved`, `love.mousepressed`, and `love.mousereleased`, thus it uses the same path as a click of a person. With a script, an error stops the game with exit code 1.
 
 | Step | Function |
 |---|---|
@@ -96,7 +111,7 @@ To continue a battle in a new window:
 | `{ 'size', 1920, 1080 }` | The size of the window. |
 | `{ 'screenshot', '/absolute/path.png' }` | A screenshot. |
 | `{ 'dump', '/absolute/path.json' }` | The last view of the core, the state of the client, the set areas of the screen, the connection, and the frames. |
-| `{ 'log', 'text' }`, `{ 'quit' }` | A line on stdout, and the end of the game. |
+| `{ 'log', 'text' }`, `{ 'quit' }` | A line on stdout, and the end of the game. `quit` writes the line "The script is at its end." |
 
 A `settle` or `screen` step stops the game with an error after 30 seconds.
 
@@ -114,7 +129,7 @@ The named controls are in the `control` function of each screen module:
 
 The run fails if a game stops with an error, if the core refused a command that a script did not expect, or if a core of this game continues after the tests.
 
-- `test/flow.lua`: a full session from the title to the title, at 1280 by 720 and 1920 by 1080.
+- `test/flow.lua`: a full session from the title to the title, at 1280 by 720 and 1920 by 1080, and one time with `--embed`.
 - `test/showcase.lua`: the largest content (the last boss, a full army, each relic) and a won run.
 - `test/floor8.lua`: 12 moves against the boss of floor 8. It prints the longest frame while the core selects the enemy move.
 - `test/reconnect-a.lua`, `test/reconnect-b.lua`: the reconnection with `--keep-alive` and `--connect`.
@@ -124,6 +139,7 @@ The run fails if a game stops with an error, if the core refused a command that 
 - `test/battle.lua`: a battle that starts with no legal move, Give up during the pause before the enemy move, refusals of `enemy_move`, and a promotion to a knight.
 - `test/saves.lua`: the notices of `save_failed` (a save folder that cannot take a file) and of `save_problem`.
 - `test/icons.lua`: the SVG path reader of `icons.lua`.
+- `test/saved-a.lua`, `test/saved-b.lua`: with `--embed`, a game starts a run and quits, and a second game on the same save folder continues the run.
 
 With `CHROGUE_EFFECTS=off`, `flow.lua` and `showcase.lua` start with the effects off. Use this setting for screenshots that you compare pixel by pixel.
 
@@ -132,7 +148,8 @@ With `CHROGUE_EFFECTS=off`, `flow.lua` and `showcase.lua` start with the effects
 | File | Function |
 |---|---|
 | `main.lua` | The window, the frame, the command line, the screen manager, the input, and the dump |
-| `net.lua` | The core process, the socket, the queue of requests, and the reconnection |
+| `net.lua` | The core process, the socket, the queue of requests, and the reconnection. With `--embed`, the queue and the calls to `core.lua` |
+| `core.lua` | The core in the process of the game: the library through the FFI of LuaJIT, or the linked module of the WebAssembly build |
 | `json.lua` | The JSON reader and writer of the protocol |
 | `text.lua` | The interface text for the codes of the protocol. The strings come from `src/ui` |
 | `layout.lua` | The set layout of each screen: rectangles in stage units |

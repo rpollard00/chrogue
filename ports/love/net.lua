@@ -4,12 +4,14 @@
   stop while the core thinks.
 
   net.start(options) starts the core, or connects to a running core (options.connect = 'HOST:PORT').
+  With options.embed, the core is in the process of the game (core.lua), and the client uses no socket. The core answers
+  a request in the call. Thus the window stops for 0.1 to 0.2 seconds while the core selects the enemy move.
   net.send(request) puts a request in the queue. net.onResponse(response, request) gets each response.
   net.onConnect() is called after each connection, also after a reconnection.
 ]]
 local json = require('json')
-local socket = require('socket')
-local bit = require('bit')
+-- Only a core on a socket needs these two modules. net.start loads them. The WebAssembly build has no `bit`.
+local socket, bit
 
 local net = {
   -- 'starting', 'connecting', 'auth' (the first line of the connection), 'connected', 'lost', or 'failed'.
@@ -32,6 +34,8 @@ net.TIMEOUT = 5
 net.ENEMY_TIMEOUT = 15
 
 local options, proc, tcp, token
+-- The core in the process of the game, or nil for a core on a socket.
+local embedded
 local buffer, outgoing, sentAt = '', nil, 0
 local nextId, retryAt, startedAt, checkedAt = 1, 0, 0, 0
 
@@ -193,8 +197,22 @@ local function connect(address)
   end
 end
 
+-- Opens the core in the process of the game. It has the same save folder and options as a core that the game starts.
+local function embed()
+  local dir = not options.noSave and (options.saveDir or love.filesystem.getSaveDirectory()) or nil
+  local core, reason = require('core').open({
+    save_dir = dir, seed = options.seed and ('%.0f'):format(options.seed), debug = options.debug or false,
+  })
+  if not core then return fail('The core did not open. ' .. tostring(reason)) end
+  embedded = core
+  net.address = 'in process'
+  ready(false)
+end
+
 function net.start(opts)
   options = opts
+  if opts.embed then return embed() end
+  socket, bit = require('socket'), require('bit')
   if opts.connect then
     -- A core that a different game started has its own token. The player gives it in CHROGUE_TOKEN.
     local env = os.getenv('CHROGUE_TOKEN')
@@ -272,17 +290,35 @@ local function flush()
   elseif err and err ~= 'timeout' then lose('The connection to the core is lost.') end
 end
 
+-- Takes the next request of the queue. The request gets its id, and it waits for its response.
+local function take()
+  local request = table.remove(net.queue, 1)
+  request.id = nextId
+  nextId = nextId + 1
+  net.inflight = request
+  sentAt = now()
+  net.stats.sent = net.stats.sent + 1
+  return request
+end
+
 local function write()
   if not outgoing and not net.inflight and #net.queue > 0 then
-    local request = table.remove(net.queue, 1)
-    request.id = nextId
-    nextId = nextId + 1
-    net.inflight = request
-    outgoing = { text = json.encode(request) .. '\n', at = 1 }
-    sentAt = now()
-    net.stats.sent = net.stats.sent + 1
+    outgoing = { text = json.encode(take()) .. '\n', at = 1 }
   end
   flush()
+end
+
+-- Gives the next request of the queue to the core in the process. The response comes in the same call.
+local function call()
+  if net.inflight or #net.queue == 0 then return end
+  local line = embedded:command(json.encode(take()))
+  local ok, decoded = pcall(json.decode, line)
+  if not ok then error('The core gave a line that is not JSON: ' .. tostring(decoded)) end
+  -- Only a fault inside the core gives a response with no view. The game cannot continue with this core.
+  if not decoded.view then
+    return fail('The core failed. ' .. tostring(type(decoded.error) == 'table' and decoded.error.message or ''))
+  end
+  response(decoded)
 end
 
 -- The time that a request can wait for its response.
@@ -297,7 +333,10 @@ end
 
 function net.update()
   local state = net.state
-  if state == 'starting' then
+  if embedded then
+    -- One request in each frame, thus the frame shows each response before the next request.
+    if state == 'connected' then call() end
+  elseif state == 'starting' then
     local first = (readFile(proc.out) or ''):match('^([^\n]*)\n')
     local address = first and first:match('"listening"%s*:%s*"([^"]+)"')
     if address then return connect(address) end
@@ -330,6 +369,12 @@ end
 
 -- Closes the connection. The core that the game started also stops, unless the player asked to keep it (--keep-alive).
 function net.shutdown()
+  if embedded then
+    embedded:close()
+    embedded = nil
+    net.state = 'failed'
+    return
+  end
   local own = proc and not options.keepAlive
   if tcp then
     if own and net.state == 'connected' then
