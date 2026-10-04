@@ -119,7 +119,7 @@ fn valid(g: &mut Gen, view: &Value) -> Value {
         },
         "camp" => {
             let shop = view["shop"]["offers"].as_array().map_or(0, Vec::len);
-            match g.below(10) {
+            match g.below(12) {
                 0 => json!({ "cmd": "take_reward", "index": g.below(3) }),
                 1 => json!({ "cmd": "skip_reward" }),
                 2 => json!({ "cmd": "buy", "index": g.below(shop.max(1)) }),
@@ -131,6 +131,13 @@ fn valid(g: &mut Gen, view: &Value) -> Value {
                 5 => json!({ "cmd": "debug_set_gold", "gold": g.below(100) }),
                 6 => json!({ "cmd": "debug_add_unit", "kind": piece_kind(g) }),
                 7 => tune(g),
+                // The run often does not have the relic.
+                8 => {
+                    let relic =
+                        view["relics"].as_array().and_then(|relics| relics.first()).map(|relic| relic["id"].clone());
+                    json!({ "cmd": "discard_relic", "relic": relic.unwrap_or(json!("bounty")) })
+                }
+                9 => json!({ "cmd": "debug_set_relic_slots", "slots": g.below(12) }),
                 _ => json!({ "cmd": "start_battle" }),
             }
         }
@@ -169,6 +176,7 @@ fn any_command(g: &mut Gen) -> Value {
         "cap",
         "weight",
         "min_floor",
+        "slots",
     ];
     for _ in 0..g.below(4) {
         let name = *g.pick(&names);
@@ -359,6 +367,10 @@ fn run_doc(g: &mut Gen) -> String {
     if g.chance(0.7) {
         doc["data"]["seed"] = if g.chance(0.8) { json!(g.below(1_000_000_000)) } else { big(g) };
         doc["data"]["rolls"] = if g.chance(0.8) { json!(g.below(5)) } else { big(g) };
+    }
+    // A file of an older core has no slots.
+    if g.chance(0.8) {
+        doc["data"]["slots"] = if g.chance(0.85) { json!(g.below(11)) } else { big(g) };
     }
     doc.to_string()
 }

@@ -5,7 +5,7 @@ use std::ops::Range;
 
 use chrogue_game::battle::{Battle, Next};
 use chrogue_game::chess::{Kind, Outcome, Square};
-use chrogue_game::content::{FLOORS, RELICS_MAX, RelicId, UpgradeId};
+use chrogue_game::content::{FLOORS, RelicId, UpgradeId};
 use chrogue_game::run::{Enemy, EnemyPiece, Meta, Offer, Run, relic_pool, roll_draft};
 use chrogue_game::tuning::Tuning;
 use chrogue_game::{MemoryStorage, Session};
@@ -96,6 +96,16 @@ fn heirloom_does_not_give_a_barred_relic() {
     for seed in seeds() {
         assert_eq!(Run::new(&meta, seed, &one).relics, vec![pool[0]]);
         assert_eq!(Run::new(&meta, seed, &none).relics, vec![]);
+    }
+}
+
+#[test]
+fn heirloom_gives_no_relic_to_a_run_with_no_relic_slot() {
+    let meta = meta_with(&[("heirloom", 1)]);
+    let slots = |relic_slots: usize| Tuning { relic_slots, ..defaults() };
+    for seed in seeds() {
+        assert_eq!(Run::new(&meta, seed, &slots(0)).relics, vec![]);
+        assert_eq!(Run::new(&meta, seed, &slots(1)).relics.len(), 1);
     }
 }
 
@@ -251,14 +261,13 @@ fn curator_puts_a_relic_card_in_each_reward() {
     assert!(seeds().any(|seed| !draft(seed, &Meta::default(), &defaults(), |_| {}).iter().any(is_relic)));
 }
 
+/// The player can discard a relic and then take the card.
 #[test]
-fn curator_guarantees_no_relic_card_to_a_run_with_the_most_relics() {
+fn curator_puts_a_relic_card_in_the_reward_of_a_run_with_a_relic_in_each_slot() {
     let curator = meta_with(&[("curator", 1)]);
-    let fill = |run: &mut Run| run.relics = RelicId::all().take(RELICS_MAX).collect();
-    for seed in seeds() {
-        assert_eq!(draft(seed, &curator, &defaults(), fill), draft(seed, &Meta::default(), &defaults(), fill));
-    }
-    assert!(seeds().any(|seed| !draft(seed, &curator, &defaults(), fill).iter().any(is_relic)));
+    let fill = |run: &mut Run| run.relics = RelicId::all().take(run.slots).collect();
+    assert!(seeds().all(|seed| is_relic(&draft(seed, &curator, &defaults(), fill)[0])));
+    assert!(seeds().any(|seed| !draft(seed, &Meta::default(), &defaults(), fill).iter().any(is_relic)));
 }
 
 #[test]

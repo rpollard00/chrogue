@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use crate::chess::{Kind, Square};
 use crate::content::{
-    self, ARMY_MAX, DRAFT_GOLD_WEIGHT, DRAFT_RELIC_WEIGHT, FLOORS, RECRUIT_KINDS, RECRUITS, RELIC_PRICE, RELICS_MAX,
-    REROLL_COST, RelicId, UpgradeEffect, UpgradeId, WIN_CROWNS,
+    self, ARMY_MAX, DRAFT_GOLD_WEIGHT, DRAFT_RELIC_WEIGHT, FLOORS, RECRUIT_KINDS, RECRUITS, RELIC_PRICE, REROLL_COST,
+    RelicId, UpgradeEffect, UpgradeId, WIN_CROWNS,
 };
 use crate::protocol::{Code, Fail, fail};
 use crate::random::{Dice, Stream};
@@ -58,7 +58,7 @@ pub enum Offer {
 pub enum Blocked {
     ArmyFull,
     Owned,
-    /// The run has `RELICS_MAX` relics.
+    /// Each relic slot of the run has a relic.
     RelicsFull,
 }
 
@@ -132,6 +132,9 @@ pub struct Run {
     pub army: Vec<Unit>,
     pub next_id: UnitId,
     pub relics: Vec<RelicId>,
+    /// The relic slots of the run, from 0 to `RELICS_MAX`. A debug session can give the run
+    /// more relics than slots.
+    pub slots: usize,
     pub enemy: Enemy,
     pub phase: Phase,
     /// The reward choices. None when the player has no reward to take.
@@ -297,6 +300,7 @@ impl Run {
             next_id: army.len() as UnitId + 1,
             army,
             relics: Vec::new(),
+            slots: tuning.relic_slots,
             enemy: generate_enemy(seed, 1, tuning),
             phase: Phase::Battle,
             draft: None,
@@ -320,7 +324,9 @@ impl Run {
                 UpgradeEffect::StartRelic => {
                     let pool = relic_pool(tuning);
                     let dice = &mut Dice::stream(seed, Stream::Start, 0, 0);
-                    if let Some(&id) = pool.get(dice.below(pool.len())) {
+                    if run.can_add_relic()
+                        && let Some(&id) = pool.get(dice.below(pool.len()))
+                    {
                         run.relics.push(id);
                     }
                 }
@@ -344,8 +350,19 @@ impl Run {
         self.army.len() < ARMY_MAX && self.next_id <= UNIT_ID_MAX
     }
 
+    /// True if the run has a relic slot with no relic.
     pub fn can_add_relic(&self) -> bool {
-        self.relics.len() < RELICS_MAX
+        self.relics.len() < self.slots
+    }
+
+    /// Removes a relic from the run. The run gets no gold for it, and the game can offer the
+    /// relic again.
+    pub fn discard_relic(&mut self, id: RelicId) -> Result<(), Fail> {
+        let Some(at) = self.relics.iter().position(|&other| other == id) else {
+            return fail(Code::BadArgs, format!("The run does not have the relic \"{}\"", id.key()));
+        };
+        self.relics.remove(at);
+        Ok(())
     }
 
     /// Adds a unit on a free home square. Returns its id, or None if the army is full.
@@ -507,15 +524,15 @@ fn new_relics(run: &Run, n: usize, dice: &mut Dice, tuning: &Tuning) -> Vec<Offe
 }
 
 /// The three free rewards. `run.floor` is the floor that comes next. With `DraftRelic`, one of
-/// the two relics of the reward is the first card. A run with `RELICS_MAX` relics has no
-/// guarantee of a relic.
+/// the two relics of the reward is the first card, also when each relic slot of the run has a
+/// relic: the player can discard a relic and then take the card.
 pub fn roll_draft(run: &Run, meta: &Meta, tuning: &Tuning) -> Vec<Offer> {
     let dice = &mut Dice::stream(run.seed, Stream::Draft, run.floor as u64, 0);
     let mut pool = piece_pool(run.floor);
     pool.extend(new_relics(run, 2, dice, tuning).into_iter().map(|offer| (offer, DRAFT_RELIC_WEIGHT)));
     pool.push((Offer::Gold(content::draft_gold(run.floor)), DRAFT_GOLD_WEIGHT));
     let mut draft = Vec::new();
-    if meta.draft_has_relic() && run.can_add_relic() {
+    if meta.draft_has_relic() {
         let relics = pool.iter().enumerate().filter(|(_, (offer, _))| matches!(offer, Offer::Relic(_)));
         let relics: Vec<(usize, f64)> = relics.map(|(i, &(_, weight))| (i, weight)).collect();
         if let Some(&i) = dice.pick_weighted(relics, 1).first() {

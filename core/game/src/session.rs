@@ -13,7 +13,7 @@ use crate::content::{self, FLOORS, RECRUIT_KINDS, RelicId, UpgradeId};
 use crate::protocol::{Code, Command, EventKind, Fail, MAX_REQUEST_BYTES, event, fail, gold_number};
 use crate::random::Dice;
 use crate::run::{
-    Blocked, ENEMY_PIECES_MAX, EnemyPiece, Meta, Offer, Phase, Run, RunSummary, SEED_MAX, UNIT_ID_MAX, Unit, UnitId,
+    ENEMY_PIECES_MAX, EnemyPiece, Meta, Offer, Phase, Run, RunSummary, SEED_MAX, UNIT_ID_MAX, Unit, UnitId,
     generate_enemy,
 };
 use crate::save::{self, Doc, Storage};
@@ -555,11 +555,12 @@ fn camp_action(
         .map(|u| json!({ "id": u.id, "kind": view::letter(u.kind), "home": u.home }))
         .collect();
     let new_relics: Vec<&str> = run.relics.iter().filter(|id| !relics.contains(id)).map(|id| id.key()).collect();
+    let discarded: Vec<&str> = relics.iter().filter(|id| !run.relics.contains(id)).map(|id| id.key()).collect();
     done.push(
         EventKind::CampAction,
         json!({
             "action": command.name(), "gold_before": gold_before, "gold": run.gold,
-            "units": added, "relics": new_relics, "rolled": command == Command::Reroll,
+            "units": added, "relics": new_relics, "discarded": discarded, "rolled": command == Command::Reroll,
         }),
     );
     done.save_run = true;
@@ -707,6 +708,10 @@ fn apply(game: &mut Game, command: Command, args: &Args, debug: bool) -> Result<
             camp_action(game, command, d, |run, _, meta, _| run.buy_offer(meta, i).map(|_| ()))?;
         }
         Command::Reroll => camp_action(game, command, d, |run, _, meta, tuning| run.reroll_shop(meta, tuning))?,
+        Command::DiscardRelic => {
+            let id = relic(args, "relic")?;
+            camp_action(game, command, d, |run, _, _, _| run.discard_relic(id))?;
+        }
         Command::Place => {
             let unit = uint(args, "unit", u16::MAX as u64)? as UnitId;
             let to = uint(args, "square", 15)? as Square;
@@ -764,6 +769,16 @@ fn debug_command(game: &mut Game, command: Command, args: &Args, d: &mut Done) -
                 Some(Value::Null) => None,
                 _ => Some(uint(args, "seed", SEED_MAX)?),
             };
+            restart = false;
+        }
+        Command::DebugSetRelicSlots => {
+            let slots = uint(args, "slots", content::RELICS_MAX as u64)? as usize;
+            game.tuning.relic_slots = slots;
+            // The run keeps its relics, also when it has more relics than slots.
+            if let Some(run) = game.screen.run_mut() {
+                run.slots = slots;
+                d.save_run = true;
+            }
             restart = false;
         }
         Command::DebugTune => {
@@ -895,7 +910,8 @@ fn debug_run(run: &mut Run, command: Command, args: &Args, tuning: &Tuning) -> R
         Command::DebugSetRelic => {
             let id = relic(args, "relic")?;
             let on = boolean(args, "on")?;
-            if on && Offer::Relic(id).blocked(run) == Some(Blocked::RelicsFull) {
+            // The slots of the run are not a limit here, thus a debug session can fill the relic fan.
+            if on && !run.relics.contains(&id) && run.relics.len() >= content::RELICS_MAX {
                 return fail(Code::Blocked, format!("The run has at most {} relics", content::RELICS_MAX));
             }
             set_relic(&mut run.relics, id, on);

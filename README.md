@@ -46,7 +46,7 @@ The Emscripten SDK and the Rust target `wasm32-unknown-emscripten` are also nece
 
 A run has 8 floors. Floor 4 and floor 8 are boss floors, and a boss has traits that change its moves.
 After each battle, you select one of three rewards, buy pieces and relics, and arrange your first two ranks.
-A run has at most 10 relics.
+A run has 4 relic slots. In the camp, you can discard a relic to make a slot free. You get no gold for it.
 Each run gives crowns. Crowns buy permanent upgrades on the title screen.
 
 ## Structure

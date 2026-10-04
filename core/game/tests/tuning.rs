@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use chrogue_game::battle::Battle;
 use chrogue_game::chess::{self, Kind, Square};
-use chrogue_game::content::{ENEMY_KINDS, FLOORS, RECRUIT_KINDS, TRAITS_MAX, gold_value};
+use chrogue_game::content::{ENEMY_KINDS, FLOORS, RECRUIT_KINDS, RELIC_SLOTS, TRAITS_MAX, gold_value};
 use chrogue_game::random::{Dice, Stream};
 use chrogue_game::run::{Enemy, Meta, Run, SEED_MAX, generate_enemy};
 use chrogue_game::tuning::{BUDGET_MAX, Field, Target, Tuning, WEIGHT_MAX};
@@ -83,6 +83,7 @@ fn win_first_move(session: &mut Session) -> Value {
 fn the_default_tuning_is_the_content() {
     let tuning = Tuning::default();
     assert_eq!((tuning.seed, tuning.barred.len(), tuning.tuned()), (None, 0, false));
+    assert_eq!(tuning.relic_slots, RELIC_SLOTS);
     assert_eq!(tuning.floors.len(), FLOORS.len());
     for (i, (floor, def)) in tuning.floors.iter().zip(&FLOORS).enumerate() {
         assert_eq!((floor.level, floor.budget, floor.traits), (i + 1, def.budget, def.traits));
@@ -121,6 +122,7 @@ fn the_default_tuning_is_the_content() {
         json!({ "seed": SEED_MAX, "level": 8, "budget": 39, "traits": 2, "weight": 9.0, "relics": 10 })
     );
     assert_eq!((&state["tuned"], &state["seed"], &state["barred"]), (&json!(false), &Value::Null, &json!([])));
+    assert_eq!(state["relic_slots"], json!(RELIC_SLOTS));
 }
 
 #[test]
@@ -337,10 +339,11 @@ fn a_tune_of_only_the_level_does_not_start_the_battle_again() {
 }
 
 #[test]
-fn a_reset_gives_the_default_armies_and_keeps_the_seed_and_the_barred_relics() {
+fn a_reset_gives_the_default_armies_and_keeps_the_seed_the_barred_relics_and_the_relic_slots() {
     let mut session = debug_session(2);
     let fresh = debug_state(&mut session);
     send(&mut session, json!({ "cmd": "debug_set_seed", "seed": 31 }));
+    send(&mut session, json!({ "cmd": "debug_set_relic_slots", "slots": 6 }));
     send(&mut session, json!({ "cmd": "debug_bar_relic", "relic": "interest", "barred": true }));
     send(&mut session, json!({ "cmd": "debug_bar_relic", "relic": "bounty", "barred": true }));
     let start = send(&mut session, json!({ "cmd": "new_run" }))["view"].clone();
@@ -358,6 +361,7 @@ fn a_reset_gives_the_default_armies_and_keeps_the_seed_and_the_barred_relics() {
         (&fresh["floors"], &fresh["kinds"], &json!(false))
     );
     assert_eq!((&state["seed"], &state["barred"]), (&json!(31), &json!(["bounty", "interest"])));
+    assert_eq!((&state["relic_slots"], &state["run"]["relic_slots"]), (&json!(6), &json!(6)));
 }
 
 #[test]
@@ -456,6 +460,76 @@ fn a_fixed_seed_gives_the_same_run_each_time() {
 }
 
 #[test]
+fn debug_set_relic_slots_sets_the_slots_of_the_tuning_and_of_each_new_run() {
+    let mut session = debug_session(1);
+    // With no run, only the tuning changes.
+    let reply = send(&mut session, json!({ "cmd": "debug_set_relic_slots", "slots": 6 }));
+    assert_eq!(reply["events"], json!([{ "type": "debug_changed", "what": "relic_slots" }]));
+    assert_eq!(reply["view"]["screen"], json!("title"));
+    let state = &reply["data"]["debug"];
+    assert_eq!((&state["relic_slots"], &state["run"], &state["tuned"]), (&json!(6), &Value::Null, &json!(false)));
+
+    let battle = send(&mut session, json!({ "cmd": "new_run" }))["view"].clone();
+    assert_eq!(battle["relic_slots"], json!(6));
+    assert_eq!(debug_state(&mut session)["run"]["relic_slots"], json!(6));
+
+    for slots in [json!(11), json!(-1), json!(2.5), json!("4"), Value::Null] {
+        let reply = ask(&mut session, json!({ "cmd": "debug_set_relic_slots", "slots": slots }));
+        assert_eq!((&reply["error"]["code"], &reply["view"]), (&json!("bad_args"), &battle), "{slots}");
+    }
+    assert_eq!(debug_state(&mut session)["relic_slots"], json!(6));
+    for slots in [0, 10] {
+        let reply = send(&mut session, json!({ "cmd": "debug_set_relic_slots", "slots": slots }));
+        assert_eq!(reply["data"]["debug"]["relic_slots"], json!(slots));
+    }
+}
+
+#[test]
+fn debug_set_relic_slots_changes_the_run_in_progress_and_does_not_start_the_battle_again() {
+    let mut session = debug_session(1);
+    send(&mut session, json!({ "cmd": "new_run" }));
+    send(
+        &mut session,
+        json!({ "cmd": "debug_set_army", "units": [{ "kind": "k", "home": 4 }, { "kind": "p", "home": 12 }] }),
+    );
+    let moved = send(&mut session, json!({ "cmd": "move", "from": 12, "to": 20 }))["view"].clone();
+    let reply = send(&mut session, json!({ "cmd": "debug_set_relic_slots", "slots": 2 }));
+    assert_eq!(event_types(&reply), ["debug_changed"]);
+    assert_eq!((&reply["view"]["relic_slots"], &reply["view"]["pieces"]), (&json!(2), &moved["pieces"]));
+    assert_eq!((&reply["view"]["last"], &reply["view"]["phase"]), (&moved["last"], &json!("enemy")));
+    let state = &reply["data"]["debug"];
+    assert_eq!((&state["relic_slots"], &state["run"]["relic_slots"]), (&json!(2), &json!(2)));
+    // The core saves the run with its slots.
+    assert_eq!(send(&mut session, json!({ "cmd": "view", "run": true }))["data"]["run"]["slots"], json!(2));
+}
+
+#[test]
+fn fewer_slots_than_relics_remove_no_relic_and_block_each_relic_offer() {
+    let mut session = debug_session(1);
+    win_first_move(&mut session);
+    send(&mut session, json!({ "cmd": "continue" }));
+    for relic in ["bounty", "interest", "vault"] {
+        send(&mut session, json!({ "cmd": "debug_set_relic", "relic": relic, "on": true }));
+    }
+    send(&mut session, json!({ "cmd": "debug_set_draft", "offers": [{ "kind": "relic", "id": "coup" }] }));
+    let blocked = |reply: &Value| reply["view"]["reward"]["offers"][0]["blocked"].clone();
+    let relics = |reply: &Value| reply["view"]["relics"].as_array().unwrap().len();
+
+    let reply = send(&mut session, json!({ "cmd": "debug_set_relic_slots", "slots": 1 }));
+    assert_eq!(event_types(&reply), ["debug_changed"]);
+    assert_eq!((relics(&reply), &reply["view"]["relic_slots"], blocked(&reply)), (3, &json!(1), json!("relics_full")));
+    assert_eq!(ask(&mut session, json!({ "cmd": "take_reward", "index": 0 }))["error"]["code"], json!("blocked"));
+    // The offer is free when the run has fewer relics than slots.
+    for (relic, left, state) in
+        [("bounty", 2, json!("relics_full")), ("interest", 1, json!("relics_full")), ("vault", 0, Value::Null)]
+    {
+        let reply = send(&mut session, json!({ "cmd": "discard_relic", "relic": relic }));
+        assert_eq!((relics(&reply), blocked(&reply)), (left, state), "{relic}");
+    }
+    send(&mut session, json!({ "cmd": "take_reward", "index": 0 }));
+}
+
+#[test]
 fn debug_state_has_the_run_the_meta_and_the_tuning() {
     let mut session = debug_session(1);
     let reply = send(&mut session, json!({ "cmd": "debug_state" }));
@@ -478,7 +552,7 @@ fn debug_state_has_the_run_the_meta_and_the_tuning() {
     let traits = generate_enemy(123_456_789, 4, &Tuning::default()).traits;
     assert_eq!(
         state["run"],
-        json!({ "seed": 123_456_789, "floor": 4, "gold": 12, "relics": ["bounty"],
+        json!({ "seed": 123_456_789, "floor": 4, "gold": 12, "relics": ["bounty"], "relic_slots": 4,
                 "traits": traits.iter().map(|id| id.key()).collect::<Vec<_>>() })
     );
     assert_eq!(state["meta"], json!({ "crowns": 4, "upgrades": { "pawn": 2 } }));
@@ -499,6 +573,7 @@ fn a_session_with_no_debug_refuses_the_commands_of_the_tuning() {
         json!({ "cmd": "debug_set_seed", "seed": 7 }),
         json!({ "cmd": "debug_tune", "floor": 1, "budget": 0 }),
         json!({ "cmd": "debug_bar_relic", "relic": "bounty", "barred": true }),
+        json!({ "cmd": "debug_set_relic_slots", "slots": 2 }),
     ] {
         let reply = ask(&mut session, request.clone());
         assert_eq!(reply["error"]["code"], json!("debug_disabled"), "{request} -> {reply}");

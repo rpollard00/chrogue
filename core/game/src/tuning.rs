@@ -3,7 +3,7 @@
 //! come from the content (`FLOORS` and `ENEMY_KINDS`). The tuning is not saved.
 
 use crate::chess::{self, Kind};
-use crate::content::{ENEMY_KINDS, FLOORS, RECRUIT_KINDS, RelicId, TRAITS_MAX};
+use crate::content::{ENEMY_KINDS, FLOORS, RECRUIT_KINDS, RELIC_SLOTS, RelicId, TRAITS_MAX};
 
 /// The largest budget of a floor: the value of a full army (8 pawns, 2 knights, 2 bishops,
 /// 2 rooks, and 1 queen).
@@ -40,6 +40,8 @@ pub struct Tuning {
     pub seed: Option<u64>,
     /// The relics that the game does not offer and does not give to a boss, sorted.
     pub barred: Vec<RelicId>,
+    /// The relic slots of each new run, from 0 to `RELICS_MAX`.
+    pub relic_slots: usize,
     pub floors: [FloorTuning; FLOORS.len()],
     /// In the order of `RECRUIT_KINDS`.
     pub kinds: [KindTuning; ENEMY_KINDS.len()],
@@ -117,6 +119,7 @@ impl Default for Tuning {
         Tuning {
             seed: None,
             barred: Vec::new(),
+            relic_slots: RELIC_SLOTS,
             floors: std::array::from_fn(|i| FloorTuning {
                 level: i + 1,
                 budget: FLOORS[i].budget,

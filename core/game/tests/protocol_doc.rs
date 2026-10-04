@@ -97,6 +97,7 @@ fn scripted_session() -> Seen {
     s.send(json!({ "cmd": "debug_set_trait", "relic": "sidestep", "on": true }));
     s.send(json!({ "cmd": "debug_bar_relic", "relic": "longLeap", "barred": true }));
     s.send(json!({ "cmd": "debug_set_seed", "seed": 7 }));
+    s.send(json!({ "cmd": "debug_set_relic_slots", "slots": 5 }));
     s.send(json!({ "cmd": "debug_tune", "floor": 5, "level": 2, "budget": 9 }));
     s.send(json!({ "cmd": "debug_tune", "kind": "q", "min_floor": 4 }));
     s.send(json!({ "cmd": "debug_state" }));
@@ -128,6 +129,7 @@ fn scripted_session() -> Seen {
     s.send(json!({ "cmd": "debug_set_shop", "offers": [{ "kind": "piece", "type": "p" }, { "kind": "relic", "id": "earlyPromo" }] }));
     s.send(json!({ "cmd": "buy", "index": 0 }));
     s.send(json!({ "cmd": "reroll" }));
+    s.send(json!({ "cmd": "discard_relic", "relic": "conscription" }));
     s.send(json!({ "cmd": "place", "unit": 1, "square": 0 }));
     s.send(json!({ "cmd": "debug_add_unit", "kind": "q" }));
     s.send(json!({ "cmd": "debug_remove_unit", "unit": 2 }));

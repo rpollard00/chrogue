@@ -5,8 +5,8 @@ use serde_json::{Value, json};
 use crate::battle::{Battle, BattlePhase, is_capture};
 use crate::chess::{self, Color, Kind, Move};
 use crate::content::{
-    self, ARMY_MAX, FLOORS, RECRUIT_KINDS, RECRUITS, RELIC_PRICE, RELICS, RELICS_MAX, REROLL_COST, RelicId, TRAITS_MAX,
-    UPGRADE_NAME_MAX, UPGRADE_SLOTS, UPGRADES, UpgradeId, WIN_CROWNS,
+    self, ARMY_MAX, FLOORS, RECRUIT_KINDS, RECRUITS, RELIC_PRICE, RELIC_SLOTS, RELICS, RELICS_MAX, REROLL_COST,
+    RelicId, TRAITS_MAX, UPGRADE_NAME_MAX, UPGRADE_SLOTS, UPGRADES, UpgradeId, WIN_CROWNS,
 };
 use crate::protocol::{Code, Command, EventKind, PROTOCOL_VERSION, gold_number};
 use crate::run::{Meta, Offer, Phase, Run, RunSummary, SEED_MAX};
@@ -141,6 +141,7 @@ fn battle_view(run: &Run, battle: &Battle, meta: &Meta) -> Value {
         "lost": battle.lost,
         "rescued": battle.rescued,
         "relics": run.relics.iter().map(|&id| relic_view(id)).collect::<Vec<_>>(),
+        "relic_slots": run.slots,
         "traits": run.enemy.traits.iter().map(|&id| trait_view(id)).collect::<Vec<_>>(),
         "clock": chess::clock(&state),
         "result": result_view(battle, run),
@@ -191,6 +192,7 @@ fn camp_view(run: &Run, reward: &Option<Reward>, meta: &Meta) -> Value {
         "army": army.iter().map(|u| json!({ "id": u.id, "kind": letter(u.kind), "home": u.home })).collect::<Vec<_>>(),
         "army_max": ARMY_MAX,
         "relics": run.relics.iter().map(|&id| relic_view(id)).collect::<Vec<_>>(),
+        "relic_slots": run.slots,
         "gold": run.gold,
         "can_start": run.draft.is_none(),
     })
@@ -275,6 +277,7 @@ pub fn debug_data(screen: &Screen, meta: &Meta, tuning: &Tuning) -> Value {
             "floor": run.floor,
             "gold": run.gold,
             "relics": keys(&run.relics),
+            "relic_slots": run.slots,
             "traits": keys(&run.enemy.traits),
         })
     });
@@ -310,6 +313,7 @@ pub fn debug_data(screen: &Screen, meta: &Meta, tuning: &Tuning) -> Value {
         .collect();
     json!({
         "seed": tuning.seed,
+        "relic_slots": tuning.relic_slots,
         "run": run,
         "meta": { "crowns": meta.crowns, "upgrades": upgrades },
         "barred": keys(&tuning.barred),
@@ -388,6 +392,7 @@ pub fn hello(debug: bool) -> Value {
             "pieces": pieces,
             "recruits": recruits,
             "relic_price": RELIC_PRICE,
+            "relic_slots": RELIC_SLOTS,
             "relics_max": RELICS_MAX,
             "reroll_cost": REROLL_COST,
             "win_crowns": WIN_CROWNS,

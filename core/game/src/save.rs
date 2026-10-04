@@ -6,6 +6,7 @@
 //!
 //! - A relic id counts one time in a list. The core removes the second copy.
 //! - A run has at most `RELICS_MAX` relics. The core keeps the first ones.
+//! - The `slots` of a run is at most `RELICS_MAX`. A run with no `slots` loads with `RELIC_SLOTS`.
 //! - The enemy has at most `TRAITS_MAX` traits, and each one is a relic that a boss can have.
 //!   The core keeps the first ones.
 //! - A count (a floor, gold, an id, a level, an amount) is at most 2^53 - 1, the largest whole
@@ -32,7 +33,7 @@ use serde_json::{Value, json};
 
 use crate::battle::Battle;
 use crate::chess::{self, Kind, Square};
-use crate::content::{FLOORS, RELICS_MAX, RelicId, TRAITS_MAX, UpgradeId};
+use crate::content::{FLOORS, RELIC_SLOTS, RELICS_MAX, RelicId, TRAITS_MAX, UpgradeId};
 use crate::run::{ENEMY_PIECES_MAX, Enemy, EnemyPiece, Meta, Offer, Phase, Run, SEED_MAX, UNIT_ID_MAX, Unit, UnitId};
 
 /// The version of the saved documents.
@@ -443,6 +444,7 @@ pub fn run_json(run: &Run) -> Value {
         "army": run.army.iter().map(|u| json!({ "id": u.id, "type": letter(u.kind), "home": u.home })).collect::<Vec<_>>(),
         "nextId": run.next_id,
         "relics": run.relics.iter().map(|id| id.key()).collect::<Vec<_>>(),
+        "slots": run.slots,
         "enemy": {
             "pieces": run.enemy.pieces.iter().map(|p| json!({ "type": letter(p.kind), "square": p.square })).collect::<Vec<_>>(),
             "traits": run.enemy.traits.iter().map(|id| id.key()).collect::<Vec<_>>(),
@@ -548,13 +550,15 @@ fn parse_run_shape(raw: &Value) -> Option<Run> {
     if floor < 1 || floor > FLOORS.len() as u64 || next_id > UNIT_ID_MAX as u64 + 1 {
         return None;
     }
-    // A field that the data does not have is 0. A field that is not valid makes the run not valid.
-    let or_zero = |name: &str, max: u64| match data.get(name) {
-        None => Some(0),
+    // A field that the data does not have gets its default. A field that is not valid makes the
+    // run not valid.
+    let or_default = |name: &str, max: u64, default: u64| match data.get(name) {
+        None => Some(default),
         Some(value) => count(value).filter(|&n| n <= max),
     };
-    let seed = or_zero("seed", SEED_MAX)?;
-    let rolls = or_zero("rolls", u32::MAX as u64)? as u32;
+    let seed = or_default("seed", SEED_MAX, 0)?;
+    let rolls = or_default("rolls", u32::MAX as u64, 0)? as u32;
+    let slots = or_default("slots", RELICS_MAX as u64, RELIC_SLOTS as u64)? as usize;
 
     let mut army = Vec::new();
     let mut ids = HashSet::new();
@@ -599,6 +603,7 @@ fn parse_run_shape(raw: &Value) -> Option<Run> {
         army,
         next_id: next_id as UnitId,
         relics: owned,
+        slots,
         enemy: Enemy { pieces, traits },
         phase: if data.get("phase").and_then(Value::as_str) == Some("camp") { Phase::Camp } else { Phase::Battle },
         draft,

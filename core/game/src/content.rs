@@ -502,7 +502,9 @@ pub const fn piece_price(kind: Kind) -> u64 {
 }
 
 pub const RELIC_PRICE: u64 = 16;
-/// The most relics of a run: the relic fan of the client has space for 10 medals.
+/// The relic slots of a new run. The tuning of a session can change this number (`tuning.rs`).
+pub const RELIC_SLOTS: usize = 4;
+/// The most relic slots of a run: the relic fan of the client has space for 10 medals.
 pub const RELICS_MAX: usize = 10;
 pub const REROLL_COST: u64 = 3;
 pub const WIN_CROWNS: u64 = 5;

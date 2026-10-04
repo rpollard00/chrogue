@@ -1,11 +1,11 @@
 //! The relics: the move that each rule relic gives to the player and to the enemy, the effects
-//! after a battle, and the relic limit of a run.
+//! after a battle, and the relic slots of a run.
 
 use chrogue_game::battle::{Battle, BattleReward, Bonus, MoveReport, Recruit};
 use chrogue_game::chess::{self, Color, Kind, Outcome, Piece, Placement, Square};
-use chrogue_game::content::{RELICS_MAX, RelicId};
+use chrogue_game::content::{RELIC_SLOTS, RELICS_MAX, RelicId};
 use chrogue_game::protocol::Code;
-use chrogue_game::run::{Blocked, CONSCRIPT_ID, Enemy, EnemyPiece, Meta, Offer, Run, Unit, trait_pool};
+use chrogue_game::run::{Blocked, CONSCRIPT_ID, Enemy, EnemyPiece, Meta, Offer, Run, Unit, roll_shop, trait_pool};
 use chrogue_game::save::{parse_run, run_json};
 use chrogue_game::tuning::Tuning;
 use chrogue_game::view::view;
@@ -372,16 +372,62 @@ fn interest_counts_the_bonuses_of_the_relics_before_it() {
     assert_eq!(interest(&["interest", "coup"]), Some(1));
 }
 
-// ---- The relic limit ----
+// ---- The relic slots ----
 
+/// A run with a relic in each of its slots.
 fn full_run() -> Run {
     let mut run = Run::new(&Meta::default(), 1, &Tuning::default());
-    run.relics = RelicId::all().take(RELICS_MAX).collect();
+    run.relics = RelicId::all().take(run.slots).collect();
     run
 }
 
+fn ask(session: &mut Session, request: Value) -> Value {
+    serde_json::from_str(&session.command(&request.to_string())).unwrap()
+}
+
+fn send(session: &mut Session, request: Value) -> Value {
+    let reply = ask(session, request.clone());
+    assert_eq!(reply["ok"], json!(true), "{request} -> {reply}");
+    reply
+}
+
+/// A debug session in the camp before floor 2. The run has these relics and 50 gold.
+fn camp_with(keys: &[&str]) -> Session {
+    let mut session = Session::with_debug(Box::new(MemoryStorage::default()), 1, true);
+    send(&mut session, json!({ "cmd": "new_run" }));
+    for key in keys {
+        send(&mut session, json!({ "cmd": "debug_set_relic", "relic": key, "on": true }));
+    }
+    send(
+        &mut session,
+        json!({ "cmd": "debug_set_army", "units": [{ "kind": "k", "home": 4 }, { "kind": "r", "home": 0 }] }),
+    );
+    send(
+        &mut session,
+        json!({ "cmd": "debug_set_enemy", "pieces": [{ "kind": "k", "square": 60 }, { "kind": "p", "square": 8 }] }),
+    );
+    send(&mut session, json!({ "cmd": "move", "from": 0, "to": 8 }));
+    send(&mut session, json!({ "cmd": "continue" }));
+    send(&mut session, json!({ "cmd": "debug_set_gold", "gold": 50 }));
+    session
+}
+
+fn relic_offer(key: &str) -> Value {
+    json!([{ "kind": "relic", "id": key }])
+}
+
+fn ids(relics: &Value) -> Vec<&str> {
+    relics.as_array().unwrap().iter().map(|relic| relic["id"].as_str().unwrap()).collect()
+}
+
 #[test]
-fn a_run_with_the_most_relics_cannot_take_one_more_relic() {
+fn a_new_run_has_4_relic_slots() {
+    assert_eq!(Run::new(&Meta::default(), 1, &Tuning::default()).slots, 4);
+    assert_eq!((RELIC_SLOTS, Tuning::default().relic_slots), (4, 4));
+}
+
+#[test]
+fn a_run_with_a_relic_in_each_slot_cannot_take_one_more_relic() {
     let mut run = full_run();
     let (owned, new) = (Offer::Relic(run.relics[0]), Offer::Relic(relic("gambit")));
     assert_eq!(new.blocked(&run).map(Blocked::code), Some("relics_full"));
@@ -394,44 +440,168 @@ fn a_run_with_the_most_relics_cannot_take_one_more_relic() {
     assert!(!new.take(&mut run));
     assert_eq!(run.take_draft(&Meta::default(), 0).map_err(|fail| fail.code), Err(Code::Blocked));
     assert_eq!(run.buy_offer(&Meta::default(), 0).map_err(|fail| fail.code), Err(Code::Blocked));
-    assert_eq!((run.relics.len(), run.gold, run.shop.len()), (RELICS_MAX, 100, 1));
-
-    run.relics.pop();
-    assert_eq!(new.blocked(&run), None);
-    assert!(run.buy_offer(&Meta::default(), 0).is_ok());
+    assert_eq!((run.relics.len(), run.gold, run.shop.len()), (RELIC_SLOTS, 100, 1));
 }
 
 #[test]
-fn the_debug_command_refuses_a_relic_for_a_run_with_the_most_relics() {
+fn a_run_can_take_a_relic_after_it_discards_one() {
+    let mut run = full_run();
+    let (old, new) = (run.relics[1], Offer::Relic(relic("gambit")));
+    run.draft = Some(vec![new]);
+    assert_eq!(run.discard_relic(old), Ok(()));
+    assert_eq!((run.relics.len(), run.relics.contains(&old), run.gold), (RELIC_SLOTS - 1, false, 0));
+    assert_eq!(new.blocked(&run), None);
+    assert_eq!(run.take_draft(&Meta::default(), 0), Ok(new));
+    assert_eq!(run.relics.last(), Some(&relic("gambit")));
+    // The run does not have the relic a second time.
+    assert_eq!(run.discard_relic(old).map_err(|fail| fail.code), Err(Code::BadArgs));
+}
+
+#[test]
+fn the_fifth_relic_offer_is_blocked_until_the_player_discards_a_relic() {
+    let mut session = camp_with(&["bounty", "interest", "vault", "gallop"]);
+    send(&mut session, json!({ "cmd": "debug_set_shop", "offers": relic_offer("gambit") }));
+    let camp = send(&mut session, json!({ "cmd": "debug_set_draft", "offers": relic_offer("coup") }))["view"].clone();
+    assert_eq!(camp["relic_slots"], json!(4));
+    assert_eq!(camp["reward"]["offers"][0]["blocked"], json!("relics_full"));
+    assert_eq!(camp["shop"]["offers"][0]["blocked"], json!("relics_full"));
+    for request in [json!({ "cmd": "take_reward", "index": 0 }), json!({ "cmd": "buy", "index": 0 })] {
+        let reply = ask(&mut session, request);
+        assert_eq!((&reply["error"]["code"], &reply["view"]), (&json!("blocked"), &camp));
+    }
+
+    // The discard gives no gold, and the reward stays open.
+    let reply = send(&mut session, json!({ "cmd": "discard_relic", "relic": "vault" }));
+    let event = json!({ "type": "camp_action", "action": "discard_relic", "gold_before": 50, "gold": 50,
+                        "units": [], "relics": [], "discarded": ["vault"], "rolled": false });
+    assert_eq!(reply["events"], json!([event]));
+    let view = &reply["view"];
+    assert_eq!(ids(&view["relics"]), ["bounty", "interest", "gallop"]);
+    assert_eq!((&view["reward"]["state"], &view["can_start"]), (&json!("open"), &json!(false)));
+    assert_eq!(view["reward"]["offers"][0]["blocked"], Value::Null);
+    assert_eq!(view["shop"]["offers"][0]["blocked"], Value::Null);
+
+    let reply = send(&mut session, json!({ "cmd": "take_reward", "index": 0 }));
+    assert_eq!((&reply["events"][0]["relics"], &reply["events"][0]["discarded"]), (&json!(["coup"]), &json!([])));
+    assert_eq!(ids(&reply["view"]["relics"]), ["bounty", "interest", "gallop", "coup"]);
+    assert_eq!(reply["view"]["shop"]["offers"][0]["blocked"], json!("relics_full"));
+}
+
+#[test]
+fn only_a_discard_has_a_relic_in_the_discarded_list_of_its_event() {
+    let mut session = camp_with(&["bounty"]);
+    send(&mut session, json!({ "cmd": "debug_set_draft", "offers": [{ "kind": "gold", "amount": 3 }] }));
+    send(&mut session, json!({ "cmd": "debug_set_shop", "offers": [{ "kind": "piece", "type": "p" }] }));
+    for request in [
+        json!({ "cmd": "skip_reward" }),
+        json!({ "cmd": "buy", "index": 0 }),
+        json!({ "cmd": "reroll" }),
+        json!({ "cmd": "discard_relic", "relic": "bounty" }),
+    ] {
+        let event = send(&mut session, request.clone())["events"][0].clone();
+        let discarded = if request["cmd"] == "discard_relic" { json!(["bounty"]) } else { json!([]) };
+        assert_eq!((&event["action"], &event["discarded"]), (&request["cmd"], &discarded));
+    }
+}
+
+#[test]
+fn discard_relic_refuses_a_relic_that_the_run_does_not_have() {
+    let mut session = camp_with(&["bounty"]);
+    let camp = session.view();
+    for (request, code) in [
+        (json!({ "cmd": "discard_relic", "relic": "noRelic" }), "bad_args"),
+        (json!({ "cmd": "discard_relic", "relic": "interest" }), "bad_args"),
+        (json!({ "cmd": "discard_relic" }), "bad_args"),
+    ] {
+        let reply = ask(&mut session, request.clone());
+        assert_eq!((&reply["error"]["code"], &reply["view"]), (&json!(code), &camp), "{request}");
+    }
+    // A battle has no discard.
+    send(&mut session, json!({ "cmd": "skip_reward" }));
+    let battle = send(&mut session, json!({ "cmd": "start_battle" }))["view"].clone();
+    let reply = ask(&mut session, json!({ "cmd": "discard_relic", "relic": "bounty" }));
+    assert_eq!((&reply["error"]["code"], &reply["view"]), (&json!("wrong_screen"), &battle));
+}
+
+#[test]
+fn the_game_offers_a_discarded_relic_again() {
+    let shops = |discard: bool| {
+        let offers = |seed: u64| {
+            let mut run = full_run();
+            run.seed = seed;
+            let old = run.relics[0];
+            if discard {
+                run.discard_relic(old).unwrap();
+            }
+            roll_shop(&run, &Tuning::default()).contains(&Offer::Relic(old))
+        };
+        (0..100).filter(|&seed| offers(seed)).count()
+    };
+    assert_eq!(shops(false), 0);
+    assert!(shops(true) > 0);
+}
+
+#[test]
+fn debug_set_relic_gives_a_run_more_relics_than_slots_up_to_the_most_relics() {
     let mut session = Session::with_debug(Box::new(MemoryStorage::default()), 1, true);
-    let mut send = |request: Value| -> Value { serde_json::from_str(&session.command(&request.to_string())).unwrap() };
-    let hello = send(json!({ "cmd": "hello" }));
-    assert_eq!(hello["data"]["content"]["relics_max"], json!(RELICS_MAX));
-    send(json!({ "cmd": "new_run" }));
+    send(&mut session, json!({ "cmd": "new_run" }));
     let keys: Vec<&str> = RelicId::all().map(RelicId::key).collect();
     for key in &keys[..RELICS_MAX] {
-        let reply = send(json!({ "cmd": "debug_set_relic", "relic": key, "on": true }));
-        assert_eq!(reply["ok"], json!(true), "{reply}");
+        send(&mut session, json!({ "cmd": "debug_set_relic", "relic": key, "on": true }));
     }
-    let before = send(json!({ "cmd": "view" }))["view"].clone();
-    let reply = send(json!({ "cmd": "debug_set_relic", "relic": keys[RELICS_MAX], "on": true }));
+    let before = session.view();
+    assert_eq!((before["relics"].as_array().unwrap().len(), &before["relic_slots"]), (RELICS_MAX, &json!(4)));
+    let reply = ask(&mut session, json!({ "cmd": "debug_set_relic", "relic": keys[RELICS_MAX], "on": true }));
     assert_eq!((&reply["error"]["code"], &reply["view"]), (&json!("blocked"), &before));
     // A relic that the run has stays, and a relic can leave.
     for (key, on) in [(keys[0], true), (keys[0], false), (keys[RELICS_MAX], true)] {
-        let reply = send(json!({ "cmd": "debug_set_relic", "relic": key, "on": on }));
-        assert_eq!(reply["ok"], json!(true), "{reply}");
+        send(&mut session, json!({ "cmd": "debug_set_relic", "relic": key, "on": on }));
     }
 }
 
 #[test]
-fn a_saved_run_keeps_its_first_relics_up_to_the_limit() {
+fn the_views_and_hello_have_the_relic_slots() {
+    let mut session = Session::with_debug(Box::new(MemoryStorage::default()), 1, true);
+    let content = send(&mut session, json!({ "cmd": "hello" }))["data"]["content"].clone();
+    assert_eq!((&content["relic_slots"], &content["relics_max"]), (&json!(RELIC_SLOTS), &json!(RELICS_MAX)));
+    let battle = send(&mut session, json!({ "cmd": "new_run" }))["view"].clone();
+    assert_eq!((&battle["screen"], &battle["relic_slots"]), (&json!("battle"), &json!(RELIC_SLOTS)));
+    let camp = camp_with(&[]).view();
+    assert_eq!((&camp["screen"], &camp["relic_slots"]), (&json!("camp"), &json!(RELIC_SLOTS)));
+}
+
+#[test]
+fn a_saved_run_keeps_its_relic_slots() {
     let mut run = full_run();
+    run.slots = 7;
+    let saved = run_json(&run);
+    assert_eq!(saved["slots"], json!(7));
+    assert_eq!(parse_run(&saved), Ok(run.clone()));
+
+    // A run with no slots loads with the default.
+    let mut bare = saved.clone();
+    bare.as_object_mut().unwrap().remove("slots");
+    assert_eq!(parse_run(&bare), Ok(Run { slots: RELIC_SLOTS, ..run }));
+    for value in [json!(RELICS_MAX + 1), json!(-1), json!(2.5), json!("4"), Value::Null] {
+        let mut bad = saved.clone();
+        bad["slots"] = value.clone();
+        assert!(parse_run(&bad).is_err(), "slots: {value}");
+    }
+    for slots in [0, RELICS_MAX] {
+        let mut good = saved.clone();
+        good["slots"] = json!(slots);
+        assert_eq!(parse_run(&good).map(|loaded| loaded.slots), Ok(slots));
+    }
+}
+
+#[test]
+fn a_saved_run_keeps_its_first_relics_up_to_the_most_relics() {
+    let mut run = full_run();
+    run.relics = RelicId::all().take(RELICS_MAX).collect();
     let mut saved = run_json(&run);
     assert_eq!(parse_run(&saved), Ok(run.clone()));
     saved["relics"] = json!(RelicId::all().map(RelicId::key).collect::<Vec<_>>());
-    assert_eq!(parse_run(&saved).map(|loaded| loaded.relics), Ok(run.relics.clone()));
-    run.relics.truncate(3);
-    assert_eq!(parse_run(&run_json(&run)), Ok(run));
+    assert_eq!(parse_run(&saved).map(|loaded| loaded.relics), Ok(run.relics));
 }
 
 #[test]
