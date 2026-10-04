@@ -34,7 +34,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
   - `src/tables.rs`: The lookup tables that come from the rules. The engine builds them one time for each battle.
   - `src/movegen.rs`: The move generation and the attack detection. A kind with one plain group of atoms (see below) takes its leaps and slides as bitboards. Another kind (the pawn) takes a list of probes for each square that the tables compute from its atoms. A piece that can capture en passant goes group by group. The three paths give the same moves.
   - `src/state.rs`: The state of a battle, `make`, and `unmake`. Only `make`, `unmake`, and the null move change the side to move and the en passant square after construction.
-  - `src/outcome.rs`: The result of a battle.
+  - `src/outcome.rs`: The result of a battle, and `wins_in`: a test for a forced win in a small number of moves.
   - `src/perft.rs`: The count of move sequences. The tests compare it with the known counts of chess positions.
   - `src/zobrist.rs`: The Zobrist keys. `State::key` gives the key of a state.
   - `src/eval.rs`: The piece values that come from the rules, and the evaluation of a position.

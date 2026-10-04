@@ -3,7 +3,7 @@
 mod common;
 
 use chrogue_engine::fen::{START, square};
-use chrogue_engine::{Color, Outcome, Rules, SideRules, Special, in_check, outcome};
+use chrogue_engine::{Color, Outcome, Rules, SideRules, Special, in_check, outcome, wins_in};
 use common::from_fen;
 use common::{legal, squares, targets, targets_from};
 
@@ -96,6 +96,30 @@ fn outcome_finds_two_lone_kings_and_the_clock() {
     assert_eq!(outcome(&mut state), None);
     state.clock = 100;
     assert_eq!(outcome(&mut state), Some(Outcome::Clock));
+}
+
+#[test]
+fn wins_in_finds_a_forced_win_and_keeps_the_state() {
+    let wins = |fen: &str, moves: u32| wins_in(&mut from_fen(fen, Color::White, Rules::standard()), moves);
+    // Ra8 is checkmate: the pawns of the king have its squares.
+    assert!(wins("4k3/3ppp2/8/8/8/8/8/R3K3", 1));
+    // With no pawn on f7, the king goes there.
+    assert!(!wins("4k3/3pp3/8/8/8/8/8/R3K3", 2));
+    // The capture of the last enemy piece is a rout, and Qf7 is a stalemate.
+    assert!(wins("r3k3/8/8/8/8/8/8/R3K3", 1));
+    assert!(wins("7k/8/8/8/8/8/5Q2/4K2p", 1));
+    // Kg6 takes h7 from the king. Then Rb8 is checkmate after each move of Black.
+    assert!(!wins("7k/8/5K2/8/8/8/p7/1R6", 1));
+    assert!(wins("7k/8/5K2/8/8/8/p7/1R6", 2));
+    assert!(!wins("4k3/3ppp2/8/8/8/8/8/R3K3", 0));
+    // After Kg6, Kh8 and the pawn moves lose to Rb8, but Kf8 saves Black. Each other first move
+    // has a defense too.
+    assert!(!wins("6k1/8/5K2/8/8/p1p5/8/1R6", 2));
+
+    let mut state = from_fen("7k/8/5K2/8/8/8/p7/1R6", Color::White, Rules::standard());
+    let before = state.clone();
+    wins_in(&mut state, 2);
+    assert_eq!((state.key(), state.turn(), state.board()), (before.key(), before.turn(), before.board()));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! The result of a battle.
 
-use crate::movegen::{in_check, is_legal, pseudo_moves};
+use crate::movegen::{in_check, is_legal, legal_moves, pseudo_moves};
 use crate::state::State;
 use crate::types::{Color, MoveList};
 
@@ -76,4 +76,39 @@ pub fn outcome(state: &mut State) -> Option<Outcome> {
         });
     }
     (state.clock >= CLOCK_LIMIT).then_some(Outcome::Clock)
+}
+
+/// True if the side that has the move wins in `moves` of its moves or fewer against each
+/// defense: a checkmate, a stalemate, or a rout. The state is the same after the call.
+///
+/// The function searches each line with no pruning. It is for a small number of moves.
+pub fn wins_in(state: &mut State, moves: u32) -> bool {
+    if moves == 0 {
+        return false;
+    }
+    let us = state.turn();
+    let mut list = MoveList::new();
+    legal_moves(state, &mut list);
+    list.iter().any(|&m| {
+        let undo = state.make(m);
+        let win = match outcome(state) {
+            Some(end) => end.winner() == Some(us),
+            None => moves > 1 && each_reply_loses(state, moves - 1),
+        };
+        state.unmake(m, undo);
+        win
+    })
+}
+
+/// True if the side that does not have the move wins in `moves` moves or fewer after each
+/// legal move. The battle continues, thus the side that has the move has a legal move.
+fn each_reply_loses(state: &mut State, moves: u32) -> bool {
+    let mut list = MoveList::new();
+    legal_moves(state, &mut list);
+    list.iter().all(|&reply| {
+        let undo = state.make(reply);
+        let lost = outcome(state).is_none() && wins_in(state, moves);
+        state.unmake(reply, undo);
+        lost
+    })
 }
