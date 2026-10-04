@@ -276,25 +276,27 @@ function ui.notice(notice, r, hover, since, life)
   end)
 end
 
--- The question before an action that ends a run.
-function ui.dialogLayout(stage)
-  local w, h = 20, 7.4
+-- The question before an action that the player cannot undo. The dialog is above the layout, thus its height comes
+-- from the lines of the question. The keys are below the last line.
+function ui.dialogLayout(stage, question)
+  local w = 20
+  local lines = gfx.wrap(question, 'body', 1.05, w - 2.5, true)
+  local h = math.max(7.4, 1.25 + #lines * 1.6 + 0.6 + 2.25 + 1.25)
   local x, y = (stage.w - w) / 2, (stage.h - h) / 2
   return {
-    x = x, y = y, w = w, h = h,
+    x = x, y = y, w = w, h = h, lines = lines,
     cancel = { x = x + w - 1.25 - 4.2 - 0.7 - 5.2, y = y + h - 1.25 - 2.25, w = 5.2, h = 2.25 },
     ok = { x = x + w - 1.25 - 4.2, y = y + h - 1.25 - 2.25, w = 4.2, h = 2.25 },
   }
 end
 
 function ui.dialog(stage, question, pointer)
-  local d = ui.dialogLayout(stage)
+  local d = ui.dialogLayout(stage, question)
   gfx.rect(0, 0, stage.w, stage.h, 0, C.black, 0.45)
   gfx.shadow(d.x, d.y, d.w, d.h, px(10), px(10), px(40), 0, 0.6)
   gfx.rect(d.x, d.y, d.w, d.h, px(10), C.panel)
   gfx.outline(d.x, d.y, d.w, d.h, px(10), px(1), C.line)
-  local lines = gfx.wrap(question, 'body', 1.05, d.w - 2.5)
-  gfx.lines(lines, 'body', 1.05, d.x + 1.25, d.y + 1.25, 1.6, {})
+  gfx.lines(d.lines, 'body', 1.05, d.x + 1.25, d.y + 1.25, 1.6, {})
   ui.key(d.cancel, 'Cancel', 'key', ui.state(pointer, 'cancel'))
   ui.key(d.ok, 'OK', 'key', ui.state(pointer, 'ok'))
 end

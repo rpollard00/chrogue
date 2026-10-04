@@ -3,6 +3,7 @@
   - A fixed seed of new runs gives the same first enemy for two new runs.
   - "Owned" adds a relic to the run, and "Offered" bars a relic.
   - The core does not accept a third trait or an 11th relic. The status line shows the message, and the game continues.
+  - The stepper of the relic slots works with no run, and a new run has its slots.
   - A budget stepper changes the debug state, and an upgrade stepper changes the level of the upgrade.
   Run with: --seed 7 --no-save --script test/debug.lua
 ]]
@@ -49,6 +50,13 @@ return {
   { 'key', 'f2' }, { 'settle' },
   expect('F2 opens the menu', function(v, c, app) return app.debugMenu.isOpen and app.debugMenu.tab == 'run' end),
 
+  -- Run: the relic slots, with no run.
+  { 'press', 'relicSlots', '+' }, { 'settle' },
+  expect('the stepper of the relic slots works with no run', function(v, c, app)
+    local d = app.debugMenu.debug
+    return d.run == nil and d.relic_slots == 5
+  end),
+
   -- Run: a seed for new runs, and two new runs.
   { 'press', 'seedField' }, { 'key', '1' }, { 'key', '2' }, { 'key', '9' }, { 'key', 'backspace' }, { 'key', 'kp3' }, { 'key', '4' },
   { 'key', 'return' }, { 'settle' },
@@ -56,7 +64,7 @@ return {
   { 'press', 'newRun' }, { 'screen', 'battle' },
   expect('New run starts a run with the seed', function(v, c, app)
     first = enemy(v)
-    return app.debugMenu.isOpen and app.debugMenu.debug.run.seed == 1234 and v.floor.number == 1, first
+    return app.debugMenu.isOpen and app.debugMenu.debug.run.seed == 1234 and v.floor.number == 1 and v.relic_slots == 5, first
   end),
   shot('debug-run'), dump('debug-run'),
   { 'press', 'newRun' }, { 'screen', 'battle' },

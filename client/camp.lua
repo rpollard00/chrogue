@@ -1,7 +1,8 @@
 --[[
   The camp. One table: the next enemy and the start key at the top, the
   reward shelf and the shop shelf in the middle, and the army, the relics, and the purse at the bottom.
-  The core has the rules of the camp. This module keeps the selection of a home square and the motion of each action.
+  The core has the rules of the camp. This module keeps the selection of a home square, the selection of a relic medal,
+  and the motion of each action.
 ]]
 local fan = require('fan')
 local gfx = require('gfx')
@@ -18,6 +19,8 @@ camp.__index = camp
 
 local L = layout.camp
 local DEAL_TIME, DEAL_STEP, FLIP_TIME = 0.32, 0.08, 0.36
+-- The time that the medal of a discarded relic takes to leave the fan.
+local LEAVE_TIME = 0.25
 
 local function sameList(a, b)
   if #a ~= #b then return false end
@@ -44,6 +47,8 @@ function camp.new(app, view, events)
   local self = setmetatable({
     app = app, view = view, time = 0, selected = -1,
     dealAt = nil, flipAt = nil, flashes = {}, newUnits = {}, pinned = nil,
+    -- The id of the relic whose medal the player selected, or nil. `leaving` has the medals of the discarded relics.
+    relic = nil, leaving = {},
     gold = { from = view.gold, to = view.gold, at = -10 },
     shopSlots = packed(view.shop.offers),
   }, camp)
@@ -54,8 +59,37 @@ end
 
 function camp:fans()
   local v = self.view
-  if not self.myFan or not sameList(self.myFan.items, v.relics) then self.myFan = fan.new(v.relics, 'player', L.me.fan) end
+  if not self.myFan or not sameList(self.myFan.items, v.relics) then
+    self.myFan = fan.new(v.relics, 'player', L.me.fan, nil, v.relic_slots)
+    -- The selection stays on its relic. If the relic is gone, the selection is clear.
+    self:selectRelic(self.relic)
+  end
+  self.myFan.slots = v.relic_slots or 0
   if not self.foeFan or not sameList(self.foeFan.items, v.enemy.traits) then self.foeFan = fan.new(v.enemy.traits, 'enemy', L.foe.fan, 'left') end
+end
+
+-- Selects the medal of a relic of the run, or no medal (nil).
+function camp:selectRelic(id)
+  local index
+  for i, relic in ipairs(self.myFan.ids) do if relic == id then index = i end end
+  self.relic = index and id or nil
+  fan.select(self.myFan, index, self.time)
+end
+
+-- The motion of a discard: the medal of each relic of `ids` leaves its place in the fan `old`, and the medals after it
+-- go to their new slots.
+function camp:leave(old, ids)
+  local gone, before, from = {}, {}, {}
+  for _, id in ipairs(ids) do gone[id] = true end
+  for i, id in ipairs(old.ids) do
+    before[id] = i
+    if gone[id] then
+      local x, y = fan.slot(old, i)
+      self.leaving[#self.leaving + 1] = { id = id, x = x, y = y, at = self.time }
+    end
+  end
+  for i, id in ipairs(self.myFan.ids) do from[i] = (before[id] or i) - i end
+  fan.slideFrom(self.myFan, from, self.time)
 end
 
 function camp:events(list)
@@ -82,8 +116,12 @@ function camp:apply(view, events, request)
   elseif signature(offers) ~= signature(before.shop.offers) then
     self.shopSlots = packed(offers)
   end
+  local old = self.myFan
   self:fans()
   self:events(events)
+  for _, e in ipairs(events) do
+    if e.type == 'camp_action' and #(e.discarded or {}) > 0 then self:leave(old, e.discarded) end
+  end
   -- A change of the gold with no camp action (a debug command) also counts to the new value.
   if self.gold.to ~= view.gold then
     self.gold = { from = tonumber(ui.counted(self.gold.from, self.gold.to, self.time - self.gold.at)), to = view.gold, at = self.time }
@@ -101,11 +139,15 @@ function camp:update(dt, pointer)
   if self.app.dialog then x, y = nil, nil end
   fan.update(self.myFan, x, y, self.time, dt)
   fan.update(self.foeFan, x, y, self.time, dt)
+  for i = #self.leaving, 1, -1 do
+    if self.time - self.leaving[i].at > LEAVE_TIME then table.remove(self.leaving, i) end
+  end
 end
 
 function camp:settled()
   local t = self.time
   return (not self.dealAt or t - self.dealAt > 0.7) and (not self.flipAt or t - self.flipAt > 0.7) and t - self.gold.at > 0.7
+    and #self.leaving == 0 and not fan.sliding(self.myFan)
 end
 
 -- The cards of a shelf: a list of { rect, face, offer, name of the key, name of the info button }. The list changes only
@@ -175,6 +217,10 @@ end
 
 function camp:hit(x, y)
   local v = self.view
+  -- The card of the selected medal stays in view, and it can be above a card of a shelf. A click on it does not go to the
+  -- card below it.
+  local card = self.relic and fan.cardRect(self.myFan)
+  if card and layout.contains(card, x, y) then return 'away' end
   for _, c in ipairs(allCards(self)) do
     if c.face.text and layout.contains(ui.cardInfo(c.rect), x, y) then return c.info end
     if layout.contains(ui.cardKey(c.rect), x, y) then return c.key end
@@ -185,6 +231,11 @@ function camp:hit(x, y)
   for s = 0, 15 do
     if layout.contains(layout.homeSquare(s), x, y) then return 'home' .. s end
   end
+  local medal = fan.at(self.myFan, x, y)
+  if medal then return 'medal' .. medal end
+  if layout.contains(L.me.discard, x, y) then return 'discard' end
+  -- While a medal is selected, a click on each other place clears the selection.
+  if self.relic then return 'away' end
 end
 
 function camp:control(name, arg)
@@ -203,6 +254,7 @@ function camp:control(name, arg)
   if name == 'skip' then return L.skip end
   if name == 'reroll' then return L.reroll end
   if name == 'start' then return L.foe.start end
+  if name == 'discard' then return L.me.discard end
   if name == 'home' then return layout.homeSquare(arg) end
   if name == 'medal' then
     local f = arg[1] == 'enemy' and self.foeFan or self.myFan
@@ -226,10 +278,31 @@ function camp:clickHome(s)
   if unit and s ~= from then self.app.send({ cmd = 'place', unit = unit.id, square = s }) end
 end
 
+-- Asks before the relic of the selected medal leaves the run. The selection stays while the dialog is open.
+function camp:discard()
+  local app, id = self.app, self.relic
+  if not id or app.waiting() then return end
+  local relic = self.myFan.items[self.myFan.selected]
+  app.confirm(text.discard(relic.name), function() app.send({ cmd = 'discard_relic', relic = id }) end)
+end
+
 function camp:activate(name)
   local v, app = self.view, self.app
   local pinned = self.pinned
   self.pinned = nil
+  if name == 'discard' then return self:discard() end
+  -- A click on each other control clears the selection of a medal. A click on a new medal selects it.
+  local relic = self.relic
+  self:selectRelic(nil)
+  if name == 'away' then return end
+  if name:find('^medal') then
+    local id = self.myFan.ids[tonumber(name:sub(6))]
+    if id ~= relic then
+      self.selected = -1
+      self:selectRelic(id)
+    end
+    return
+  end
   if name:find('^info') then
     if pinned ~= name then self.pinned = name end
     return
@@ -256,6 +329,7 @@ end
 function camp:key(key)
   if key == 'escape' then
     if self.pinned then self.pinned = nil return true end
+    if self.relic then self:selectRelic(nil) return true end
     if self.selected >= 0 then self.selected = -1 return true end
   elseif key == 'return' or key == 'kpenter' then
     self:activate('start')
@@ -426,14 +500,39 @@ local function playerPlaque(self, pointer)
   local lines = gfx.wrap(text.ARMY_HINT, 'body', 0.8, M.hint.w)
   gfx.lines(lines, 'body', 0.8, M.hint.x, M.hint.y, 1.08, { color = C.dim })
   homes(self)
-  gfx.text('YOUR RELICS', 'bold', 0.66, M.kicker.x, M.kicker.y, { color = C.dim, tracking = 0.12, line = M.kicker.h })
+  fan.drawSlots(self.myFan)
+  -- The medal of a discarded relic becomes smaller and goes out of view at its place.
+  for _, medal in ipairs(self.leaving) do
+    local t = (self.time - medal.at) / LEAVE_TIME
+    gfx.scaled(medal.x, medal.y, 1 - 0.5 * gfx.ease(t), nil, function()
+      gfx.withAlpha(1 - gfx.ease(t), function() ui.medal({ kind = 'icon', id = medal.id }, medal.x, medal.y, 1.9, C.relic) end)
+    end)
+  end
   drawFan(self, self.myFan, self.flashes, pointer)
+  fan.drawSelection(self.myFan)
+  -- The Discard key is always there. The player can use it while a medal is selected.
+  local off = self.relic == nil
+  local function key()
+    ui.key(M.discard, text.DISCARD, 'quiet', ui.state(pointer, 'discard', off),
+      { color = not off and C.text or nil, hoverColor = theme.mix(C.danger, 0.6, C.text) })
+  end
+  if off then gfx.withAlpha(0.5, key) else key() end
   local pr = M.purse
   gfx.well(pr.x, pr.y, pr.w, pr.h, px(9))
   local opts = { size = 1.35, face = 'display', color = C.gold, tracking = 0.02 }
   local value = ui.counted(self.gold.from, self.gold.to, self.time - self.gold.at)
   local aw = ui.amountWidth(value, opts)
   ui.amount('gold', value, pr.x + pr.w - 0.75 - aw, pr.y, pr.h, opts)
+end
+
+-- The kicker of the fan: the count of the relics and of the relic slots. The count is amber when each slot has a relic.
+local function relicKicker(self)
+  local v, k = self.view, L.me.kicker
+  local slots = v.relic_slots or 0
+  local opts = { color = C.dim, tracking = 0.12, line = k.h }
+  local width = gfx.text(text.RELICS:upper() .. ' ', 'bold', 0.66, k.x, k.y, opts)
+  opts.color = #v.relics >= slots and C.accent or C.dim
+  gfx.text(text.relicCount(#v.relics, slots):upper(), 'bold', 0.66, k.x + width, k.y, opts)
 end
 
 local function drawRelicCard(self, f, pointer)
@@ -460,6 +559,9 @@ function camp:draw(pointer)
   end
   drawRelicCard(self, self.foeFan, pointer)
   drawRelicCard(self, self.myFan, pointer)
+  -- The card of a selected medal stays in view. The kicker is below the card, and it is drawn after the card, thus the
+  -- shadow of the card does not hide the count.
+  relicKicker(self)
 end
 
 function camp:state()
@@ -467,7 +569,7 @@ function camp:state()
   for _, c in ipairs(allCards(self)) do
     if self.pinned == c.info or self.app.pointer.hover == c.info then tip = c.face.name end
   end
-  return { selected = self.selected, tip = tip or false, shownGold = tonumber(ui.counted(self.gold.from, self.gold.to, self.time - self.gold.at)),
+  return { selected = self.selected, relic = self.relic or false, tip = tip or false, shownGold = tonumber(ui.counted(self.gold.from, self.gold.to, self.time - self.gold.at)),
     playerMedal = self.myFan.hovered or 0, enemyMedal = self.foeFan.hovered or 0, shopSlots = self.shopSlots }
 end
 

@@ -48,7 +48,12 @@ local L = {
     field = rect(17, 12, 9, 2.25),
     set = rect(26.7, 12, 4.2, 2.25),
     random = rect(31.4, 12, 5.6, 2.25),
-    newRun = rect(17, 15.5, 20, 2.6),
+    -- The relic slots: a setting of the run in progress and of each new run.
+    relicsHead = rect(5.25, 15.4, 20, 1),
+    slotsLabel = rect(5.25, 16.9, 11.5, 2.25),
+    slots = rect(17, 16.9, 9, 2.25),
+    slotsNote = rect(26.7, 16.9, 12, 2.25),
+    newRun = rect(17, 20.5, 20, 2.6),
     runHead = rect(42, 7.5, 20, 1),
     floorLabel = rect(42, 9, 5, 2.25),
     floor = rect(47, 9, 9.5, 2.25),
@@ -380,6 +385,11 @@ function BUILD.run(self, items, d)
   key(items, 'setSeed', nil, R.set, 'Set', { field = true, disabled = not self.focus or self.buffer == '', act = function() self:setSeed() end })
   key(items, 'randomSeed', nil, R.random, 'Random', { disabled = d.seed == nil,
     act = function() self:send({ cmd = 'debug_set_seed', seed = json.null }) end })
+  kicker(items, 'Relics', R.relicsHead)
+  label(items, 'Relic slots', R.slotsLabel)
+  stepper(items, 'relicSlots', nil, R.slots, { value = run and run.relic_slots or d.relic_slots, min = 0, max = d.limits.relics,
+    send = function(v) self:send({ cmd = 'debug_set_relic_slots', slots = v }) end })
+  label(items, 'This run and new runs', R.slotsNote, { size = 0.85, color = C.dim })
   key(items, 'newRun', nil, R.newRun, 'New run', { kind = 'primary', size = 1.1, act = function() self:newRun() end })
 
   kicker(items, 'Run in progress', R.runHead)
@@ -397,11 +407,14 @@ function BUILD.relics(self, items, d, content)
   local R, run = L.relics, d.run
   local relics = content and content.relics or {}
   local owned, traits, barred = set(run and run.relics), set(run and run.traits), set(d.barred)
+  -- The count of the relics against the relic slots: of the run, or of new runs with no run. It is amber when each
+  -- slot has a relic.
+  local count, slots = run and #run.relics or 0, run and run.relic_slots or d.relic_slots
+  label(items, ('Relics %d of %d'):format(count, slots), R.count, { face = 'semibold', color = count >= slots and C.accent or nil })
   if run then
-    label(items, ('Relics %d of %d'):format(#run.relics, d.limits.relics), R.count, { face = 'semibold' })
     label(items, ('Traits %d of %d'):format(#run.traits, d.limits.traits), R.traits, { face = 'semibold' })
   else
-    label(items, 'No run', R.count, { face = 'semibold', color = C.dim })
+    label(items, 'No run', R.traits, { face = 'semibold', color = C.dim })
   end
   -- Each relic whose state differs gets one command.
   local function offer(all)

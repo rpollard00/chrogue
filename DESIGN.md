@@ -38,7 +38,7 @@ Decision source: the user selected mockup C, "Platform with objects", on 1 Octob
 |---|---|---|
 | Card | One thing that the player can take or buy in a run | Established |
 | Medal | The picture of a card or of a relic | Established |
-| Fan | The relics of the player, or the traits of the enemy: medals that overlap with a fixed step. The medal under the pointer shows the card of the relic. | Established |
+| Fan | The relics of the player, or the traits of the enemy: medals that overlap with a fixed step. The medal under the pointer shows the card of the relic. The fan of the player also shows the relic slots of the run. | Established. The slots and the selection: provisional |
 | Info button and paper tip | The text of a reward or shop card | Established |
 | Key | Each button. A key goes down when the player presses it. The primary key is amber. | Established |
 | Plaque | A raised bar that holds the state of one side: the enemy, or the player | Established |
@@ -55,6 +55,10 @@ Rules:
 - A piece that is not on the board is on a board-brown lining. A black piece is not visible on a dark surface.
 - Each card has the same size, as a physical card has. The card of a relic in a fan has the size of a reward card, with its text in the place of the key. The card is above the medal of the player and below the medal of the enemy.
 - On a touch screen, a tap on a medal shows its card, and a tap on a different place hides it.
+- The fan of the player shows the relic slots of the run: 4 at the start of a run, and at most 10. The medals fill the slots from the left. A slot with no relic is an empty recessed ring at its place in the fan, as space for a medal. The area of the fan does not change.
+- In the camp, the kicker of the fan has the count of the relics and of the slots. The count is amber when each slot has a relic, and a relic card then has the stamp "Relics full".
+- In the camp, a click on a medal of the player selects it. The selected medal has an amber ring, and its card stays in view. A second click, a click on a different place, or `Escape` clears the selection. A unit on a home square and a medal are not selected at the same time.
+- The Discard key of the camp is a quiet key with a set place below the fan. It is always there, and it is disabled while no medal is selected. The game asks before it discards a relic. Then the medal leaves the fan, and the medals after it go to their new slots.
 - An empty area has no "None" text. It shows as an empty slot.
 - On the board, the marks of a piece of the player are green and dark. The marks of an enemy piece that the player selects with Scout are red.
 - In a battle, each plaque is a grid with set rows. A stash shows the last piece that a side captured and the number of the pieces. Its list of all the pieces shows above the layout.
@@ -74,7 +78,7 @@ Rules:
 - Upgrades: the crowns are at the top, and the key that goes back is at the bottom. Between them are the medal board and the panel. On a wide screen, the panel is at the right of the board. On a phone, the panel is below the board. Nothing on this screen scrolls.
 - The game has no rules screen. The player finds the rules and the relics in a run. The result of a battle gives its cause.
 
-Status: established. The user accepted the rendered screens of the TypeScript game on 1 October 2026. For the upgrades screen, the user selected mockup C, "a board of medals and one panel", and accepted the rendered screen on 1 October 2026. The client draws the same screens. Reference surfaces: the screens of the client.
+Status: established. The relic slots, the selection of a medal, and the Discard key are provisional: the user decided them on 3 October 2026. The user accepted the rendered screens of the TypeScript game on 1 October 2026. For the upgrades screen, the user selected mockup C, "a board of medals and one panel", and accepted the rendered screen on 1 October 2026. The client draws the same screens. Reference surfaces: the screens of the client.
 
 ## The debug menu
 

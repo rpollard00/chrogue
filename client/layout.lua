@@ -30,7 +30,8 @@ layout.me = {
   -- The purse has the size of its largest content: the gold, and the gold from captures.
   purse = rect(42.75, 37.65, 13, 2.6),
   stash = rect(24.25, 41.1, 4.4, 2.6),
-  -- The fan has space for 10 relics. A run has at most 10 relics.
+  -- The fan has space for 10 relic slots, the most that a run has. A run has 4 slots at its start. A slot with no relic
+  -- shows as an empty slot.
   fan = rect(29.55, 41.25, 20.68, 2.3),
   giveUp = rect(51.3, 41.45, 4.45, 1.9),
 }
@@ -135,7 +136,10 @@ layout.camp = {
     hint = rect(6.85, 38.74, 12.5, 2.16),
     homes = rect(20.6, 35.06, 30, 7.88),
     kicker = rect(51.85, 37.16, 18, 0.99),
+    -- The fan has space for 10 relic slots.
     fan = rect(51.85, 38.55, 18.3, 2.3),
+    -- The Discard key is below the fan. The card of a relic is above the fan, thus it does not cover the key.
+    discard = rect(51.85, 41.3, 5.4, 1.6),
     -- The purse has the width of 4 digits of gold.
     purse = rect(71.5, 37.7, 6.4, 2.6),
   },

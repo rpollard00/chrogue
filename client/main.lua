@@ -211,7 +211,7 @@ function app.hit(x, y)
   if net.state ~= 'connected' or not app.screen then return nil end
   if app.debugMenu.isOpen then return app.debugMenu:hit(x, y) end
   if app.dialog then
-    local d = ui.dialogLayout(layout.stage)
+    local d = ui.dialogLayout(layout.stage, app.dialog.question)
     if layout.contains(d.ok, x, y) then return 'ok' end
     if layout.contains(d.cancel, x, y) then return 'cancel' end
     return nil
@@ -232,7 +232,7 @@ function app.control(name, arg)
     return assert(app.debugMenu:control(name, arg), ('The debug menu has no control %s %s'):format(tostring(name), tostring(arg)))
   end
   if app.dialog then
-    local d = ui.dialogLayout(layout.stage)
+    local d = ui.dialogLayout(layout.stage, app.dialog.question)
     return assert(d[name], 'The dialog has no control ' .. tostring(name))
   end
   local r = app.screen and app.screen:control(name, arg)

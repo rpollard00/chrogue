@@ -76,7 +76,7 @@ function battle.new(app, view, events)
   }, battle)
   self:syncPieces(false)
   -- The relics and the traits do not change in a battle. A debug command that changes them starts a new battle screen.
-  self.myFan = fan.new(view.relics, 'player', layout.me.fan)
+  self.myFan = fan.new(view.relics, 'player', layout.me.fan, nil, view.relic_slots)
   self.foeFan = fan.new(view.traits, 'enemy', layout.foe.fan)
   if view.result then self.resultAt = -10 end
   self:events(events or {})
@@ -350,7 +350,9 @@ end
 
 -- Drawing
 
+-- The slots with no relic are below the medals, and they have no foil.
 local function drawFan(self, f, flashes, pointer)
+  fan.drawSlots(f)
   shaders.foil(fan.bounds(f), self.time, pointer.x, pointer.y, 0.8, function() fan.draw(f, flashes, self.time) end)
 end
 

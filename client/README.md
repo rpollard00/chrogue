@@ -35,7 +35,7 @@ The options come after the game folder. The client gives `--seed`, `--no-save`, 
 
 - `F1` changes the effects: all on, post pass off, all off. The corner of the window shows the mode.
 - `F2` opens and closes the debug menu. See "The debug menu".
-- `Escape` closes the dialog, the promotion picker, and a pinned paper tip. Then it clears the selection of a piece.
+- `Escape` closes the dialog, the promotion picker, and a pinned paper tip. Then it clears the selection of a piece or of a relic medal.
 - `Enter` does the function of the primary key: Continue run or New run on the title, Continue after a battle, Start the battle in the camp, Buy on the upgrades, and New run at the end of a run. In a dialog, `Enter` is OK.
 
 A new screen takes no click and no key (other than `F1` and `F2`) during its fade of 0.2 seconds. Thus the second click of a double click, or a second `Enter`, does not act on the next screen. A press of the button on one screen and its release on a different screen is not a click.
@@ -48,8 +48,8 @@ While the menu is open, the screen below it takes no click and no key. The scree
 
 The menu shows the debug state of the core (`../core/PROTOCOL.md`, "Debug state"), and each control sends one debug command. The limits of each number come from the core. Only the gold and the crowns have no limit in the core: their steppers stop at 9999 gold and at 999 crowns, the largest numbers that the purses of the game have space for. If the core refuses a command, the line at the bottom of the menu shows the message of the core until the next action.
 
-- Run: the seed of this run, and the seed of new runs. To set the seed of new runs, click the field, type at most 9 digits, and press `Enter` or Set. Random clears the seed. New run starts a new run from each screen, with no question. The steppers change the floor and the gold of the run.
-- Relics: one row for each relic. Owned gives the relic to the run or removes it. Offered permits or stops the relic as a reward, as a shop item, and as a boss trait. Trait gives the relic to the enemy or removes it. The pointer on a name shows the text of the relic. Offer all and Offer none change Offered for each relic.
+- Run: the seed of this run, and the seed of new runs. To set the seed of new runs, click the field, type at most 9 digits, and press `Enter` or Set. Random clears the seed. New run starts a new run from each screen, with no question. The stepper Relic slots changes the relic slots of the run and of each new run, and it works with no run. The other steppers change the floor and the gold of the run.
+- Relics: the heading shows the relics of the run against its relic slots. With no run, it shows the slots of new runs. One row for each relic. Owned gives the relic to the run or removes it. Offered permits or stops the relic as a reward, as a shop item, and as a boss trait. Trait gives the relic to the enemy or removes it. The pointer on a name shows the text of the relic. Offer all and Offer none change Offered for each relic.
 - Enemy: for each floor, the AI level, the budget of the enemy army, and the number of boss traits. For each kind of piece, the most pieces in an army, the weight, and the first floor. A click on a budget stepper with `Shift` changes the budget by 5. A value that differs from its default is amber. Defaults sets each number of this tab to its default.
 - Upgrades: the crowns, and the level of each upgrade.
 
@@ -136,13 +136,13 @@ The named controls are in the `control` function of each screen module and of `d
 - Title: `continueRun`, `newRun`, `upgrades`.
 - Upgrades: `slot` (a number from 1 to 16, or an upgrade id), `buy`, `back`.
 - Battle: `continue`, `giveUp`, `promo` (1 to 4, or a kind: `'q'`, `'n'`, `'r'`, `'b'`), `square`, `stash`, `medal`.
-- Camp: `take` (1 to 3), `buy` (an item of the shop), `card` and `info` (`{ 'shop', 3 }` or `{ 'reward', 1 }`), `skip`, `reroll`, `start`, `home`, `medal`.
+- Camp: `take` (1 to 3), `buy` (an item of the shop), `card` and `info` (`{ 'shop', 3 }` or `{ 'reward', 1 }`), `skip`, `reroll`, `start`, `home`, `medal` (`{ 'player', 2 }`: a click selects the medal of a relic), `discard`.
 - End of a run: `newRun`, `upgrades`, `title`.
 - Dialog: `ok`, `cancel`.
 - Notice: `notice` (the number of the notice, from 1).
 - Debug menu: `debugChip` (the chip in the corner of the window, on each screen). While the menu is open, a step gets only the controls of the menu and of its current tab:
   - `tab` (`'run'`, `'relics'`, `'enemy'`, or `'upgrades'`), `close`.
-  - Run: `useSeed`, `seedField`, `setSeed`, `randomSeed`, `newRun`, and the steppers `floor` and `gold` (the side: `'-'` or `'+'`).
+  - Run: `useSeed`, `seedField`, `setSeed`, `randomSeed`, `newRun`, and the steppers `relicSlots`, `floor`, and `gold` (the side: `'-'` or `'+'`).
   - Relics: `owned`, `offered`, `trait`, and `name` (a relic id), `offerAll`, `offerNone`.
   - Enemy: the steppers `level`, `budget`, and `traits` (the floor and the side: `{ 3, '+' }`), the steppers `cap`, `weight`, and `minFloor` (the kind and the side: `{ 'q', '-' }`), `defaults`.
   - Upgrades: the steppers `crowns` (`'-'` or `'+'`) and `upgrade` (an upgrade id and the side: `{ 'pawn', '+' }`).
@@ -159,7 +159,8 @@ The run fails if a game stops with an error, if the core refused a command that 
 - `test/fps.lua`: the frames per second on the camp and the battle, in each effects mode.
 - `test/input.lua`: a double click on Continue and on Buy, two presses of `Enter` after a draw, and a release on a new screen. The shop cards keep their slots after a purchase.
 - `test/battle.lua`: a battle that starts with no legal move, Give up during the pause before the enemy move, refusals of `enemy_move`, and a promotion to a knight.
-- `test/debug.lua`: the debug menu. The chip and `F2`, two new runs with one seed, Owned and Offered, a third trait and an 11th relic that the core refuses, a budget stepper, and an upgrade stepper.
+- `test/debug.lua`: the debug menu. The chip and `F2`, two new runs with one seed, the stepper of the relic slots, Owned and Offered, a third trait and an 11th relic that the core refuses, a budget stepper, and an upgrade stepper.
+- `test/relics.lua`: the relic slots and the discard of a relic in the camp. A relic card with "Relics full", the selection of a medal, Cancel and OK of the question, and the purchase of the card after the discard.
 - `test/saves.lua`: the notices of `save_failed` (a save folder that cannot take a file) and of `save_problem`.
 - `test/icons.lua`: the SVG path reader of `icons.lua`.
 - `test/saved-a.lua`, `test/saved-b.lua`: with `--embed`, a game starts a run and quits, and a second game on the same save folder continues the run.
@@ -206,11 +207,14 @@ Each area has the size of its largest content (`DESIGN.md`, "The first rule: a s
 - The end of a run has the positions of a won run. The tally well keeps its height when a lost run has one row.
 - The text of the upgrade panel has a slot for three lines, and the ladder has a slot for three levels.
 - On the battle, the name "You" stays in its row when the lamp goes after the result.
+- The fan of the player has space for 10 relic slots. A run shows its slots (4 at its start): the medals fill them from the left, and a slot with no relic is an empty ring.
+- The Discard key of the camp has a set place below the fan. It is disabled while no medal is selected.
 
 ## Other properties of the interface
 
 - The relic medals, the relic cards, and the relic cards on the shelves have the foil shader.
-- The dialogs (Give up, a new run over a saved run) are in the game window.
+- The dialogs (Give up, a new run over a saved run, the discard of a relic) are in the game window. The height of a dialog comes from the lines of its question.
+- In the camp, a click on a relic medal selects it: the medal gets an amber ring, and its card stays in view. A second click, a click on a different place, or `Escape` clears the selection. Discard asks first, then the medal leaves the fan and the medals after it go to their new slots. The count next to "Your relics" is amber when each slot has a relic.
 - A screen comes into view with a fade of 0.2 seconds. During the fade, the screen takes no input.
 - A battle that starts with no legal move for the player shows "No legal move. Give up." in the lamp (core/PROTOCOL.md, "Open issues").
 - The keyboard has no focus ring and no Tab order. Only `Escape` and `Enter` work.

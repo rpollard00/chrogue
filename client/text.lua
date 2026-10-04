@@ -58,6 +58,14 @@ text.STATUS = {
 }
 
 text.GIVE_UP = 'The run will end. Give up?'
+text.RELICS = 'Your relics'
+text.DISCARD = 'Discard'
+
+-- The count of the relics and of the relic slots of the run, after the kicker of the fan.
+function text.relicCount(relics, slots) return ('(%d of %d)'):format(relics, slots) end
+
+-- The question before the player discards a relic. Each of its two sentences has a line of its own.
+function text.discard(name) return ('Discard %s?\nYou get no gold for it.'):format(name) end
 text.NEW_RUN = 'Your current run will end. Start a new run?'
 text.TAGLINE = 'Eight battles. One army. Every piece you lose stays lost.'
 text.ARMY_HINT = 'To move a piece, select the piece and then select a square.'
