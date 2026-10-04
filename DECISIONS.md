@@ -81,6 +81,17 @@ Reason: with Tactical Retreat, a pawn can step back and forward again and again.
 
 The game saves the result of a battle with the move that ends the battle. If the player starts the game again on the result screen, the game continues after the battle. The player cannot play the battle a second time.
 
+### The enemy army gets its squares at the start of a battle
+
+The enemy army of a floor has kinds and no squares. At the start of the battle, the core gives the army its squares against the army of the player.
+
+- The start of a battle has no check of the enemy king, no win of the player on the first move, and no forced win of the player in two moves.
+- The squares can depend on the arrangement of the player. The camp shows the kinds of the enemy and not its squares.
+
+Reason: when each kind had a set square, the player could learn an arrangement that wins at once. For example, a rook on the a-file or the h-file gave checkmate on the first move.
+
+Decision source: the user gave this decision on 3 October 2026.
+
 ## Work on the project
 
 ### The suite of the client runs only on request
@@ -103,7 +114,7 @@ Decision source: the user gave this decision on 3 October 2026.
 
 The user decided to wait on these items.
 
-- A battle can start with the enemy king in check (for example, a rook of the player on an open e-file). The decision waits for more playtests. The user has ideas for the start positions.
+- The user has ideas for the start positions of a battle. They wait for more playtests.
 - The enemy slot of the camp is long and looks empty for a small army. It needs a better design at a later time.
 
 ## Open
