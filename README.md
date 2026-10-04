@@ -15,10 +15,16 @@ The game has two parts:
 
 Rust and LÖVE 11.5 are necessary.
 
+Run `./run.sh`. The script builds the core, then it starts the client. The client starts the core.
+
+The options of the client come after the name of the script, for example `./run.sh --size 1440x900`. `client/README.md` has the options of the command line, the keys, and the location of the saved data.
+
+The script uses `love` from the `PATH`, then the copy at `~/.cache/chrogue-tools/love.AppImage`. To use a different LÖVE, set `LOVE` to its path.
+
+To do the two steps without the script:
+
 1. In `core/`, run `cargo build --release`.
 2. In `client/`, run `love .`.
-
-The client starts the core. `client/README.md` has the options of the command line, the keys, and the location of the saved data.
 
 ### In a browser
 

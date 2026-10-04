@@ -11,6 +11,8 @@ The client has only the wide layout. The phone layout is a later task.
 1. Build the core. In `../core`, run `cargo build --release`.
 2. In this folder, run `love .`. LÖVE 11.5 is necessary. A copy is at `~/.cache/chrogue-tools/love.AppImage`.
 
+`../run.sh` does these two steps, and it gives its options to the client.
+
 The client looks for the core at `../core/target/release/chrogue-core`, from this folder. To use a different binary, set `CHROGUE_CORE` to its path. If the client does not find the core, the window shows the path that it tried.
 
 The core keeps the saved data in the save folder of LÖVE (`~/.local/share/love/chrogue-love` on Linux): `meta.json` and `run.json`.
