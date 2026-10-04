@@ -1,6 +1,8 @@
 //! The one module that calls the chess engine. The rest of the crate uses these functions and
 //! types only, thus a change of the engine API changes this file only.
 
+use std::sync::Arc;
+
 use chrogue_engine as engine;
 pub use engine::rng::{Rng, mix};
 pub use engine::rules::{ALFIL, CAMEL, DABBABA, DIAG, FORWARD, KING, KNIGHT, ORTHO};
@@ -8,12 +10,19 @@ pub use engine::{Atom, Color, Kind, Mode, Move, Offset, Outcome, Piece, Placemen
 
 /// The state of a battle in the engine.
 pub type State = engine::State;
+/// The lookup tables of the rules of a battle. The states of one battle share them.
+pub type Tables = Arc<engine::Tables>;
 
-/// Makes a battle with White to move. Returns an error if the rules are not valid.
-pub fn new_state(pieces: &[Placement], white: SideRules, black: SideRules) -> Result<State, String> {
+/// The tables of the rules of the two sides. Returns an error if the rules are not valid.
+pub fn tables(white: SideRules, black: SideRules) -> Result<Tables, String> {
     let rules = engine::Rules::new(white, black);
     rules.validate().map_err(|error| error.to_string())?;
-    State::new(pieces, rules).map_err(|error| error.to_string())
+    engine::Tables::new(rules).map(Arc::new).map_err(|error| error.to_string())
+}
+
+/// Makes a battle with White to move.
+pub fn new_state(pieces: &[Placement], tables: &Tables) -> Result<State, String> {
+    State::with_tables(pieces, tables.clone()).map_err(|error| error.to_string())
 }
 
 pub fn turn(state: &State) -> Color {
@@ -77,6 +86,11 @@ pub fn check_square(state: &State) -> Option<Square> {
 /// True if the king of the side is in check. A side with no king is never in check.
 pub fn in_check(state: &State, color: Color) -> bool {
     engine::in_check(state, color)
+}
+
+/// True if the side that has the move wins in `moves` of its moves or fewer against each defense.
+pub fn wins_in(state: &mut State, moves: u32) -> bool {
+    engine::wins_in(state, moves)
 }
 
 /// The number of AI levels.

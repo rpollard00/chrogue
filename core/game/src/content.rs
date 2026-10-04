@@ -534,8 +534,8 @@ pub const RECRUITS: [Recruit; 5] = [
 pub const DRAFT_RELIC_WEIGHT: f64 = 2.0;
 pub const DRAFT_GOLD_WEIGHT: f64 = 2.0;
 
-/// A kind in an enemy army: its weight, the most pieces of the kind (the number of its home
-/// squares), and the first floor that has it.
+/// A kind in an enemy army: its weight, the most pieces of the kind, and the first floor that
+/// has it. The officers of an army fit on rank 8 with the king, and the pawns fit on rank 7.
 pub struct EnemyKind {
     pub kind: Kind,
     pub weight: f64,

@@ -13,8 +13,8 @@ use crate::content::{self, FLOORS, RECRUIT_KINDS, RelicId, UpgradeId};
 use crate::protocol::{Code, Command, EventKind, Fail, MAX_REQUEST_BYTES, event, fail, gold_number};
 use crate::random::Dice;
 use crate::run::{
-    ENEMY_PIECES_MAX, EnemyPiece, Meta, Offer, Phase, Run, RunSummary, SEED_MAX, UNIT_ID_MAX, Unit, UnitId,
-    generate_enemy,
+    ENEMY_PIECES_MAX, EnemyPiece, EnemyPieces, Meta, Offer, Phase, Run, RunSummary, SEED_MAX, UNIT_ID_MAX, Unit,
+    UnitId, generate_enemy,
 };
 use crate::save::{self, Doc, Storage};
 use crate::tuning::{Target, Tuning};
@@ -800,7 +800,7 @@ fn debug_command(game: &mut Game, command: Command, args: &Args, d: &mut Done) -
             debug_run(run, command, args, tuning)?;
             // A command that changes the pieces or their rules must leave a board that the engine
             // takes as it is: no two pieces on one square, one king on each side. A check of the
-            // enemy king at the start is permitted here, as in the camp.
+            // enemy king at the start is permitted here, for an enemy with set squares.
             let board = matches!(
                 command,
                 Command::DebugSetArmy
@@ -950,7 +950,7 @@ fn debug_run(run: &mut Run, command: Command, args: &Args, tuning: &Tuning) -> R
                 None => run.enemy.traits.clone(),
                 Some(_) => traits(array(args, "traits")?)?,
             };
-            run.enemy.pieces = pieces;
+            run.enemy.pieces = EnemyPieces::Placed(pieces);
             run.enemy.traits = traits;
         }
         Command::DebugSetShop => run.shop = offers(array(args, "offers")?)?,

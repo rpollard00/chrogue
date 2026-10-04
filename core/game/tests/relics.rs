@@ -5,7 +5,9 @@ use chrogue_game::battle::{Battle, BattleReward, Bonus, MoveReport, Recruit};
 use chrogue_game::chess::{self, Color, Kind, Outcome, Piece, Placement, Square};
 use chrogue_game::content::{RELIC_SLOTS, RELICS_MAX, RelicId};
 use chrogue_game::protocol::Code;
-use chrogue_game::run::{Blocked, CONSCRIPT_ID, Enemy, EnemyPiece, Meta, Offer, Run, Unit, roll_shop, trait_pool};
+use chrogue_game::run::{
+    Blocked, CONSCRIPT_ID, Enemy, EnemyPiece, EnemyPieces, Meta, Offer, Run, Unit, roll_shop, trait_pool,
+};
 use chrogue_game::save::{parse_run, run_json};
 use chrogue_game::tuning::Tuning;
 use chrogue_game::view::view;
@@ -46,15 +48,17 @@ fn run_of(army: Pieces, enemy: Pieces, keys: &[&str]) -> Run {
     let mut run = Run::new(&Meta::default(), 1, &Tuning::default());
     run.army = army.iter().enumerate().map(|(i, &(kind, s))| Unit { id: i as u16 + 1, kind, home: sq(s) }).collect();
     run.next_id = army.len() as u16 + 1;
-    run.enemy =
-        Enemy { pieces: enemy.iter().map(|&(kind, s)| EnemyPiece { kind, square: sq(s) }).collect(), traits: vec![] };
+    run.enemy = Enemy {
+        pieces: EnemyPieces::Placed(enemy.iter().map(|&(kind, s)| EnemyPiece { kind, square: sq(s) }).collect()),
+        traits: vec![],
+    };
     run.relics = relics(keys);
     run
 }
 
 /// The battle of the run. The piece on each `from` square starts on the `to` square.
 fn battle_with(run: &Run, starts: &[(&str, &str)]) -> Battle {
-    let mut pieces = Battle::placements(run);
+    let mut pieces = Battle::placements(run).unwrap();
     for &(from, to) in starts {
         pieces.iter_mut().find(|p| p.square == sq(from)).expect("No piece on the square").square = sq(to);
     }

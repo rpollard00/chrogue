@@ -124,7 +124,8 @@ fn rule_sets() -> Vec<RuleSet> {
 }
 
 // The data of the game, as in the crate `chrogue-game`: `gold_value`, `enemy_weight`, and `FLOORS` in content.rs,
-// and `generate_enemy`, `base_army`, and `free_home` in run.rs.
+// and `generate_enemy`, `base_army`, and `free_home` in run.rs. The enemy here has each kind on its home square of
+// chess. The game selects the squares at the start of a battle (`formation.rs`).
 const RECRUITS: [Kind; 5] = [Kind::Pawn, Kind::Knight, Kind::Bishop, Kind::Rook, Kind::Queen];
 const RECRUIT_VALUE: [u32; 5] = [1, 3, 3, 5, 9];
 const RECRUIT_WEIGHT: [f64; 5] = [4.0, 2.0, 2.0, 1.5, 1.0];

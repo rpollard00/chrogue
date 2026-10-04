@@ -5,6 +5,7 @@
 //! - `random`: the dice, and the streams of random numbers of a run.
 //! - `tuning`: the debug settings of a session: the enemy armies and the AI levels.
 //! - `battle`: one battle of a run on the chess engine.
+//! - `formation`: the squares of the enemy army at the start of a battle.
 //! - `save`: saved data through a `Storage`.
 //! - `session`: the screens and `Session::command`, the one entry point of the protocol.
 //! - `view`: the data that a client draws.
@@ -15,6 +16,7 @@
 pub mod battle;
 pub mod chess;
 pub mod content;
+pub mod formation;
 pub mod protocol;
 pub mod random;
 pub mod run;

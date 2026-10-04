@@ -341,6 +341,21 @@ fn boards_that_are_not_valid_do_not_load() {
             data["floor"] = json!(1e300);
             data
         }),
+        ("enemy kinds with no king", {
+            let mut data = run_data(&ARMY, &ENEMY, "camp");
+            data["enemy"] = json!({ "kinds": ["q", "p"], "traits": [] });
+            data
+        }),
+        ("enemy kinds with 9 pawns", {
+            let mut data = run_data(&ARMY, &ENEMY, "camp");
+            data["enemy"] = json!({ "kinds": ["k", "p", "p", "p", "p", "p", "p", "p", "p", "p"], "traits": [] });
+            data
+        }),
+        ("an enemy kind that is not a piece", {
+            let mut data = run_data(&ARMY, &ENEMY, "camp");
+            data["enemy"] = json!({ "kinds": ["k", "x"], "traits": [] });
+            data
+        }),
         ("65 enemy pieces", {
             let pieces: Vec<(&str, u64)> = (0..65).map(|s| (if s == 63 { "k" } else { "p" }, s % 64)).collect();
             run_data(&[("k", 4)], &pieces, "camp")
@@ -354,10 +369,13 @@ fn boards_that_are_not_valid_do_not_load() {
         assert_eq!((problem["what"].clone(), problem["reason"].clone()), (json!("run"), json!("invalid")), "{name}");
     }
 
-    // The same boards that are valid load. A start with the enemy king in check is valid in
-    // camp and in a battle: an arrangement of the army in normal play can give it, and the
-    // core saves the run at the start of the battle.
+    // The same boards that are valid load: an enemy with kinds, which gets its squares in the
+    // battle, and an enemy with set squares. With set squares, a start with the enemy king in
+    // check is valid in camp and in a battle.
+    let mut kinds = run_data(&ARMY, &ENEMY, "camp");
+    kinds["enemy"] = json!({ "kinds": ["k", "r", "p"], "traits": [] });
     for data in [
+        kinds,
         run_data(&ARMY, &ENEMY, "battle"),
         run_data(&[("k", 4), ("p", 13)], &[("k", 20)], "camp"),
         run_data(&[("k", 4), ("p", 13)], &[("k", 20)], "battle"),

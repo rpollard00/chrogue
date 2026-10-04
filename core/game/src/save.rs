@@ -15,9 +15,12 @@
 //!   `UNIT_ID_MAX + 1`, and the enemy has at most `ENEMY_PIECES_MAX` pieces.
 //! - The `seed` of a run is at most `SEED_MAX`, and its `rolls` is at most `u32::MAX`. A run with
 //!   no `seed` or no `rolls` loads with 0 for that field.
+//! - The enemy of a floor has `kinds` and no squares. The battle gives it a formation, thus the
+//!   kinds must fit on the last two ranks (`formation::place`). An enemy with set squares has
+//!   `pieces`.
 //! - The board of a run must be valid (`Battle::new`): no two enemy pieces on one square, no
-//!   enemy piece on the home square of a unit, and one king on each side. A start with the enemy king in check
-//!   is valid: normal play can make it, and the core saves the run at the start of the battle.
+//!   enemy piece on the home square of a unit, and one king on each side. For an enemy with set
+//!   squares, a start with the enemy king in check is valid.
 //! - A document that the core cannot use is not dropped in silence. `load` reports it as a
 //!   `Problem`, and the session moves the file aside (`Storage::set_aside`) before it writes
 //!   anything.
@@ -34,7 +37,9 @@ use serde_json::{Value, json};
 use crate::battle::Battle;
 use crate::chess::{self, Kind, Square};
 use crate::content::{FLOORS, RELIC_SLOTS, RELICS_MAX, RelicId, TRAITS_MAX, UpgradeId};
-use crate::run::{ENEMY_PIECES_MAX, Enemy, EnemyPiece, Meta, Offer, Phase, Run, SEED_MAX, UNIT_ID_MAX, Unit, UnitId};
+use crate::run::{
+    ENEMY_PIECES_MAX, Enemy, EnemyPiece, EnemyPieces, Meta, Offer, Phase, Run, SEED_MAX, UNIT_ID_MAX, Unit, UnitId,
+};
 
 /// The version of the saved documents.
 pub const SAVE_VERSION: u64 = 1;
@@ -435,6 +440,21 @@ pub fn offer_json(offer: Offer) -> Value {
     }
 }
 
+/// An enemy with no set squares has `kinds`. An enemy with set squares has `pieces`.
+fn enemy_json(enemy: &Enemy) -> Value {
+    let letter = |kind: Kind| chess::kind_letter(kind).to_string();
+    let traits: Vec<_> = enemy.traits.iter().map(|id| id.key()).collect();
+    match &enemy.pieces {
+        EnemyPieces::Kinds(kinds) => {
+            json!({ "kinds": kinds.iter().map(|&kind| letter(kind)).collect::<Vec<_>>(), "traits": traits })
+        }
+        EnemyPieces::Placed(pieces) => {
+            let pieces: Vec<_> = pieces.iter().map(|p| json!({ "type": letter(p.kind), "square": p.square })).collect();
+            json!({ "pieces": pieces, "traits": traits })
+        }
+    }
+}
+
 pub fn run_json(run: &Run) -> Value {
     let letter = |kind: Kind| chess::kind_letter(kind).to_string();
     json!({
@@ -445,10 +465,7 @@ pub fn run_json(run: &Run) -> Value {
         "nextId": run.next_id,
         "relics": run.relics.iter().map(|id| id.key()).collect::<Vec<_>>(),
         "slots": run.slots,
-        "enemy": {
-            "pieces": run.enemy.pieces.iter().map(|p| json!({ "type": letter(p.kind), "square": p.square })).collect::<Vec<_>>(),
-            "traits": run.enemy.traits.iter().map(|id| id.key()).collect::<Vec<_>>(),
-        },
+        "enemy": enemy_json(&run.enemy),
         "phase": match run.phase { Phase::Battle => "battle", Phase::Camp => "camp" },
         "draft": run.draft.as_ref().map(|d| d.iter().map(|&o| offer_json(o)).collect::<Vec<_>>()),
         "shop": run.shop.iter().map(|&o| offer_json(o)).collect::<Vec<_>>(),
@@ -572,17 +589,24 @@ fn parse_run_shape(raw: &Value) -> Option<Run> {
         }
         army.push(Unit { id, kind, home });
     }
-    let mut pieces = Vec::new();
-    for piece in list(enemy.get("pieces").unwrap_or(&Value::Null)) {
-        let Value::Object(piece) = piece else { return None };
-        pieces.push(EnemyPiece { kind: kind(piece.get("type")?)?, square: square(piece.get("square")?, 63)? });
-    }
+    let pieces = match enemy.get("kinds") {
+        Some(kinds) => EnemyPieces::Kinds(list(kinds).iter().map(kind).collect::<Option<_>>()?),
+        None => {
+            let mut pieces = Vec::new();
+            for piece in list(enemy.get("pieces").unwrap_or(&Value::Null)) {
+                let Value::Object(piece) = piece else { return None };
+                pieces.push(EnemyPiece { kind: kind(piece.get("type")?)?, square: square(piece.get("square")?, 63)? });
+            }
+            EnemyPieces::Placed(pieces)
+        }
+    };
+    let enemy_kinds = pieces.kinds();
     let one_king = |kinds: &mut dyn Iterator<Item = Kind>| kinds.filter(|&k| k == Kind::King).count() == 1;
     let homes: HashSet<Square> = army.iter().map(|u| u.home).collect();
     if !one_king(&mut army.iter().map(|u| u.kind))
-        || !one_king(&mut pieces.iter().map(|p| p.kind))
+        || !one_king(&mut enemy_kinds.iter().copied())
         || homes.len() != army.len()
-        || pieces.len() > ENEMY_PIECES_MAX
+        || enemy_kinds.len() > ENEMY_PIECES_MAX
     {
         return None;
     }

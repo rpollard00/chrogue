@@ -17,7 +17,7 @@ pub type UnitId = u16;
 pub const UNIT_ID_MAX: UnitId = 19_999;
 /// The id of the pawn that Conscription adds. It is not a unit of the army.
 pub const CONSCRIPT_ID: u16 = 20_000;
-/// The enemy piece with index `i` in `Enemy::pieces` has the id `ENEMY_ID_BASE + i`.
+/// The enemy piece with index `i` in the army has the id `ENEMY_ID_BASE + i`.
 pub const ENEMY_ID_BASE: u16 = 30_000;
 /// The most pieces in an enemy army.
 pub const ENEMY_PIECES_MAX: usize = 64;
@@ -38,9 +38,30 @@ pub struct EnemyPiece {
     pub square: Square,
 }
 
+/// The pieces of an enemy army.
+#[derive(Clone, PartialEq, Debug)]
+pub enum EnemyPieces {
+    /// The kinds of the army of a floor, the king first. The pieces have no squares: the battle
+    /// gives each piece its square against the army of the player (`formation`).
+    Kinds(Vec<Kind>),
+    /// Pieces on set squares: the army of `debug_set_enemy`, and the army of saved data that has
+    /// squares.
+    Placed(Vec<EnemyPiece>),
+}
+
+impl EnemyPieces {
+    /// The kinds of the army, in the order of its pieces.
+    pub fn kinds(&self) -> Vec<Kind> {
+        match self {
+            EnemyPieces::Kinds(kinds) => kinds.clone(),
+            EnemyPieces::Placed(pieces) => pieces.iter().map(|piece| piece.kind).collect(),
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub struct Enemy {
-    pub pieces: Vec<EnemyPiece>,
+    pub pieces: EnemyPieces,
     pub traits: Vec<RelicId>,
 }
 
@@ -460,9 +481,9 @@ pub fn trait_pool(tuning: &Tuning) -> Vec<RelicId> {
     relic_pool(tuning).into_iter().filter(|id| id.is_trait()).collect()
 }
 
-/// The enemy of a floor of the run with this seed. The budget and the traits of the floor, and the
-/// cap, the weight, and the first floor of each kind come from the tuning. A kind with a weight
-/// of 0 is not in the army.
+/// The enemy of a floor of the run with this seed: its kinds and its traits. The budget and the
+/// traits of the floor, and the cap, the weight, and the first floor of each kind come from the
+/// tuning. A kind with a weight of 0 is not in the army.
 pub fn generate_enemy(seed: u64, floor: usize, tuning: &Tuning) -> Enemy {
     let dice = &mut Dice::stream(seed, Stream::Enemy, floor as u64, 0);
     let spec = tuning.floor(floor);
@@ -482,36 +503,13 @@ pub fn generate_enemy(seed: u64, floor: usize, tuning: &Tuning) -> Enemy {
         counts[i] += 1;
         budget -= content::gold_value(RECRUIT_KINDS[i]);
     }
-    let squares = |kind: Kind, dice: &mut Dice| -> Vec<Square> {
-        match kind {
-            Kind::Rook => dice.shuffle(vec![56, 63]),
-            Kind::Knight => dice.shuffle(vec![57, 62]),
-            Kind::Bishop => dice.shuffle(vec![58, 61]),
-            Kind::Queen => vec![59],
-            _ => vec![52, 51, 53, 50, 54, 49, 55, 48],
-        }
-    };
-    // The dice shuffle the squares of each kind first, then the pieces get their squares.
-    let homes: Vec<Vec<Square>> = [Kind::Rook, Kind::Knight, Kind::Bishop, Kind::Queen, Kind::Pawn]
-        .into_iter()
-        .map(|kind| squares(kind, dice))
-        .collect();
-    let homes_of = |kind: Kind| match kind {
-        Kind::Rook => &homes[0],
-        Kind::Knight => &homes[1],
-        Kind::Bishop => &homes[2],
-        Kind::Queen => &homes[3],
-        _ => &homes[4],
-    };
-    let mut pieces = vec![EnemyPiece { kind: Kind::King, square: 60 }];
+    let mut kinds = vec![Kind::King];
     for (i, &kind) in RECRUIT_KINDS.iter().enumerate() {
-        for n in 0..counts[i] as usize {
-            pieces.push(EnemyPiece { kind, square: homes_of(kind)[n] });
-        }
+        kinds.extend(std::iter::repeat_n(kind, counts[i] as usize));
     }
     let mut traits = dice.shuffle(trait_pool(tuning));
     traits.truncate(spec.traits);
-    Enemy { pieces, traits }
+    Enemy { pieces: EnemyPieces::Kinds(kinds), traits }
 }
 
 fn piece_pool(floor: usize) -> Vec<(Offer, f64)> {

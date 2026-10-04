@@ -11,7 +11,7 @@ pub const BUDGET_MAX: u32 = 39;
 /// The largest weight of a kind.
 pub const WEIGHT_MAX: f64 = 9.0;
 
-/// The largest cap of a kind: its default cap, the number of home squares of the kind.
+/// The largest cap of a kind: its default cap. An army with these caps fits on the last two ranks.
 pub fn cap_max(kind: Kind) -> u32 {
     ENEMY_KINDS.iter().find(|k| k.kind == kind).map_or(0, |k| k.cap)
 }

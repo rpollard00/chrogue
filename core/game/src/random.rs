@@ -17,6 +17,8 @@ pub enum Stream {
     Start,
     /// The move of the AI: `(floor, the number of moves that the battle played)`.
     Ai,
+    /// The squares of the enemy of a floor: `(floor, 0)`.
+    Formation,
 }
 
 impl Stream {
@@ -27,6 +29,7 @@ impl Stream {
             Stream::Shop => 0x5348_4F50_0000_0003,
             Stream::Start => 0x5354_4152_5400_0004,
             Stream::Ai => 0x4149_0000_0000_0005,
+            Stream::Formation => 0x464F_524D_0000_0006,
         }
     }
 }

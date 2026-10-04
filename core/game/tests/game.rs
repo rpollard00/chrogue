@@ -6,8 +6,8 @@ use chrogue_game::battle::{Battle, BattleResult, BattleReward, Bonus, MoveReport
 use chrogue_game::chess::{self, Color, Kind, Outcome, SideRules, Square};
 use chrogue_game::content::{FLOORS, RelicId, UPGRADE_NAME_MAX, UPGRADE_SLOTS, UPGRADES, UpgradeId, gold_value};
 use chrogue_game::run::{
-    CONSCRIPT_ID, Enemy, EnemyPiece, Meta, Offer, Phase, Run, RunSummary, SEED_MAX, generate_enemy, relic_pool,
-    roll_draft, roll_shop, trait_pool,
+    CONSCRIPT_ID, Enemy, EnemyPiece, EnemyPieces, Meta, Offer, Phase, Run, RunSummary, SEED_MAX, generate_enemy,
+    relic_pool, roll_draft, roll_shop, trait_pool,
 };
 use chrogue_game::save::{parse_meta, parse_run, run_json};
 use chrogue_game::tuning::Tuning;
@@ -47,8 +47,10 @@ fn new_run(meta: &Meta) -> Run {
 /// A run against an enemy that the test selects. The army is: Ke1, Ra1, Ng1, and pawns on c2, d2, e2, f2.
 fn run_against(pieces: &[(Kind, &str)], change: impl FnOnce(&mut Run)) -> Run {
     let mut run = new_run(&Meta::default());
-    run.enemy =
-        Enemy { pieces: pieces.iter().map(|&(kind, s)| EnemyPiece { kind, square: sq(s) }).collect(), traits: vec![] };
+    run.enemy = Enemy {
+        pieces: EnemyPieces::Placed(pieces.iter().map(|&(kind, s)| EnemyPiece { kind, square: sq(s) }).collect()),
+        traits: vec![],
+    };
     change(&mut run);
     run
 }
@@ -70,9 +72,9 @@ fn each_floor_makes_an_enemy_army_that_uses_the_budget() {
         for seed in 0..50 {
             let Enemy { pieces, traits } = generate_enemy(seed, i + 1, &defaults());
             // The piece limits can leave up to 4 points of the budget.
-            let total: u32 = pieces.iter().map(|p| gold_value(p.kind)).sum();
+            let total: u32 = pieces.kinds().into_iter().map(gold_value).sum();
             assert!(total <= spec.budget && total + 4 >= spec.budget, "floor {} total {total}", i + 1);
-            assert_eq!(pieces.iter().map(|p| p.square).collect::<HashSet<_>>().len(), pieces.len());
+            assert!(matches!(pieces, EnemyPieces::Kinds(_)));
             assert_eq!(traits.len(), spec.traits);
             assert!(traits.iter().all(|id| id.def().foe_text.is_some()));
         }
@@ -246,7 +248,7 @@ fn a_promoted_pawn_stays_promoted_after_the_battle() {
     let mut run = run_against(&[KING, (Kind::Pawn, "h7"), (Kind::Pawn, "a7")], |_| {});
     run.army.retain(|u| u.kind != Kind::Pawn || u.home == sq("e2"));
     // The pawn of e2 starts on c7.
-    let mut pieces = Battle::placements(&run);
+    let mut pieces = Battle::placements(&run).unwrap();
     for p in &mut pieces {
         if p.square == sq("e2") {
             p.square = sq("c7");

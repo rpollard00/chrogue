@@ -151,7 +151,7 @@ fn battle_view(run: &Run, battle: &Battle, meta: &Meta) -> Value {
 /// The kinds of the enemy army as the camp shows them: the king first, then by value.
 fn enemy_kinds(run: &Run) -> Vec<String> {
     let rank = |kind: Kind| if kind == Kind::King { u32::MAX } else { content::gold_value(kind) };
-    let mut kinds: Vec<Kind> = run.enemy.pieces.iter().map(|p| p.kind).collect();
+    let mut kinds = run.enemy.pieces.kinds();
     kinds.sort_by_key(|&k| std::cmp::Reverse(rank(k)));
     kinds.into_iter().map(letter).collect()
 }
@@ -184,7 +184,6 @@ fn camp_view(run: &Run, reward: &Option<Reward>, meta: &Meta) -> Value {
         "enemy": {
             "name": run.floor_def().name,
             "traits": run.enemy.traits.iter().map(|&id| trait_view(id)).collect::<Vec<_>>(),
-            "pieces": run.enemy.pieces.iter().map(|p| json!({ "kind": letter(p.kind), "square": p.square })).collect::<Vec<_>>(),
             "kinds": enemy_kinds(run),
         },
         "reward": reward,

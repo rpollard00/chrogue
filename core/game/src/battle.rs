@@ -2,8 +2,9 @@
 
 use crate::chess::{self, Color, Kind, Move, Outcome, Piece, Placement, Special, Square, State};
 use crate::content::{self, ARMY_MAX, Effect, FLOORS, RelicId};
+use crate::formation;
 use crate::random::{Dice, Stream};
-use crate::run::{CONSCRIPT_ID, ENEMY_ID_BASE, Meta, Run, UNIT_ID_MAX, UnitId};
+use crate::run::{CONSCRIPT_ID, ENEMY_ID_BASE, EnemyPiece, EnemyPieces, Meta, Run, UNIT_ID_MAX, UnitId};
 use crate::tuning::Tuning;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -116,39 +117,50 @@ fn piece(id: u16, kind: Kind, color: Color) -> Piece {
     Piece { id, kind, color, moved: false }
 }
 
+/// The pieces of the enemy on the board. The piece with index `i` has the id `ENEMY_ID_BASE + i`.
+pub(crate) fn enemy_placements(pieces: &[EnemyPiece]) -> impl Iterator<Item = Placement> + '_ {
+    pieces.iter().enumerate().map(|(i, enemy)| Placement {
+        piece: piece(ENEMY_ID_BASE + i as u16, enemy.kind, Color::Black),
+        square: enemy.square,
+    })
+}
+
 impl Battle {
     /// The pieces at the start of a battle: the army, the pieces of the relics, and the enemy.
-    pub fn placements(run: &Run) -> Vec<Placement> {
+    /// An enemy with no set squares gets its formation here (`formation::place`).
+    pub fn placements(run: &Run) -> Result<Vec<Placement>, String> {
         let mut pieces: Vec<Placement> = run
             .army
             .iter()
             .map(|unit| Placement { piece: piece(unit.id, unit.kind, Color::White), square: unit.home })
             .collect();
+        let (set, kinds) = match &run.enemy.pieces {
+            EnemyPieces::Placed(set) => (set.as_slice(), None),
+            EnemyPieces::Kinds(kinds) => (&[][..], Some(kinds)),
+        };
         for (_, effect) in effects(&run.relics) {
             if effect == Effect::ExtraPawn {
                 // The pawn goes to the first free square of rank 2, or of rank 3 if rank 2 is full.
                 // A square of an enemy piece is not free, thus a debug enemy on rank 2 or 3 does not
                 // share a square.
-                let taken =
-                    |s: Square| pieces.iter().any(|p| p.square == s) || run.enemy.pieces.iter().any(|e| e.square == s);
+                let taken = |s: Square| pieces.iter().any(|p| p.square == s) || set.iter().any(|e| e.square == s);
                 if let Some(square) = (8..24).find(|&s| !taken(s)) {
                     pieces.push(Placement { piece: piece(CONSCRIPT_ID, Kind::Pawn, Color::White), square });
                 }
             }
         }
-        for (i, enemy) in run.enemy.pieces.iter().enumerate() {
-            pieces.push(Placement {
-                piece: piece(ENEMY_ID_BASE + i as u16, enemy.kind, Color::Black),
-                square: enemy.square,
-            });
-        }
-        pieces
+        let enemy = match kinds {
+            Some(kinds) => formation::place(run, kinds, &pieces)?,
+            None => set.to_vec(),
+        };
+        pieces.extend(enemy_placements(&enemy));
+        Ok(pieces)
     }
 
     /// The battle of the run. An error if two pieces have one square or a side does not have
     /// exactly one king.
     pub fn new(run: &Run) -> Result<Battle, String> {
-        Battle::from_placements(run, &Battle::placements(run))
+        Battle::from_placements(run, &Battle::placements(run)?)
     }
 
     /// The engine keeps the last piece of a square and accepts a side with no king or with two
@@ -171,7 +183,8 @@ impl Battle {
                 return Err(format!("{side} must have one king, not {kings}"));
             }
         }
-        let state = chess::new_state(pieces, content::rules_for(&run.relics), content::rules_for(&run.enemy.traits))?;
+        let tables = chess::tables(content::rules_for(&run.relics), content::rules_for(&run.enemy.traits))?;
+        let state = chess::new_state(pieces, &tables)?;
         Ok(Battle {
             state,
             lost: Vec::new(),

@@ -6,7 +6,7 @@ use std::ops::Range;
 use chrogue_game::battle::{Battle, Next};
 use chrogue_game::chess::{Kind, Outcome, Square};
 use chrogue_game::content::{FLOORS, RelicId, UpgradeId};
-use chrogue_game::run::{Enemy, EnemyPiece, Meta, Offer, Run, relic_pool, roll_draft};
+use chrogue_game::run::{Enemy, EnemyPiece, EnemyPieces, Meta, Offer, Run, relic_pool, roll_draft};
 use chrogue_game::tuning::Tuning;
 use chrogue_game::{MemoryStorage, Session};
 use serde_json::{Value, json};
@@ -158,10 +158,10 @@ fn camp_after_a_draw(meta: &Meta, floor: usize) -> Run {
     let mut run = Run::new(&Meta::default(), 1, &defaults());
     run.floor = floor;
     run.enemy = Enemy {
-        pieces: vec![
+        pieces: EnemyPieces::Placed(vec![
             EnemyPiece { kind: Kind::King, square: sq("e8") },
             EnemyPiece { kind: Kind::Pawn, square: sq("a7") },
-        ],
+        ]),
         traits: vec![],
     };
     let mut battle = Battle::new(&run).unwrap();

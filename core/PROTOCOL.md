@@ -22,7 +22,7 @@ Protocol version: 1. `hello` gives the version.
 - `--save-dir PATH` keeps the saved data in `PATH/meta.json` and `PATH/run.json`. `--no-save` keeps it in memory. One of the two is necessary. See [Saved data](#saved-data) for the lock and for files that the core cannot read.
 - `--seed N` sets the seed of the session. N is a whole number from 0 to 18446744073709551615, with digits only. The session makes the seed of each new run from it. The same session seed and the same requests give the same responses, byte for byte.
   - The seed of a run is a whole number from 0 to 999999999. All randomness of the run comes from it: enemy armies, rewards, shop items, the relic of the Heirloom upgrade, and the noise of the AI.
-  - Each random result of a run has its own numbers: the enemy of a floor, the reward before a floor, each roll of the shop before a floor, and each move of the AI. Thus the number of moves of a battle does not change the armies, the rewards, and the shop items that come after it.
+  - Each random result of a run has its own numbers: the enemy of a floor, the squares of that enemy, the reward before a floor, each roll of the shop before a floor, and each move of the AI. Thus the number of moves of a battle does not change the armies, the rewards, and the shop items that come after it.
 - `--debug` permits the debug commands.
 - A line that is longer than 65536 bytes gets the error `too_long`. An empty line gets no response.
 - Exit codes: 0 after `quit`, at the end of stdin, or at the idle limit; 1 for an I/O error (for example, the port is in use); 2 for a usage error (a bad argument, a missing or bad `CHROGUE_TOKEN`); 3 if another live `chrogue-core` holds the lock of the save directory. The reason is on stderr.
@@ -42,7 +42,7 @@ With `--listen`, the core reads a token from the environment variable `CHROGUE_T
 - The WebAssembly build has no lock. A page of a browser has a file system of its own, with no file locks and no second process. Two pages of the same game each keep their own copy of the saved data, and the page that saves last sets the data that the browser keeps.
 - A save writes a temporary file with a name of its own (`meta.json.<pid>-<n>.tmp`), syncs it to the disk, and renames it over the document. On Unix, the core then syncs the directory. A start of the core removes the temporary files that a crash left.
 - A saved file that the core cannot use is never deleted or written over. That is a file that the core cannot read, that is not JSON (for example, a file that a crash cut, or JSON nested too deep), that is not a document of its format, whose data is not valid as a whole (see below), or that has a version newer than the version of the core. Before it writes anything, the core renames such a file to `<name>.bad-<unix time>` (for example `meta.json.bad-1759420800`; `-2`, `-3`, ... if that name is taken), loads no data from it, and puts a `save_problem` event in its first successful response. If the rename fails, the core does not write or remove that document in the session; each save of it then gives `save_failed`.
-- The checks of saved data: a count (a floor, gold, an id, a level, an amount) is at most 2^53 - 1; a unit id is at most 19999 and appears one time; the `seed` of a run is at most 999999999, its `rolls` is at most 4294967295, and its `slots` is at most 10 (`relics_max`); a relic id counts one time in a list; the enemy has at most 64 pieces; no two pieces are on one square (two enemy pieces, an enemy piece on the home square of a unit, or two units with one home); and each side has exactly one king. A start with the enemy king in check is valid (see [Open issues](#open-issues)). A run that fails a check is not valid as a whole. A run with no `seed` or no `rolls` loads with 0 for that field, and a run with no `slots` loads with 4 (`relic_slots` of `hello`). A field of the meta that is not valid counts as 0, and an unknown relic id, upgrade id, or offer is dropped. A run keeps the first 10 relics of its list (`relics_max`). The enemy keeps the first 2 traits of its list (`traits_max`), and a relic that a boss cannot have is dropped from that list.
+- The checks of saved data: a count (a floor, gold, an id, a level, an amount) is at most 2^53 - 1; a unit id is at most 19999 and appears one time; the `seed` of a run is at most 999999999, its `rolls` is at most 4294967295, and its `slots` is at most 10 (`relics_max`); a relic id counts one time in a list; the enemy has at most 64 pieces; an enemy with `kinds` has at most 7 officers and at most 8 pawns; no two pieces are on one square (two enemy pieces, an enemy piece on the home square of a unit, or two units with one home); and each side has exactly one king. For an enemy with set squares (`pieces`), a start with the enemy king in check is valid (see [Open issues](#open-issues)). A run that fails a check is not valid as a whole. A run with no `seed` or no `rolls` loads with 0 for that field, and a run with no `slots` loads with 4 (`relic_slots` of `hello`). A field of the meta that is not valid counts as 0, and an unknown relic id, upgrade id, or offer is dropped. A run keeps the first 10 relics of its list (`relics_max`). The enemy keeps the first 2 traits of its list (`traits_max`), and a relic that a boss cannot have is dropped from that list.
 
 ## Requests and responses
 
@@ -149,7 +149,7 @@ These commands work only in a session with `--debug`. Else the error is `debug_d
 
 Each successful debug command has the debug state in `data.debug` (see [Debug state](#debug-state)).
 
-A command that changes the pieces or their rules (`debug_set_army`, `debug_set_enemy`, `debug_add_unit`, `debug_remove_unit`, `debug_set_floor`, `debug_set_relic`, `debug_set_trait`) must leave a board that the engine can take as it is. Else the error is `bad_args` with a message that starts with `The board is not valid`, and the run does not change: two pieces on one square (two enemy pieces, or an enemy piece on the home square of a unit), or a side with no king or with two kings. An enemy piece on an empty home square is permitted. A start with the enemy king in check is permitted, as in the camp and in saved data (see [Open issues](#open-issues)). The pawn of Conscription goes to the first square of ranks 2 and 3 that no unit and no enemy piece has.
+A command that changes the pieces or their rules (`debug_set_army`, `debug_set_enemy`, `debug_add_unit`, `debug_remove_unit`, `debug_set_floor`, `debug_set_relic`, `debug_set_trait`) must leave a board that the engine can take as it is. Else the error is `bad_args` with a message that starts with `The board is not valid`, and the run does not change: two pieces on one square (two enemy pieces, or an enemy piece on the home square of a unit), or a side with no king or with two kings. An enemy piece on an empty home square is permitted. For the enemy of `debug_set_enemy`, a start with the enemy king in check is permitted, as in saved data (see [Open issues](#open-issues)). The pawn of Conscription goes to the first square of ranks 2 and 3 that no unit and no enemy piece has.
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
@@ -166,7 +166,7 @@ A command that changes the pieces or their rules (`debug_set_army`, `debug_set_e
 | `debug_set_army` | `units`: a list of `{"id"?, "kind", "home"}` | Replaces the army. One king, distinct ids and homes. A unit with no id gets its position in the list plus 1. |
 | `debug_set_relic` | `relic`, `on` | Adds or removes a relic of the player. The relic slots of the run are not a limit here: the run can get up to `relics_max` relics (then the error is `blocked`). |
 | `debug_set_trait` | `relic`, `on` | Adds or removes a trait of the enemy. The relic must have a text for the enemy. The enemy has at most `traits_max` traits (error `blocked`). |
-| `debug_set_enemy` | `pieces`: a list of `{"kind", "square"}`, `traits` (optional) | Replaces the enemy army. One king, distinct squares. |
+| `debug_set_enemy` | `pieces`: a list of `{"kind", "square"}`, `traits` (optional) | Replaces the enemy army with pieces on set squares. One king, distinct squares. The battle does not select a formation for this army. |
 | `debug_bar_relic` | `relic`, `barred` | A barred relic is not a reward, not a shop item, and not a boss trait. The tuning keeps this set. A battle does not start again. |
 | `debug_set_shop` | `offers`: a list of offers | Replaces the shop items. An offer is `{"kind":"piece","type":"n"}`, `{"kind":"relic","id":"bounty"}`, or `{"kind":"gold","amount":12}`. |
 | `debug_set_draft` | `offers`: a list of offers, or `null` | Replaces the reward cards. In the camp, the reward shelf shows them. |
@@ -183,11 +183,19 @@ A command that changes the pieces or their rules (`debug_set_army`, `debug_set_e
 - `meta`: `crowns`, and `upgrades`: an object with the level of each upgrade that the player has. Each key is an upgrade id (for example `pawn`).
 - `barred`: the ids of the barred relics (`debug_bar_relic`).
 - `floors`: 8 items, one for each floor: `number`, `name`, `level` (the AI level of the floor, 1 to 8), `level_name` (the name of that level), `budget` (the value of the enemy army), and `traits` (the number of boss traits).
-- `kinds`: 5 items, one for each of `p`, `n`, `b`, `r`, `q`: `kind`, `cap` (the most pieces of the kind in an enemy army), `cap_max` (the largest `cap`: the number of home squares of the kind), `weight` (the chance of the kind against the other kinds), and `min_floor` (the first floor that can have the kind).
+- `kinds`: 5 items, one for each of `p`, `n`, `b`, `r`, `q`: `kind`, `cap` (the most pieces of the kind in an enemy army), `cap_max` (the largest `cap`: the default `cap` of the kind), `weight` (the chance of the kind against the other kinds), and `min_floor` (the first floor that can have the kind).
 - `limits`: the largest value of `seed`, `level`, `budget`, `traits`, and `weight`, and `relics` (the most relic slots and the most relics of a run).
 - `tuned`: true if a floor or a kind differs from the default. The seed, the barred relics, and the relic slots do not change it.
 
 The core makes the enemy army of a floor from these numbers and the seed of the run. It adds one piece at a time until no kind fits in the remaining budget. A kind fits if the floor is `min_floor` or higher, the army has fewer pieces of the kind than `cap`, and the value of the piece is not more than the remaining budget. The chance of each kind that fits is its part of the weights. A kind with a `cap` of 0 or a `weight` of 0 is not in an army. The AI of `enemy_move` on a floor is the `level` of the floor.
+
+The army of a floor has kinds and no squares. The battle gives each piece its square when it starts: the formation. The core makes formations from the seed of the run and the floor, and takes the first one that is sound against the army of the player, with the relics of the run and the traits of the enemy:
+
+- The enemy king is not in check.
+- The player has no win on the first move.
+- The player has no forced win in two moves.
+
+The king and the officers are on rank 8, and the pawns are on rank 7. The first formations have the king on e8, the officers next to it, and the pawns in front of the king and of the officers first. The later formations have the pieces on random squares of the two ranks. If each formation has a flaw, the core takes the formation with the smallest flaw: a forced win in two moves is smaller than a win on the first move, and a check is the largest. The same run with the same homes of the units gives the same formation, thus a battle that starts again has the same board. Other homes can give another formation.
 
 ## Views
 
@@ -233,7 +241,7 @@ Each view has `screen`. The other fields depend on the screen.
 ### `camp`
 
 - `floor`: the next floor, as in the battle view.
-- `enemy`: the next enemy: `name`, `traits` (as in the battle view), `pieces` (`kind`, `square`), and `kinds` (the kinds in the order of the camp screen: the king first, then by value).
+- `enemy`: the next enemy: `name`, `traits` (as in the battle view), and `kinds` (the kinds in the order of the camp screen: the king first, then by value). The enemy of a floor has no squares before the battle.
 - `reward`: `null` if this visit has no reward (after a draw with no Envoy upgrade, after a draw on the last floor, or after a reload when the reward was taken). Else `offers`, `taken` (the index of the card that the player took, or `null`), `open` (true while the player can take or skip), and `state`: `open`, `taken`, or `skipped`.
 - `shop`: `offers`, `reroll_cost`, and `can_reroll`. A shop offer also has `price` and `affordable`. `reroll_cost` and `price` are the costs for the player: they depend on the upgrades (Fixer, Antiquary, and Haggler).
 - An offer has `kind` (`piece`, `relic`, or `gold`), `name`, `text` (`null` when the name tells all), and `blocked` (`army_full`, `owned`, `relics_full`, or `null`). `relics_full`: each relic slot of the run has a relic (`relic_slots` of this view). The offer is free after a `discard_relic`. A piece offer has `piece` (the kind). A relic offer has `id`. A gold offer has `amount`.
@@ -327,7 +335,7 @@ The content text (the names and texts of relics, upgrades, floors, pieces, and o
 
 The content of `hello` is the default content. The tuning of a debug session does not change it.
 
-The format of the saved data (`data.run` of `view`, and `run` of `run_end`) has these fields: `seed` (the seed of the run), `floor`, `gold`, `army` (`id`, `type`, `home`), `nextId`, `relics`, `slots` (the relic slots of the run), `enemy` (`pieces` with `type` and `square`, and `traits`), `phase`, `draft`, `shop`, and `rolls` (the number of `reroll` commands in this camp visit). An offer there has `kind` and `type`, `id`, or `amount`.
+The format of the saved data (`data.run` of `view`, and `run` of `run_end`) has these fields: `seed` (the seed of the run), `floor`, `gold`, `army` (`id`, `type`, `home`), `nextId`, `relics`, `slots` (the relic slots of the run), `enemy` (`kinds`, the letters of its pieces, or `pieces` with `type` and `square` for an enemy with set squares, and `traits`), `phase`, `draft`, `shop`, and `rolls` (the number of `reroll` commands in this camp visit). An offer there has `kind` and `type`, `id`, or `amount`.
 
 ## Example session
 
@@ -379,6 +387,6 @@ A won battle and a camp action (from the test `the_camp_example_is_real`: the ar
 ## Open issues
 
 - A draw on the last floor: the run stays on floor 8. `continue` opens the camp before floor 8 again, with no reward, also with the Envoy upgrade.
-- The camp can give a start where the enemy king is in check: a rook or a queen of the player on an open e-file against an enemy with no pawn on e7. `start_battle` starts that battle, and White can capture the king. The debug commands and saved data permit such a start too. A rule that refuses it belongs in `start_battle`, and it changes the game: it is a decision for the design.
+- An enemy with set squares (`debug_set_enemy`, or saved data with `pieces`) can give a start where the enemy king is in check. `start_battle` starts that battle, and White can capture the king. The enemy of a floor gets a formation with no check, unless each formation that the core makes has a flaw.
 - A battle that starts again has the same enemy moves for the same moves of the player: the noise of an AI move comes from the seed of the run, the floor, and the number of moves of the battle. A battle with no result starts again after `to_title` and `continue_run`, thus a player can learn the replies of the enemy.
 - A battle can start in a position where the player has no legal move (for example, a debug army that is in checkmate at the start). The result is checked only after a move: the phase is `player` with no moves, and only `give_up` and `to_title` work.

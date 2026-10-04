@@ -62,7 +62,7 @@ fn tuned(target: Target, values: &[(Field, f64)]) -> Tuning {
 }
 
 fn count(enemy: &Enemy, kind: Kind) -> usize {
-    enemy.pieces.iter().filter(|p| p.kind == kind).count()
+    enemy.pieces.kinds().iter().filter(|&&k| k == kind).count()
 }
 
 /// Starts a run and wins its first battle at once. The battle stays on the screen with its result.
@@ -131,7 +131,7 @@ fn a_budget_of_0_gives_an_enemy_of_only_a_king() {
         let tuning = tuned(Target::Floor(floor), &[(Field::Budget, 0.0), (Field::Traits, 0.0)]);
         for seed in 0..20 {
             let enemy = generate_enemy(seed, floor, &tuning);
-            assert_eq!(enemy.pieces.iter().map(|p| p.kind).collect::<Vec<_>>(), vec![Kind::King]);
+            assert_eq!(enemy.pieces.kinds(), vec![Kind::King]);
             assert_eq!(enemy.traits, vec![]);
         }
     }
@@ -143,7 +143,7 @@ fn the_budget_and_the_traits_of_a_floor_come_from_the_tuning() {
     for seed in 0..50 {
         let enemy = generate_enemy(seed, 1, &tuning);
         // Floor 1 has no queen, thus the pieces have a value of 30.
-        assert_eq!(enemy.pieces.iter().map(|p| gold_value(p.kind)).sum::<u32>(), 30);
+        assert_eq!(enemy.pieces.kinds().into_iter().map(gold_value).sum::<u32>(), 30);
         assert_eq!(enemy.traits.len(), 2);
         assert_eq!(generate_enemy(seed, 2, &tuning), generate_enemy(seed, 2, &Tuning::default()));
     }
@@ -253,15 +253,14 @@ fn a_tune_of_the_budget_in_the_camp_gives_a_new_enemy_and_saves_the_run() {
     let mut session = Session::with_debug(Box::new(storage.clone()), 11, true);
     win_first_move(&mut session);
     let camp = send(&mut session, json!({ "cmd": "continue" }))["view"].clone();
-    assert!(camp["enemy"]["pieces"].as_array().unwrap().len() > 1);
+    assert!(camp["enemy"]["kinds"].as_array().unwrap().len() > 1);
 
     let reply = send(&mut session, json!({ "cmd": "debug_tune", "floor": 2, "budget": 0 }));
     assert_eq!(reply["events"], json!([{ "type": "debug_changed", "what": "tuning" }]));
-    assert_eq!(reply["view"]["enemy"]["pieces"], json!([{ "kind": "k", "square": 60 }]));
+    assert_eq!(reply["view"]["enemy"]["kinds"], json!(["k"]));
     assert_eq!(reply["data"]["debug"]["tuned"], json!(true));
     assert_eq!(reply["data"]["debug"]["floors"][1]["budget"], json!(0));
     let mut expected = camp.clone();
-    expected["enemy"]["pieces"] = json!([{ "kind": "k", "square": 60 }]);
     expected["enemy"]["kinds"] = json!(["k"]);
     assert_eq!(reply["view"], expected);
 
