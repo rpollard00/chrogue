@@ -20,66 +20,12 @@
 //! A game that gets to `--max-plies` half moves is a draw. The same arguments give the same
 //! output: a level with a node limit is deterministic, and all random numbers come from `--seed`.
 
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use chrogue_engine::rng::{Rng, mix};
 use chrogue_engine::rules::FLAG_NAMES;
-use chrogue_engine::{
-    Color, EvalVariant, Kind, Level, Outcome, Piece, Placement, Rules, SideRules, Square, State, fen, outcome,
-};
-use chrogue_tools::Player;
-
-struct Config {
-    text: String,
-    player: Player,
-}
-
-fn parse_config(text: &str) -> Config {
-    let mut parts = text.split(',');
-    let base = parts.next().unwrap_or_default();
-    let mut player = if base == "reference" {
-        Player::reference()
-    } else if let Some(number) = base.strip_prefix("level") {
-        let number: usize = number.parse().expect("the level must be a number");
-        let levels = Level::LADDER.len();
-        assert!((1..=levels).contains(&number), "the level must be from 1 to {levels}");
-        Player::search(Level::number(number))
-    } else if let Some(nodes) = base.strip_prefix("nodes=") {
-        Player::search(Level::nodes("nodes", nodes.parse().expect("the nodes must be a number")))
-    } else {
-        panic!("\"{base}\" is not a base of a CONFIG");
-    };
-    let level = &mut player.level;
-    for part in parts {
-        let (name, value) = part.split_once('=').unwrap_or_else(|| panic!("\"{part}\" must be NAME=VALUE"));
-        let number = || value.parse::<u64>().unwrap_or_else(|_| panic!("\"{value}\" must be a number"));
-        match name {
-            "eval" => {
-                level.eval = match value {
-                    "derived" => EvalVariant::Derived,
-                    "fixed" => EvalVariant::FixedValues,
-                    "blind" => EvalVariant::RuleBlind,
-                    _ => panic!("\"{value}\" is not an evaluation"),
-                }
-            }
-            "noise" => level.flaws.noise_cp = number() as i32,
-            "overlook" => level.flaws.overlook = number() as u32,
-            "careless" => level.flaws.careless = number() as u32,
-            "depth" => level.limits.max_depth = number() as u32,
-            "nodes" => level.limits.max_nodes = number(),
-            "null" => level.options.null_move = number() != 0,
-            "lmr" => level.options.lmr = number() != 0,
-            "threats" => level.options.threats = number() != 0,
-            _ => panic!("\"{name}\" is not an option of a CONFIG"),
-        }
-    }
-    assert!(
-        !player.reference || player.level.limits.max_depth <= 4,
-        "the reference AI has no node limit: its depth must be small"
-    );
-    Config { text: text.to_string(), player }
-}
+use chrogue_engine::{Color, Outcome, Placement, Rules, SideRules, fen};
+use chrogue_tools::armies::game_start;
+use chrogue_tools::cli::{number, option, threads};
+use chrogue_tools::{Player, parallel, play};
 
 struct RuleSet {
     name: String,
@@ -127,94 +73,6 @@ fn rule_sets() -> Vec<RuleSet> {
     sets
 }
 
-// The data of the game, as in the crate `chrogue-game`: `gold_value`, `enemy_weight`, and `FLOORS` in content.rs,
-// and `generate_enemy`, `base_army`, and `free_home` in run.rs. The enemy here has each kind on its home square of
-// chess. The game selects the squares at the start of a battle (`formation.rs`).
-const RECRUITS: [Kind; 5] = [Kind::Pawn, Kind::Knight, Kind::Bishop, Kind::Rook, Kind::Queen];
-const RECRUIT_VALUE: [u32; 5] = [1, 3, 3, 5, 9];
-const RECRUIT_WEIGHT: [f64; 5] = [4.0, 2.0, 2.0, 1.5, 1.0];
-const FLOOR_BUDGET: [u32; 8] = [5, 9, 13, 18, 23, 28, 33, 39];
-const BACK_HOMES: [Square; 8] = [3, 2, 5, 1, 6, 0, 7, 4];
-const FRONT_HOMES: [Square; 8] = [12, 11, 13, 10, 14, 9, 15, 8];
-const BASE_ARMY: [(Kind, Square); 7] = [
-    (Kind::King, 4),
-    (Kind::Rook, 0),
-    (Kind::Knight, 6),
-    (Kind::Pawn, 10),
-    (Kind::Pawn, 11),
-    (Kind::Pawn, 12),
-    (Kind::Pawn, 13),
-];
-
-/// Selects kinds until the budget has no kind that it can pay for. `counts` has the kinds
-/// that the army has before the call.
-fn recruit(rng: &mut Rng, floor: usize, mut budget: u32, counts: &mut [u32; 5], mut room: usize) -> Vec<Kind> {
-    let caps = [8, 2, 2, 2, if floor >= 5 { 1 } else { 0 }];
-    let mut kinds = Vec::new();
-    while room > 0 {
-        let pool: Vec<usize> = (0..5).filter(|&i| counts[i] < caps[i] && RECRUIT_VALUE[i] <= budget).collect();
-        if pool.is_empty() {
-            break;
-        }
-        let mut roll = rng.unit() * pool.iter().map(|&i| RECRUIT_WEIGHT[i]).sum::<f64>();
-        let mut pick = pool[pool.len() - 1];
-        for &i in &pool {
-            roll -= RECRUIT_WEIGHT[i];
-            if roll < 0.0 {
-                pick = i;
-                break;
-            }
-        }
-        counts[pick] += 1;
-        budget -= RECRUIT_VALUE[pick];
-        kinds.push(RECRUITS[pick]);
-        room -= 1;
-    }
-    kinds
-}
-
-/// The base army of the player plus recruits, against the enemy army of a floor. The value
-/// of the army of the player is the budget of the floor, or 12 (the base army) if the budget is less.
-fn game_start(rng: &mut Rng, floor: usize) -> Vec<Placement> {
-    let budget = FLOOR_BUDGET[floor - 1];
-    let mut army: Vec<(Kind, Square)> = BASE_ARMY.to_vec();
-    let mut counts = [4, 1, 0, 1, 0];
-    for kind in recruit(rng, floor, budget.saturating_sub(12), &mut counts, 16 - BASE_ARMY.len()) {
-        let homes = if kind == Kind::Pawn { [FRONT_HOMES, BACK_HOMES] } else { [BACK_HOMES, FRONT_HOMES] };
-        let home = homes.as_flattened().iter().find(|&&s| army.iter().all(|unit| unit.1 != s));
-        army.push((kind, *home.expect("an army of less than 16 units has a free home")));
-    }
-
-    let mut enemy: Vec<(Kind, Square)> = vec![(Kind::King, 60)];
-    let mut counts = [0; 5];
-    let kinds = recruit(rng, floor, budget, &mut counts, 15);
-    let (mut rooks, mut knights, mut bishops) = ([56, 63], [57, 62], [58, 61]);
-    rng.shuffle(&mut rooks);
-    rng.shuffle(&mut knights);
-    rng.shuffle(&mut bishops);
-    let pawns = [52, 51, 53, 50, 54, 49, 55, 48];
-    for kind in RECRUITS {
-        let squares: &[Square] = match kind {
-            Kind::Pawn => &pawns,
-            Kind::Knight => &knights,
-            Kind::Bishop => &bishops,
-            Kind::Rook => &rooks,
-            _ => &[59],
-        };
-        let count = kinds.iter().filter(|&&k| k == kind).count();
-        enemy.extend(squares[..count].iter().map(|&s| (kind, s)));
-    }
-
-    let mut pieces = Vec::new();
-    for (color, units) in [(Color::White, army), (Color::Black, enemy)] {
-        for (kind, square) in units {
-            let piece = Piece { id: pieces.len() as u16, kind, color, moved: false };
-            pieces.push(Placement { piece, square });
-        }
-    }
-    pieces
-}
-
 struct Start {
     pieces: Vec<Placement>,
 }
@@ -227,27 +85,6 @@ fn starts(seed: u64, count: usize) -> Vec<Start> {
         list.push(Start { pieces: game_start(&mut rng, 3 + index % 6) });
     }
     list
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum End {
-    Outcome(Outcome),
-    /// The game got to the limit of half moves. It is a draw.
-    Cap,
-}
-
-/// Plays one game. Returns the end and the number of half moves.
-fn play(start: &Start, rules: Rules, white: &Player, black: &Player, seed: u64, max_plies: u32) -> (End, u32) {
-    let mut state = State::new(&start.pieces, rules).expect("the arena makes valid starts");
-    for ply in 0..max_plies {
-        if let Some(end) = outcome(&mut state) {
-            return (End::Outcome(end), ply);
-        }
-        let player = if state.turn() == Color::White { white } else { black };
-        let result = player.choose_move(&mut state, mix(seed, ply as u64)).expect("the battle continues");
-        state.make(result.mv);
-    }
-    (outcome(&mut state).map_or(End::Cap, End::Outcome), max_plies)
 }
 
 struct Job {
@@ -296,16 +133,6 @@ impl Tally {
     }
 }
 
-fn option<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
-    args.iter()
-        .position(|arg| arg == name)
-        .map(|i| args.get(i + 1).unwrap_or_else(|| panic!("{name} needs a value")).as_str())
-}
-
-fn number(args: &[String], name: &str, default: u64) -> u64 {
-    option(args, name).map_or(default, |text| text.parse().unwrap_or_else(|_| panic!("{name} must be a number")))
-}
-
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (Some(a), Some(b)) = (option(&args, "--a"), option(&args, "--b")) else {
@@ -314,14 +141,14 @@ fn main() {
         );
         std::process::exit(2);
     };
-    let (a, b) = (parse_config(a), parse_config(b));
+    let (a_text, b_text) = (a, b);
+    let (a, b) = (Player::parse(a_text), Player::parse(b_text));
     let which = option(&args, "--rules").unwrap_or("all");
     assert!(["all", "standard", "modified"].contains(&which), "--rules must be all, standard, or modified");
     let positions = number(&args, "--positions", 20) as usize;
     let seed = number(&args, "--seed", 1);
     let max_plies = number(&args, "--max-plies", 300) as u32;
-    let default_threads = std::thread::available_parallelism().map_or(1, |n| n.get()) as u64;
-    let threads = number(&args, "--threads", default_threads).max(1) as usize;
+    let threads = threads(&args);
 
     let rule_sets: Vec<RuleSet> = rule_sets()
         .into_iter()
@@ -341,36 +168,21 @@ fn main() {
     }
 
     // Each game has its own seed, thus the result does not depend on the threads.
-    let next = AtomicUsize::new(0);
-    let results: Mutex<Vec<Option<(f64, End, u32)>>> = Mutex::new(vec![None; jobs.len()]);
-    std::thread::scope(|scope| {
-        for _ in 0..threads {
-            scope.spawn(|| {
-                loop {
-                    let index = next.fetch_add(1, Ordering::Relaxed);
-                    let Some(job) = jobs.get(index) else { break };
-                    let (white, black) = if job.a_is_white { (&a.player, &b.player) } else { (&b.player, &a.player) };
-                    let rules = rule_sets[job.rule_set].rules();
-                    let (end, plies) =
-                        play(&starts[job.start], rules, white, black, mix(seed, index as u64), max_plies);
-                    let winner = match end {
-                        End::Outcome(outcome) => outcome.winner(),
-                        End::Cap => None,
-                    };
-                    let points = match winner {
-                        None => 0.5,
-                        Some(color) if (color == Color::White) == job.a_is_white => 1.0,
-                        Some(_) => 0.0,
-                    };
-                    results.lock().expect("no thread panicked")[index] = Some((points, end, plies));
-                }
-            });
-        }
+    let results = parallel(jobs.len(), threads, |index| {
+        let job = &jobs[index];
+        let (white, black) = if job.a_is_white { (&a, &b) } else { (&b, &a) };
+        let rules = rule_sets[job.rule_set].rules();
+        let (end, plies) = play(&starts[job.start].pieces, rules, white, black, mix(seed, index as u64), max_plies);
+        let points = match end.and_then(Outcome::winner) {
+            None => 0.5,
+            Some(color) if (color == Color::White) == job.a_is_white => 1.0,
+            Some(_) => 0.0,
+        };
+        (points, end, plies)
     });
-    let results = results.into_inner().expect("no thread panicked");
 
-    println!("A: {}", a.text);
-    println!("B: {}", b.text);
+    println!("A: {a_text}");
+    println!("B: {b_text}");
     println!(
         "starts: chess and {positions} armies; rule sets: {} ({which}); seed {seed}; a draw at {max_plies} half moves",
         rule_sets.len()
@@ -384,7 +196,7 @@ fn main() {
     for (index, set) in rule_sets.iter().enumerate() {
         let mut tally = Tally::default();
         for (job, result) in jobs.iter().zip(&results) {
-            let (points, end, length) = result.expect("each game has a result");
+            let &(points, end, length) = result;
             if job.rule_set != index {
                 continue;
             }
@@ -395,12 +207,12 @@ fn main() {
             }
             plies += length as u64;
             ends[match end {
-                End::Outcome(Outcome::Checkmate { .. }) => 0,
-                End::Outcome(Outcome::Stalemate { .. }) => 1,
-                End::Outcome(Outcome::Rout { .. }) => 2,
-                End::Outcome(Outcome::Bare) => 3,
-                End::Outcome(Outcome::Clock) => 4,
-                End::Cap => 5,
+                Some(Outcome::Checkmate { .. }) => 0,
+                Some(Outcome::Stalemate { .. }) => 1,
+                Some(Outcome::Rout { .. }) => 2,
+                Some(Outcome::Bare) => 3,
+                Some(Outcome::Clock) => 4,
+                None => 5,
             }] += 1;
         }
         println!(

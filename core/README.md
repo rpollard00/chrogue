@@ -25,6 +25,8 @@ Run the commands from the `core/` directory, unless the command shows a differen
 - Derived piece values: `cargo run --release --bin ai -- values`
 - Speed of the AI for each level: `cargo run --release --bin ai -- speed`
 - Self-play match: `cargo run --release --bin arena -- --a level11 --b reference`. See "Self-play" below.
+- Mistakes of the levels: `cargo run --release --bin levels -- mistakes level1 level2 level3 level4`. See "Measurements of the levels" below.
+- A run floor by floor: `cargo run --release --bin levels -- floors --player level2 level1 level1 level1 level2 level2 level2 level2 level3`
 
 ## Structure
 
@@ -43,7 +45,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
   - `src/rng.rs`: A small seeded random number generator.
   - `src/fen.rs`: A reader for the piece field of a FEN string. The tests and the tools use it.
   - `tests/`: Perft counts, the six rule flags and the results of a battle (`relic_rules.rs`), other rules as data (`data_rules.rs` for the officers, `data_moves.rs` for pawns, en passant, castles, ranges, and first-move atoms), the Zobrist key, the derived values, and the tactics of the AI. `tests/property.rs` compares the engine with a naive move generator on 6000 random rule sets: random atoms for each kind (the pawn too) with random ranges, conditions, en passant properties, clock properties, promotions, and castle rows. It also walks the move tree of 1500 more rule sets, compares each `make` with a naive `make`, and makes sure that `unmake` gives back the state and the key.
-- `tools/`: The crate `chrogue-tools`. It has the binaries `perft` (a timer), `arena` (self-play matches), and `ai` (values, speed, and the move for one position). Its library has `src/reference.rs`, the reference AI, and `Player`, a level of the engine or the reference AI. The reference AI is the algorithm of the AI that the first version of the game had. It is a baseline opponent only. The engine and the game do not use it.
+- `tools/`: The crate `chrogue-tools`. It has the binaries `perft` (a timer), `arena` (self-play matches), `levels` (the mistakes of a level, and a run floor by floor), and `ai` (values, speed, and the move for one position). Its library has `src/reference.rs` (the reference AI), `Player` (a level of the engine or the reference AI, and the reader of a CONFIG), `src/armies.rs` (armies in the style of the game), and `src/cli.rs` (the command line of the binaries). The reference AI is the algorithm of the AI that the first version of the game had. It is a baseline opponent only. The engine and the game do not use it.
 
 ## Movement rules
 
@@ -315,6 +317,27 @@ The first three levels are for a player who knows only how the pieces move. They
 - A game that gets to `--max-plies` half moves (300) is a draw.
 
 The same arguments give the same output.
+
+### Measurements of the levels
+
+`levels` measures a level in battles between armies in the style of the game, with the rules of ordinary chess. A CONFIG is that of `arena`. The same arguments give the same output.
+
+`levels mistakes [--white CONFIG] [--games N] [--judge NODES] [--max-plies N] [--seed N] [--threads N] CONFIG...` counts the mistakes of each CONFIG.
+
+- The CONFIG plays Black, the enemy, in `--games` battles (100) against `--white` (`nodes=20000,noise=40`). The battles are on the armies of floors 2 to 6. Each CONFIG gets the same battles.
+- The judge is a search with `--judge` nodes (30000) and no flaw. It gives a score to the position before and after each move of Black.
+- `moves`: the moves that the judge scored. A move has no score if the judge sees a forced win or a forced loss before it, or if the move ends the battle.
+- `>=100`, `>=300`: the part of the moves that are this number of centipawns, or more, below the best move.
+- `hung`: the move is 250 centipawns or more below the best move, and the best reply captures an officer.
+- `lost`: after the move, the judge sees a forced win of White.
+- `not taken`: the best move captures an officer, and the move is 250 centipawns or more below it. The column also gives the number of such best moves.
+- `wins`, `draws`: the battles that Black won, and the draws.
+- A weak White (for example `--white level4,noise=600`) leaves more officers where Black can capture them, thus `not taken` has more data.
+
+`levels floors --player CONFIG [--games N] [--max-plies N] [--seed N] [--threads N]` and then 8 CONFIGs plays a run floor by floor. `--player` plays White in `--games` battles (100) on the armies of each floor, against the CONFIG of that floor. The output has the wins, the draws, and the losses of the player on each floor.
+
+- From floor 3, the army of the player has the value of the enemy army. On floors 1 and 2, the player has the base army, which has more value.
+- The battles have no relics and no boss traits, and the gold of a run does not set the army of the player. Thus the numbers compare levels. They do not tell if a person wins a run.
 
 ## Game layer and command server
 
