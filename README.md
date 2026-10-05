@@ -34,6 +34,12 @@ Run `web/run.sh`. It builds the game, serves `http://127.0.0.1:8000/`, and opens
 
 After a change of the client only, run `web/run.sh game`. Use `--no-open` to open the page yourself, or `--port 8001` for another port. `web/README.md` has the other local launch details.
 
+## Measure relics and armies
+
+Run `scripts/balance.sh`. It plays battles between AI levels, makes an HTML report, and opens the report in your browser. The files are `out/balance.json` and `out/balance.html`. Bun is necessary.
+
+The options of the tool `balance` come after the name of the script, for example `scripts/balance.sh --player 2-4` or `scripts/balance.sh --name pairs --floor 4,6,8 --relics none,each,pairs`. `--name` sets the name of the two files, and `--no-open` does not open the browser. `scripts/balance.sh --help` shows the options. `core/README.md` describes them ("Measurements of relics and armies").
+
 ## Run the tests
 
 - Core: In `core/`, run `cargo test --release`. `core/README.md` has the other commands: the lint, the speed of the engine, and the self-play matches of the AI.

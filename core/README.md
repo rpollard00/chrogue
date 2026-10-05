@@ -389,7 +389,7 @@ The tool prints one row for each relic set: the wins, the draws, and the losses 
 
 #### The report
 
-`tools/report/` makes one HTML file from the data: `bun install` one time, then `bun run report balance.json` in `tools/report/`. The file has the data in it and opens from the disk. `tools/report/README.md` describes its views, its statistics, and the TypeScript module that reads the data in a script.
+`scripts/balance.sh` in the root of the repository runs `balance` and then makes the report (`README.md`, "Measure relics and armies"). For a file of data that you have, `tools/report/` makes the HTML file: `bun install` one time, then `bun run report balance.json` in `tools/report/`. The file has the data in it and opens from the disk. `tools/report/README.md` describes its views, its statistics, and the TypeScript module that reads the data in a script.
 
 ## Game layer and command server
 
