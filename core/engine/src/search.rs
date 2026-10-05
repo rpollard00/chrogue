@@ -11,6 +11,10 @@
 //! the depth. The quiescence search does not stand pat while the side to move is in check, and
 //! it tests for a side with no legal move when the side has few men.
 //!
+//! A move out of check can give check. Thus a line has a limit of the half moves that a check
+//! adds (`CHECK_EXTENSION_PLIES`), and a line of the quiescence search has a limit of quiet
+//! moves out of check (`QUIET_EVASION_LINE`).
+//!
 //! The game has no rule for a repeated position, thus the search has none.
 //!
 //! A search with a node limit and no time limit is deterministic. The search always completes
@@ -121,6 +125,16 @@ const FEW_MEN: u32 = 3;
 /// the tree too large.
 const QUIET_EVASIONS: u32 = 2;
 
+/// The most quiet moves out of check in one line of the quiescence search. A quiet move out of
+/// check can give check, thus without this limit a line of such moves has no end. After the limit,
+/// a side in check is searched as a side that is not in check.
+const QUIET_EVASION_LINE: u32 = 6;
+
+/// A check makes the search one half move longer only in the first `2 * depth + this number`
+/// half moves of a line, where `depth` is the depth of the iteration. A move out of check can
+/// give check, thus without this limit a line of checks has no end.
+const CHECK_EXTENSION_PLIES: usize = 8;
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SearchResult {
     pub mv: Move,
@@ -156,6 +170,8 @@ struct Searcher {
     eval: Evaluator,
     options: SearchOptions,
     max_nodes: u64,
+    /// A check makes the search longer only at a ply less than this number.
+    extension_end: usize,
     deadline: Option<Instant>,
     table: Vec<Entry>,
     mask: usize,
@@ -214,6 +230,7 @@ impl Searcher {
             eval,
             options,
             max_nodes: limits.max_nodes,
+            extension_end: 0,
             deadline: limits.max_time.map(|time| Instant::now() + time),
             table: vec![EMPTY_ENTRY; size],
             mask: size - 1,
@@ -321,25 +338,35 @@ impl Searcher {
     }
 
     /// The quiescence search: a node with its count and the ends of the battle. `may_check` is
-    /// false if the move before cannot have given check (`movegen::may_give_check`).
-    fn quiesce(&mut self, state: &mut State, alpha: i32, beta: i32, ply: usize, may_check: bool) -> i32 {
+    /// false if the move before cannot have given check (`movegen::may_give_check`). `evasions`
+    /// is the number of quiet moves out of check that the line can still have.
+    fn quiesce(&mut self, state: &mut State, alpha: i32, beta: i32, ply: usize, may_check: bool, evasions: u32) -> i32 {
         if !self.enter() {
             return 0;
         }
         if let Some(score) = Self::end_score(state, ply) {
             return score;
         }
-        let checked = may_check && in_check(state, state.turn());
-        self.quiesce_moves(state, alpha, beta, ply, checked)
+        let checked = evasions > 0 && may_check && in_check(state, state.turn());
+        self.quiesce_moves(state, alpha, beta, ply, checked, evasions)
     }
 
     /// The moves of the quiescence search, after the node is counted and is not an end.
     ///
     /// A side that is not in check can stand pat, and searches its captures and promotions.
     /// A side in check cannot stand pat: it searches its moves (`QUIET_EVASIONS`), and with no
-    /// legal move it loses. A side with few men that is not in check also loses if it has no
+    /// legal move it loses. With `evasions` at 0, the caller gives `checked` as false for a side
+    /// in check. A side with few men that is not in check also loses if it has no
     /// legal move.
-    fn quiesce_moves(&mut self, state: &mut State, mut alpha: i32, beta: i32, ply: usize, checked: bool) -> i32 {
+    fn quiesce_moves(
+        &mut self,
+        state: &mut State,
+        mut alpha: i32,
+        beta: i32,
+        ply: usize,
+        checked: bool,
+        evasions: u32,
+    ) -> i32 {
         if ply >= MAX_PLY {
             return self.eval.evaluate(state);
         }
@@ -382,7 +409,7 @@ impl Searcher {
             }
             quiet_evasions += quiet as u32;
             let may_check = may_give_check(state, m, &undo);
-            let score = -self.quiesce(state, -beta, -alpha, ply + 1, may_check);
+            let score = -self.quiesce(state, -beta, -alpha, ply + 1, may_check, evasions - quiet as u32);
             state.unmake(m, undo);
             if self.stopped {
                 return 0;
@@ -423,13 +450,13 @@ impl Searcher {
         }
         let us = state.turn();
         let checked = may_check && in_check(state, us);
-        // A check makes the search one half move longer, thus the quiescence search never
-        // starts with a king in check.
-        if checked {
+        // A check makes the search one half move longer, thus the quiescence search starts
+        // with a king in check only after the limit of these extensions.
+        if checked && ply < self.extension_end {
             depth += 1;
         }
         if depth <= 0 {
-            return self.quiesce_moves(state, alpha, beta, ply, checked);
+            return self.quiesce_moves(state, alpha, beta, ply, checked, QUIET_EVASION_LINE);
         }
         if ply >= MAX_PLY - 1 {
             return self.eval.evaluate(state);
@@ -674,6 +701,7 @@ pub fn search(
         // Depth 1 always completes for each root move, thus the result is never a move that
         // the search did not look at. The node limit applies from depth 2.
         searcher.max_nodes = if depth == 1 { u64::MAX } else { limits.max_nodes };
+        searcher.extension_end = 2 * depth as usize + CHECK_EXTENSION_PLIES;
         // The best sum of score and bonus in this iteration.
         let mut best_sum = -INFINITE;
         let mut best_index = 0;
