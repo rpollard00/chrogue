@@ -1,4 +1,4 @@
-import { METRICS, METRIC_KEYS, findPairs, type Dataset, type Filter, type Metric, type Pair } from "./analysis";
+import { METRICS, METRIC_KEYS, findCombos, type Combo, type Dataset, type Filter, type Metric } from "./analysis";
 import { button, h } from "./dom";
 import { FILTER_AXES, VIEWS, filterOf, readHash, writeHash, type FilterAxis, type State, type ViewKey } from "./state";
 import { combosView } from "./views/combos";
@@ -12,7 +12,7 @@ export interface Context {
   state: State;
   filter: Filter;
   metric: Metric;
-  pairs: readonly Pair[];
+  combos: readonly Combo[];
   set(patch: Partial<State>): void;
 }
 
@@ -92,7 +92,7 @@ function header(ds: Dataset, openFile: () => void): HTMLElement {
 }
 
 export function mountReport(root: HTMLElement, ds: Dataset, openFile: () => void): () => void {
-  const pairs = findPairs(ds);
+  const combos = findCombos(ds);
   const views: Record<ViewKey, View> = {
     relics: relicsView(),
     levels: levelsView(),
@@ -100,7 +100,7 @@ export function mountReport(root: HTMLElement, ds: Dataset, openFile: () => void
     combos: combosView(),
     detail: detailView(),
   };
-  const shown = VIEWS.filter((view) => view !== "combos" || pairs.length > 0);
+  const shown = VIEWS.filter((view) => view !== "combos" || combos.length > 0);
   let state = readHash(location.hash, ds);
 
   const set = (patch: Partial<State>): void => {
@@ -166,7 +166,7 @@ export function mountReport(root: HTMLElement, ds: Dataset, openFile: () => void
     reset.disabled = FILTER_AXES.every((axis) => state.filters[axis] === null);
     for (const [key, tab] of tabs) tab.setAttribute("aria-selected", String(key === view));
     for (const key of shown) views[key].el.hidden = key !== view;
-    views[view].update({ ds, state, filter: filterOf(state), metric: METRICS[state.metric], pairs, set });
+    views[view].update({ ds, state, filter: filterOf(state), metric: METRICS[state.metric], combos, set });
   }
 
   const listeners = new AbortController();

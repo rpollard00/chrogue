@@ -15,7 +15,11 @@ export interface SortableTable<Row> {
   el: HTMLTableElement;
   setHead(key: string, node: Node): void;
   update(rows: readonly Row[], sort: Sort, rowClass?: (row: Row) => string): void;
+  shown(): number;
 }
+
+/** A table draws this number of rows at most. The CSV of a view has each row. */
+export const ROW_LIMIT = 500;
 
 const missing = (value: number | string): boolean => typeof value === "number" && Number.isNaN(value);
 
@@ -27,6 +31,7 @@ function compareMissingLast(a: number | string, b: number | string, descending: 
 
 export function sortableTable<Row>(columns: readonly Column<Row>[], onSort: (sort: Sort) => void): SortableTable<Row> {
   let current: Sort = { key: "", descending: false };
+  let shown = 0;
   const body = h("tbody");
   const heads = new Map<string, { th: HTMLTableCellElement; extra: HTMLElement }>();
   const row = h("tr");
@@ -54,12 +59,14 @@ export function sortableTable<Row>(columns: readonly Column<Row>[], onSort: (sor
       }
       const by = columns.find((column) => column.key === sort.key)?.sort;
       const sorted = by ? [...rows].sort((a, b) => compareMissingLast(by(a), by(b), sort.descending)) : rows;
+      shown = Math.min(sorted.length, ROW_LIMIT);
       body.replaceChildren(
-        ...sorted.map((item) =>
+        ...sorted.slice(0, ROW_LIMIT).map((item) =>
           h("tr", { class: rowClass?.(item) ?? "" }, ...columns.map((column) => h("td", { class: column.numeric ? "num" : "" }, column.cell(item)))),
         ),
       );
     },
+    shown: () => shown,
   };
 }
 

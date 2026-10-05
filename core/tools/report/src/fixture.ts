@@ -43,6 +43,7 @@ export interface FixtureOptions {
   traits: string[];
   singleCount: number;
   pairedCount: number;
+  tripleCount: number;
 }
 
 export const DEFAULT_FIXTURE: FixtureOptions = {
@@ -55,6 +56,7 @@ export const DEFAULT_FIXTURE: FixtureOptions = {
   traits: ["floor", "none"],
   singleCount: 12,
   pairedCount: 5,
+  tripleCount: 4,
 };
 
 export const PLANTED = {
@@ -62,6 +64,7 @@ export const PLANTED = {
   weak: "backpedal",
   synergy: ["forcedMarch", "longLeap"],
   antiSynergy: ["forcedMarch", "earlyPromo"],
+  triple: ["longLeap", "earlyPromo", "queenFlight"],
   fade: 0.5,
 } as const;
 
@@ -105,9 +108,10 @@ const FLOORS: Floor[] = [
   { number: 8, name: "The Black King", level: 3, budget: 39, traits: 2, boss: true },
 ];
 
-const PAIR_BONUS: Record<string, number> = {
+const SET_BONUS: Record<string, number> = {
   [[...PLANTED.synergy].sort().join("+")]: 1.2,
   [[...PLANTED.antiSynergy].sort().join("+")]: -0.5,
+  [[...PLANTED.triple].sort().join("+")]: 1.5,
 };
 
 function mix(...parts: number[]): number {
@@ -152,7 +156,12 @@ function traitPenalty(spec: string, floor: Floor): number {
 function loadoutStrength(keys: string[], playerLevel: number): number {
   const fade = 1 / (1 + PLANTED.fade * Math.max(0, playerLevel - 2));
   const parts = keys.reduce((sum, key) => sum + (RELICS.find((entry) => entry.key === key)?.strength ?? 0), 0);
-  return (parts + (PAIR_BONUS[[...keys].sort().join("+")] ?? 0)) * fade;
+  let bonus = 0;
+  for (let mask = 1; mask < 1 << keys.length; mask++) {
+    const subset = keys.filter((_, bit) => mask & (1 << bit));
+    bonus += SET_BONUS[subset.sort().join("+")] ?? 0;
+  }
+  return (parts + bonus) * fade;
 }
 
 export function generateFixture(overrides: Partial<FixtureOptions> = {}): BalanceFile {
@@ -164,6 +173,14 @@ export function generateFixture(overrides: Partial<FixtureOptions> = {}): Balanc
       const a = singles[i];
       const b = singles[j];
       if (a !== undefined && b !== undefined) loadouts.push([a, b]);
+    }
+  }
+  for (let i = 0; i < options.tripleCount; i++) {
+    for (let j = i + 1; j < options.tripleCount; j++) {
+      for (let k = j + 1; k < options.tripleCount; k++) {
+        const set = [singles[i], singles[j], singles[k]].filter((key) => key !== undefined);
+        if (set.length === 3) loadouts.push(set);
+      }
     }
   }
   const maxPlies = 300;

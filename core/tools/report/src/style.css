@@ -669,6 +669,27 @@ table.heat {
   font-variant-numeric: tabular-nums;
 }
 
+.matrix {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.matrix .heat thead th {
+  max-width: none;
+  padding: 6px 0;
+  text-align: left;
+  white-space: nowrap;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.matrix .heat td {
+  min-width: 50px;
+  height: 30px;
+  padding: 0 4px;
+  font-size: 12px;
+}
+
 .heat td:hover,
 .heat td:focus-visible {
   outline: 2px solid var(--text);

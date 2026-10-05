@@ -39,7 +39,7 @@ A click on a filter value when the filter has all values keeps only that value. 
 - Relics: Each loadout with its paired difference from the baseline. A solid dot shows a 95% interval that excludes zero.
 - Levels: The loadout for each player level and enemy level. If each enemy has the level of its floor, the columns are the floors.
 - Floors: The metric for each floor, for the baseline and for a maximum of three loadouts.
-- Combos: Each pair of relics against the sum of its parts. The tab shows only when the data has a pair, each of its two relics alone, and the loadout with no relics.
+- Combos: Each set of two or more relics against the sum of its parts. A selector shows the sets of one size. The tab shows only when the data has such a set, each of its relics alone, and the loadout with no relics. The matrix shows the pairs.
 - Loadout detail: How the battles of a loadout end, their length, and the cells.
 
 ## Statistics
@@ -47,7 +47,9 @@ A click on a filter value when the filter has all values keeps only that value. 
 - A mean of a selection has a 95% interval: the Wilson interval for a rate, and the normal interval for the other metrics. This interval takes the games as independent.
 - Game `i` of each cell with the same floor and army has the same run seed. Thus a difference between two loadouts is the mean of the differences game by game. The same applies to the player level, the enemy level, and the enemy traits.
 - The standard error of a difference comes from the means of the run seeds, not from each game. As a result, more cells with the same run seeds do not make an interval narrower than the data permits.
-- The synergy of a pair is `x(a+b) − x(a) − x(b) + x(none)` game by game. A positive value means that the pair is worth more than the sum of its parts.
+- The synergy of a set is `x(set) − Σ x(relic) + (size − 1) x(none)` game by game: the set minus the sum of its relics alone. For a pair, this is `x(a+b) − x(a) − x(b) + x(none)`. A positive value means that the set is worth more than the sum of its parts.
+- "Beyond smaller sets" is for a set of three or more relics. It is the part of the set that no smaller set of its relics explains: the sum of `x` for each subset of the set, with a minus sign for a subset that lacks an odd number of the relics. For a set of three, this is `x(abc) − x(ab) − x(ac) − x(bc) + x(a) + x(b) + x(c) − x(none)`. The data must have each subset. A large synergy with a small value here means that a pair in the set gives the synergy.
+- A table shows the first 500 rows of its sort. The CSV of the view has each row.
 
 ## Use the module in a script
 
@@ -75,4 +77,4 @@ for (const { label, diff } of top) {
 
 Save the script in this folder and run it with `bun <script>`.
 
-A filter holds indexes into the axes, not the values of the axes. `selectCells` and `groupCells` give the cells of a selection. `summarize`, `pairedDifference`, `synergy`, and `contrast` give the statistics. `toCsv` writes a table.
+A filter holds indexes into the axes, not the values of the axes. `selectCells` and `groupCells` give the cells of a selection. `summarize`, `pairedDifference`, `synergy`, `interaction`, and `contrast` give the statistics. `findCombos` gives the sets that have their parts in the data. `toCsv` writes a table.

@@ -20,6 +20,7 @@ export interface State {
   filters: Record<FilterAxis, number[] | null>;
   sort: Sort;
   comboSort: Sort;
+  comboSize: number | null;
   query: string;
   heat: "value" | "diff";
 }
@@ -36,6 +37,7 @@ export function defaultState(ds: Dataset): State {
     filters: { floor: null, player: null, enemy: null, army: null, traits: null },
     sort: { key: "diff", descending: true },
     comboSort: { key: "synergy", descending: true },
+    comboSize: null,
     query: "",
     heat: "diff",
   };
@@ -97,6 +99,7 @@ export function readHash(hash: string, ds: Dataset): State {
     },
     sort: sortOf(params.get("sort"), base.sort),
     comboSort: sortOf(params.get("combosort"), base.comboSort),
+    comboSize: Number(params.get("combosize")) >= 2 ? Number(params.get("combosize")) : base.comboSize,
     query: params.get("q") ?? "",
     heat: heat === "value" ? "value" : base.heat,
   };
@@ -117,6 +120,7 @@ export function writeHash(state: State, ds: Dataset): string {
   for (const axis of FILTER_AXES) put(axis, state.filters[axis]?.join(".") ?? "", "");
   put("sort", sort(state.sort), sort(base.sort));
   put("combosort", sort(state.comboSort), sort(base.comboSort));
+  put("combosize", String(state.comboSize ?? ""), "");
   put("q", state.query, "");
   put("heat", state.heat, base.heat);
   const text = params.toString();

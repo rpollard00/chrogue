@@ -3,7 +3,8 @@ import {
   METRICS,
   contrast,
   excludesZero,
-  findPairs,
+  findCombos,
+  interaction,
   formatDiff,
   formatValue,
   groupCells,
@@ -13,6 +14,7 @@ import {
   parseBalanceText,
   selectCells,
   summarize,
+  sumOfParts,
   synergy,
   toCsv,
   type Dataset,
@@ -46,7 +48,7 @@ function messageOf(input: unknown): string {
 
 describe("parseBalance", () => {
   test("reads each cell of the grid", () => {
-    expect(ds.cells.length).toBe(8 * 4 * 2 * 2 * 2 * 23);
+    expect(ds.cells.length).toBe(8 * 4 * 2 * 2 * 2 * 27);
     expect(ds.labels.relics[none]).toBe("No relics");
     expect(ds.labels.enemy).toEqual(["Level of the floor", "L5 Sergeant"]);
   });
@@ -236,35 +238,65 @@ describe("paired difference", () => {
 });
 
 describe("synergy", () => {
-  const pairs = findPairs(ds);
-  const pairOf = (keys: readonly string[]) => {
-    const pair = pairs.find((entry) => entry.pair === loadout(...keys));
-    if (!pair) throw new Error(`no pair ${keys.join("+")}`);
-    return pair;
+  const combos = findCombos(ds);
+  const comboOf = (keys: readonly string[]) => {
+    const combo = combos.find((entry) => entry.loadout === loadout(...keys));
+    if (!combo) throw new Error(`no set ${keys.join("+")}`);
+    return combo;
   };
+  const mean = (index: number) => summarize(selectCells(ds, { relics: [index] }), METRICS.score).mean;
 
-  test("finds each pair that has its parts in the data", () => {
-    expect(pairs.length).toBe(10);
-    expect(pairs.every((pair) => pair.none === none)).toBe(true);
+  test("finds each set that has its parts in the data", () => {
+    expect(combos.filter((combo) => combo.size === 2).length).toBe(10);
+    expect(combos.filter((combo) => combo.size === 3).length).toBe(4);
+    expect(combos.every((combo) => combo.none === none && combo.parts.length === combo.size)).toBe(true);
+    expect(combos.every((combo) => combo.subsets?.length === 2 ** combo.size - 1)).toBe(true);
     const noParts = load(generateFixture({ games: 2, floors: [1], players: [2], singleCount: 2, pairedCount: 2 }));
     noParts.axes.relics[1] = ["sidestep"];
-    expect(findPairs(noParts)).toEqual([]);
+    expect(findCombos(noParts)).toEqual([]);
   });
 
-  test("is x(a+b) − x(a) − x(b) + x(none)", () => {
-    const pair = pairOf(PLANTED.synergy);
-    const value = synergy(ds, { pair, metric: METRICS.score });
-    const mean = (index: number) => summarize(selectCells(ds, { relics: [index] }), METRICS.score).mean;
-    expect(value.mean).toBeCloseTo(mean(pair.pair) - mean(pair.a) - mean(pair.b) + mean(pair.none), 9);
+  test("a set of three with no pair of its relics in the data has a synergy and no interaction", () => {
+    const file = generateFixture({ games: 2, floors: [1], players: [2], singleCount: 3, pairedCount: 0, tripleCount: 3 });
+    const [triple] = findCombos(load(file));
+    expect(triple?.size).toBe(3);
+    expect(triple?.subsets).toBeNull();
+    if (triple) expect(interaction(load(file), { combo: triple, metric: METRICS.score })).toBeNull();
   });
 
-  test("finds the planted pair above its parts and the planted pair below its parts", () => {
-    const up = synergy(ds, { pair: pairOf(PLANTED.synergy), metric: METRICS.score });
-    const down = synergy(ds, { pair: pairOf(PLANTED.antiSynergy), metric: METRICS.score });
+  test("of a pair is x(a+b) − x(a) − x(b) + x(none), and the interaction is the same", () => {
+    const pair = comboOf(PLANTED.synergy);
+    const value = synergy(ds, { combo: pair, metric: METRICS.score });
+    const [a = 0, b = 0] = pair.parts;
+    expect(value.mean).toBeCloseTo(mean(pair.loadout) - mean(a) - mean(b) + mean(none), 9);
+    expect(interaction(ds, { combo: pair, metric: METRICS.score })?.mean).toBeCloseTo(value.mean, 9);
+  });
+
+  test("of a set of three is the set minus its three relics alone plus two times no relics", () => {
+    const triple = comboOf(PLANTED.triple);
+    const parts = triple.parts.reduce((sum, part) => sum + mean(part), 0);
+    expect(synergy(ds, { combo: triple, metric: METRICS.score }).mean).toBeCloseTo(mean(triple.loadout) - parts + 2 * mean(none), 9);
+    expect(sumOfParts(ds, { combo: triple, metric: METRICS.score }).mean).toBeCloseTo(parts - 3 * mean(none), 9);
+  });
+
+  test("the interaction of a set of three takes away its three pairs", () => {
+    const triple = comboOf(PLANTED.triple);
+    const [a = "", b = "", c = ""] = PLANTED.triple;
+    const pairs = mean(loadout(a, b)) + mean(loadout(a, c)) + mean(loadout(b, c));
+    const singles = triple.parts.reduce((sum, part) => sum + mean(part), 0);
+    const value = interaction(ds, { combo: triple, metric: METRICS.score });
+    expect(value?.mean).toBeCloseTo(mean(triple.loadout) - pairs + singles - mean(none), 9);
+  });
+
+  test("finds the planted sets above their parts and the planted pair below its parts", () => {
+    const up = synergy(ds, { combo: comboOf(PLANTED.synergy), metric: METRICS.score });
+    const down = synergy(ds, { combo: comboOf(PLANTED.antiSynergy), metric: METRICS.score });
     expect(up.lo).toBeGreaterThan(0);
     expect(down.hi).toBeLessThan(0);
-    const ranked = pairs.map((pair) => ({ pair, mean: synergy(ds, { pair, metric: METRICS.score }).mean })).sort((a, b) => b.mean - a.mean);
-    expect(ranked[0]?.pair).toEqual(pairOf(PLANTED.synergy));
+    const beyond = (combo: (typeof combos)[number]) => interaction(ds, { combo, metric: METRICS.score })?.mean ?? NaN;
+    const triples = combos.filter((combo) => combo.size === 3).sort((x, y) => beyond(y) - beyond(x));
+    expect(triples[0]).toEqual(comboOf(PLANTED.triple));
+    expect(interaction(ds, { combo: comboOf(PLANTED.triple), metric: METRICS.score })?.lo).toBeGreaterThan(0);
   });
 
   test("a contrast with one term is the mean of that value", () => {

@@ -206,8 +206,9 @@ export function relicsView(): View {
       if (search.value !== next.state.query) search.value = next.state.query;
       const query = next.state.query.trim().toLowerCase();
       const visible = rows.filter((row) => row.search.includes(query));
-      count.textContent = `${visible.length} of ${rows.length} loadouts`;
       table.update(visible, next.state.sort, (row) => (row.effect.loadout === next.state.loadout ? "chosen" : ""));
+      const first = table.shown() < visible.length ? `The first ${table.shown()} of ` : "";
+      count.textContent = `${first}${visible.length} of ${rows.length} loadouts`;
     },
   };
 }

@@ -565,36 +565,83 @@ export function pairedDifference(ds: Dataset, query: DifferenceQuery): Estimate 
   });
 }
 
-export interface Pair {
-  pair: number;
-  a: number;
-  b: number;
+export interface Combo {
+  loadout: number;
+  size: number;
+  parts: readonly number[];
   none: number;
+  subsets: readonly Term[] | null;
 }
 
-export function findPairs(ds: Dataset): Pair[] {
-  const index = new Map(ds.axes.relics.map((keys, i) => [[...keys].sort().join("+"), i]));
+/**
+ * The loadouts with two or more relics that have each of their relics alone and the loadout with no relics in the
+ * data. `subsets` has each smaller set of the relics with its sign of inclusion and exclusion, or null if the data
+ * does not have each of them.
+ */
+export function findCombos(ds: Dataset): Combo[] {
+  const key = (keys: readonly string[]): string => [...keys].sort().join("+");
+  const index = new Map(ds.axes.relics.map((keys, i) => [key(keys), i]));
   const none = index.get("");
   if (none === undefined) return [];
-  return ds.axes.relics.flatMap((keys, pair) => {
-    const [first, second] = keys;
-    if (keys.length !== 2 || first === undefined || second === undefined) return [];
-    const a = index.get(first);
-    const b = index.get(second);
-    return a === undefined || b === undefined ? [] : [{ pair, a, b, none }];
+  return ds.axes.relics.flatMap((keys, loadout) => {
+    const size = keys.length;
+    if (size < 2) return [];
+    const parts = keys.map((relic) => index.get(relic));
+    if (!parts.every((part) => part !== undefined)) return [];
+    let subsets: Term[] | null = [];
+    for (let mask = 0; mask < (1 << size) - 1 && subsets; mask++) {
+      const subset = keys.filter((_, bit) => mask & (1 << bit));
+      const at = index.get(key(subset));
+      if (at === undefined) subsets = null;
+      else subsets.push({ index: at, weight: (size - subset.length) % 2 === 0 ? 1 : -1 });
+    }
+    return [{ loadout, size, parts, none, subsets }];
   });
 }
 
-export function synergy(ds: Dataset, query: { pair: Pair; filter?: Filter; metric: Metric }): Estimate {
-  const { pair } = query;
+export interface ComboQuery {
+  combo: Combo;
+  filter?: Filter;
+  metric: Metric;
+}
+
+/** The set minus the sum of its relics alone, game by game: `x(set) − Σ x(relic) + (size − 1) x(none)`. */
+export function synergy(ds: Dataset, query: ComboQuery): Estimate {
+  const { combo } = query;
   return contrast(ds, {
     axis: "relics",
     terms: [
-      { index: pair.pair, weight: 1 },
-      { index: pair.a, weight: -1 },
-      { index: pair.b, weight: -1 },
-      { index: pair.none, weight: 1 },
+      { index: combo.loadout, weight: 1 },
+      ...combo.parts.map((index) => ({ index, weight: -1 })),
+      { index: combo.none, weight: combo.size - 1 },
     ],
+    filter: query.filter,
+    metric: query.metric,
+  });
+}
+
+/** The sum of the relics alone, each as a difference from no relics: `Σ x(relic) − size x(none)`. */
+export function sumOfParts(ds: Dataset, query: ComboQuery): Estimate {
+  const { combo } = query;
+  return contrast(ds, {
+    axis: "relics",
+    terms: [...combo.parts.map((index) => ({ index, weight: 1 })), { index: combo.none, weight: -combo.size }],
+    filter: query.filter,
+    metric: query.metric,
+  });
+}
+
+/**
+ * The part of the set that no smaller set of its relics explains: the sum of `x` over each subset, with a minus
+ * sign where the subset lacks an odd number of relics. For a pair, this is the synergy. Null if the data does not
+ * have each subset.
+ */
+export function interaction(ds: Dataset, query: ComboQuery): Estimate | null {
+  const { combo } = query;
+  if (!combo.subsets) return null;
+  return contrast(ds, {
+    axis: "relics",
+    terms: [{ index: combo.loadout, weight: 1 }, ...combo.subsets],
     filter: query.filter,
     metric: query.metric,
   });
