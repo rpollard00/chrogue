@@ -339,7 +339,8 @@ fn a_move_list_has_no_limit_and_legal_moves_appends_to_it() {
     // The search gives a move. (`choose_move` gives none: Black has no piece, thus the battle
     // has ended by rout.)
     let (limits, variant) = (chrogue_engine::Limits::nodes(2000), chrogue_engine::EvalVariant::Derived);
-    assert!(chrogue_engine::search(&mut state, &limits, variant, chrogue_engine::Level::OPTIONS, 0, 1).is_some());
+    let (options, flaws) = (chrogue_engine::Level::OPTIONS, chrogue_engine::Flaws::NONE);
+    assert!(chrogue_engine::search(&mut state, &limits, variant, options, flaws, 1).is_some());
 
     // A list goes back from the heap when it gets small.
     list.retain(|m| m.from == 0);

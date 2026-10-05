@@ -55,6 +55,43 @@ impl Limits {
     }
 }
 
+/// The flaws of a search: the ways that it plays worse on purpose. Each random number comes
+/// from the seed of the search, thus the same seed gives the same flaws.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Flaws {
+    /// Each root move gets a random bonus from 0 to this number of centipawns. The search
+    /// selects the move with the best sum of score and bonus. The bonus of a move comes from
+    /// the seed and from the move only.
+    pub noise_cp: i32,
+    /// The chance in percent, from 0 to 100, that the search does not see a root move. Each
+    /// legal move of the root has this chance, and the search selects from the moves that it
+    /// sees. If it sees no move, it sees each move. The search always sees a legal capture of
+    /// the royal king.
+    pub overlook: u32,
+    /// The chance in percent, from 0 to 100, that the search is careless. A search is careless
+    /// for all its root moves or for none. A careless search gives each root move the score of
+    /// the position right after the move. That score is the score of an end of the battle (a
+    /// rout, bare kings, or the clock), or the evaluation. A careless search does not look at
+    /// the reply of the opponent. It does one iteration, and the depth limit and the node
+    /// limit do not apply. The noise and the overlook apply.
+    pub careless: u32,
+}
+
+impl Flaws {
+    /// No flaw.
+    pub const NONE: Flaws = Flaws { noise_cp: 0, overlook: 0, careless: 0 };
+
+    /// Noise and no other flaw.
+    pub const fn noise(noise_cp: i32) -> Flaws {
+        Flaws { noise_cp, ..Flaws::NONE }
+    }
+}
+
+/// The salts for the random numbers of `Flaws::overlook` and `Flaws::careless`. The code of a
+/// root move is less than `1 << 24`, thus a salt is never the code of a move.
+const OVERLOOK_SALT: u64 = 1 << 32;
+const CARELESS_SALT: u64 = 2 << 32;
+
 /// The parts of the search that can be off.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct SearchOptions {
@@ -228,6 +265,14 @@ impl Searcher {
             return Some(if has_legal_move(state) { 0 } else { -MATE + ply as i32 });
         }
         None
+    }
+
+    /// The score of a root move at a glance, for the side that made it: a node with its count
+    /// and the ends of the battle, and then the evaluation. The state is the position right
+    /// after the move.
+    fn glance(&mut self, state: &mut State) -> i32 {
+        self.nodes += 1;
+        -Self::end_score(state, 1).unwrap_or_else(|| self.eval.evaluate(state))
     }
 
     /// Gives each move a number for the order of the search: the move of the table, then the
@@ -570,19 +615,20 @@ struct RootMove {
 /// Searches for the best move of the side that has the move. Returns None if the side has no
 /// legal move. The state is the same after the call.
 ///
-/// `noise_cp` makes the search weaker: each root move gets a random bonus from 0 to `noise_cp`
-/// centipawns, and the search selects the move with the best sum of score and bonus. The
-/// bonus of a move comes from `seed` and from the move only.
+/// `flaws` makes the search weaker (see `Flaws`). Each random number of the flaws comes from
+/// `seed`. With `Flaws::NONE`, each seed gives the same result.
 pub fn search(
     state: &mut State,
     limits: &Limits,
     variant: EvalVariant,
     options: SearchOptions,
-    noise_cp: i32,
+    flaws: Flaws,
     seed: u64,
 ) -> Option<SearchResult> {
     let us = state.turn();
     let mut searcher = Searcher::new(state, limits, variant, options);
+    let overlook_seed = mix(seed, OVERLOOK_SALT);
+    let careless = mix(seed, CARELESS_SALT) % 100 < flaws.careless as u64;
 
     let mut list = MoveList::new();
     pseudo_moves(state, us, false, &mut list);
@@ -590,6 +636,7 @@ pub fn search(
     let scores = score_slots(&mut inline, &mut heap, list.len());
     searcher.score_moves(state, &list, scores, Move::NULL, 0);
     let mut roots: Vec<RootMove> = Vec::new();
+    let mut overlooked: Vec<RootMove> = Vec::new();
     for i in 0..list.len() {
         let m = Searcher::pick(&mut list, scores, i);
         let undo = state.make(m);
@@ -605,14 +652,25 @@ pub fn search(
                 | (m.to as u64) << 8
                 | (m.special as u64) << 4
                 | m.promo.map_or(7, |kind| kind as u64);
-            let bonus = if noise_cp > 0 { (mix(seed, code) % (noise_cp as u64 + 1)) as i32 } else { 0 };
-            roots.push(RootMove { mv: m, bonus });
+            let bonus = if flaws.noise_cp > 0 { (mix(seed, code) % (flaws.noise_cp as u64 + 1)) as i32 } else { 0 };
+            let root = RootMove { mv: m, bonus };
+            if mix(overlook_seed, code) % 100 < flaws.overlook as u64 {
+                overlooked.push(root);
+            } else {
+                roots.push(root);
+            }
         }
+    }
+    // A search that overlooks each legal move sees all of them.
+    if roots.is_empty() {
+        roots = overlooked;
     }
     let first = roots.first()?.mv;
     let mut result = SearchResult { mv: first, score: 0, depth: 0, nodes: 0, pv: vec![first] };
 
-    for depth in 1..=limits.max_depth.max(1) as i32 {
+    // A careless search does one iteration.
+    let max_depth = if careless { 1 } else { limits.max_depth.max(1) as i32 };
+    for depth in 1..=max_depth {
         // Depth 1 always completes for each root move, thus the result is never a move that
         // the search did not look at. The node limit applies from depth 2.
         searcher.max_nodes = if depth == 1 { u64::MAX } else { limits.max_nodes };
@@ -625,11 +683,15 @@ pub fn search(
             // The move is better than the best move if its score is more than this number.
             let floor = if index == 0 { -INFINITE } else { best_sum - root.bonus };
             let mut score = -INFINITE;
-            if index > 0 {
-                score = -searcher.negamax(state, depth - 1, -floor - 1, -floor, 1, true, true);
-            }
-            if (index == 0 || score > floor) && !searcher.stopped {
-                score = -searcher.negamax(state, depth - 1, -INFINITE, -floor, 1, true, true);
+            if careless {
+                score = searcher.glance(state);
+            } else {
+                if index > 0 {
+                    score = -searcher.negamax(state, depth - 1, -floor - 1, -floor, 1, true, true);
+                }
+                if (index == 0 || score > floor) && !searcher.stopped {
+                    score = -searcher.negamax(state, depth - 1, -INFINITE, -floor, 1, true, true);
+                }
             }
             state.unmake(root.mv, undo);
             if searcher.stopped {

@@ -3,7 +3,7 @@
 
 pub mod reference;
 
-use chrogue_engine::{EvalVariant, Level, Limits, SearchOptions, SearchResult, State, choose_move};
+use chrogue_engine::{EvalVariant, Flaws, Level, Limits, SearchOptions, SearchResult, State, choose_move};
 
 /// A player of the self-play tool and of `ai speed`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -25,7 +25,7 @@ impl Player {
         let level = Level {
             name: "reference",
             limits: Limits::depth(2),
-            noise_cp: 0,
+            flaws: Flaws::NONE,
             eval: EvalVariant::Derived,
             options: SearchOptions::NONE,
         };
@@ -35,7 +35,7 @@ impl Player {
     /// The move of the player for the side that has the move. The state is the same after the call.
     pub fn choose_move(&self, state: &mut State, seed: u64) -> Option<SearchResult> {
         if self.reference {
-            reference::choose_move(state, self.level.limits.max_depth, self.level.noise_cp, seed)
+            reference::choose_move(state, self.level.limits.max_depth, self.level.flaws.noise_cp, seed)
         } else {
             choose_move(state, &self.level, seed)
         }

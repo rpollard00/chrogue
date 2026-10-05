@@ -8,7 +8,7 @@ mod common;
 
 use chrogue_engine::fen::{KIWIPETE, START, square};
 use chrogue_engine::{
-    Color, EvalVariant, Kind, Level, Limits, MATE, MATE_BOUND, Move, MoveList, Outcome, Rules, SearchOptions,
+    Color, EvalVariant, Flaws, Kind, Level, Limits, MATE, MATE_BOUND, Move, MoveList, Outcome, Rules, SearchOptions,
     SearchResult, SideRules, Special, State, choose_move, legal_moves, outcome, search,
 };
 use common::{from_fen, legal};
@@ -79,16 +79,23 @@ fn win_in(plies: i32) -> i32 {
     MATE - plies
 }
 
-/// The search of the levels to a fixed depth, with no node limit and no noise.
+/// The search of the levels to a fixed depth, with no node limit and no flaw.
 fn search_depth(state: &mut State, depth: u32) -> SearchResult {
-    search(state, &Limits::depth(depth), EvalVariant::Derived, Level::OPTIONS, 0, 1).expect("a legal move")
+    search(state, &Limits::depth(depth), EvalVariant::Derived, Level::OPTIONS, Flaws::NONE, 1).expect("a legal move")
 }
 
-/// A weak level with noise: a depth limit of 1, a node limit of 300, and a noise of 150 centipawns.
+/// A level with a node limit and flaws.
+fn flawed(nodes: u64, flaws: Flaws) -> Level {
+    let mut level = Level::nodes("flawed", nodes);
+    level.flaws = flaws;
+    level
+}
+
+/// A level with noise and no other flaw: a depth limit of 1, a node limit of 300, and a noise
+/// of 150 centipawns.
 fn noisy() -> Level {
-    let mut level = Level::nodes("noisy", 300);
+    let mut level = flawed(300, Flaws::noise(150));
     level.limits.max_depth = 1;
-    level.noise_cp = 150;
     level
 }
 
@@ -395,6 +402,13 @@ fn the_capture_of_the_king_is_a_win() {
         assert_eq!(squares_of(result.mv), mv("e1", "e8"));
         assert_eq!(result.score, win_in(1));
     }
+    // A search with flaws does not overlook the capture, and it does not prefer a move with noise.
+    let level = flawed(300, Flaws { noise_cp: 150, overlook: 90, careless: 50 });
+    for seed in 0..40 {
+        let result = choose_move(&mut state, &level, seed).unwrap();
+        assert_eq!(squares_of(result.mv), mv("e1", "e8"), "seed {seed}");
+        assert_eq!(result.score, win_in(1));
+    }
 }
 
 #[test]
@@ -464,7 +478,7 @@ fn a_level_searches_each_root_move_before_it_stops() {
             let mut state = from_fen(fen, turn, standard());
             for seed in 0..4 {
                 let result = choose_move(&mut state, &level, seed).unwrap();
-                let full = search(&mut state, &Limits::depth(1), level.eval, level.options, level.noise_cp, seed);
+                let full = search(&mut state, &Limits::depth(1), level.eval, level.options, level.flaws, seed);
                 assert_eq!(Some(result.mv), full.map(|full| full.mv), "{fen} {turn:?} seed {seed}");
                 assert_eq!(result.depth, 1);
                 longer += (result.nodes > level.limits.max_nodes) as u32;
@@ -541,4 +555,80 @@ fn the_search_gives_no_move_when_the_side_has_no_legal_move() {
     for level in [noisy(), Level::strongest()] {
         assert_eq!(choose_move(&mut state, &level, 1), None);
     }
+}
+
+// ---- The flaws ----
+
+#[test]
+fn a_search_that_overlooks_each_root_move_sees_all_of_them() {
+    // With an overlook of 100 the search sees no root move, thus it sees each of them. The
+    // result is that of the same search with no overlook.
+    let fen = "r2q1rk1/pp2bppp/2n1bn2/2pp4/3P4/2N1PN2/PP2BPPP/R1BQ1RK1";
+    let noise = Flaws::noise(150);
+    for seed in 0..8 {
+        let sees_all = choose_move(&mut from_fen(fen, WHITE, standard()), &flawed(2_000, noise), seed).unwrap();
+        let level = flawed(2_000, Flaws { overlook: 100, ..noise });
+        let overlooks_all = choose_move(&mut from_fen(fen, WHITE, standard()), &level, seed).unwrap();
+        assert_eq!(overlooks_all, sees_all, "seed {seed}");
+    }
+}
+
+#[test]
+fn an_overlook_of_50_misses_a_free_queen_for_about_half_of_the_seeds() {
+    // Rxd5 is the only move that wins a piece. The search plays it when it sees it
+    // (`a_free_queen_is_captured`), thus each other move shows that the search did not see it.
+    let mut state = from_fen("6k1/5ppp/8/3q4/8/8/3R1PPP/6K1", WHITE, standard());
+    let moves = legal(&mut state);
+    let level = flawed(5_000, Flaws { overlook: 50, ..Flaws::NONE });
+    let mut missed = 0;
+    for seed in 0..200 {
+        let result = choose_move(&mut state, &level, seed).unwrap();
+        assert!(moves.contains(&result.mv), "seed {seed} gives {:?}, which is not legal", result.mv);
+        missed += (squares_of(result.mv) != mv("d2", "d5")) as u32;
+    }
+    assert!(missed > 60 && missed < 140, "the search missed the capture for {missed} of 200 seeds");
+}
+
+#[test]
+fn a_careless_search_captures_a_defended_pawn_with_the_queen() {
+    // Qxd5 wins a pawn in the position right after the move. The reply exd5 wins the queen
+    // (`a_defended_pawn_is_not_captured_by_the_queen`), and a careless search does not look at it.
+    let fen = "6k1/5ppp/4p3/3p4/8/8/3Q1PPP/6K1";
+    let level = flawed(5_000, Flaws { careless: 100, ..Flaws::NONE });
+    let result = choose_move(&mut from_fen(fen, WHITE, standard()), &level, 1).unwrap();
+    assert_eq!(squares_of(result.mv), mv("d2", "d5"));
+    assert_eq!((result.depth, &result.pv), (1, &vec![result.mv]));
+    let result = choose_move(&mut from_fen(fen, WHITE, standard()), &flawed(5_000, Flaws::NONE), 1).unwrap();
+    assert_ne!(squares_of(result.mv), mv("d2", "d5"));
+}
+
+#[test]
+fn a_careless_search_still_wins_by_rout() {
+    // Rxb4 captures the last piece of Black (`the_capture_of_the_last_piece_wins_by_rout`). The
+    // end of the battle is in the position right after the move, thus a careless search sees it.
+    let mut state = from_fen("8/8/8/2k5/Rn6/8/8/6K1", WHITE, standard());
+    let level = flawed(1_000, Flaws { careless: 100, ..Flaws::NONE });
+    let result = choose_move(&mut state, &level, 1).unwrap();
+    assert_eq!(squares_of(result.mv), mv("a4", "b4"));
+    assert_eq!(result.score, win_in(1));
+    assert_eq!(outcome_after(&state, &result), Some(Outcome::Rout { winner: WHITE }));
+    // A careless search counts one node for each root move.
+    assert_eq!(result.nodes, legal(&mut state).len() as u64);
+}
+
+#[test]
+fn the_same_position_flaws_and_seed_give_the_same_result() {
+    let fen = "r2q1rk1/pp2bppp/2n1bn2/2pp4/3P4/2N1PN2/PP2BPPP/R1BQ1RK1";
+    let level = flawed(2_000, Flaws { noise_cp: 50, overlook: 50, careless: 50 });
+    // A careless search stops at depth 1. The node limit lets each other search get to depth 2.
+    let mut careless = 0;
+    for seed in 0..16 {
+        let first = choose_move(&mut from_fen(fen, WHITE, standard()), &level, seed).unwrap();
+        for _ in 0..3 {
+            let again = choose_move(&mut from_fen(fen, WHITE, standard()), &level, seed).unwrap();
+            assert_eq!(again, first, "seed {seed}");
+        }
+        careless += (first.depth == 1) as u32;
+    }
+    assert!(careless > 0 && careless < 16, "{careless} of 16 searches were careless");
 }

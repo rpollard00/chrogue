@@ -275,7 +275,15 @@ Null-move pruning is in the code and is off: it did not help in self-play.
 
 ### Levels
 
-`Level::LADDER` has the levels of the AI, from the weakest to the strongest. `Level::number(n)` gives level `n`. `FLOORS` in `game/src/content.rs` gives each floor its level. A level has a depth limit, a node limit (from depth 2, see "Search"), and noise. With noise, each root move gets a random bonus from 0 to `noise_cp` centipawns. The bonus comes from the seed and the move.
+`Level::LADDER` has the levels of the AI, from the weakest to the strongest. `Level::number(n)` gives level `n`. `FLOORS` in `game/src/content.rs` gives each floor its level. A level has a depth limit, a node limit (from depth 2, see "Search"), and flaws (`Flaws`).
+
+A flaw makes the search play worse on purpose. Each random number of a flaw comes from the seed of the search, thus the same seed gives the same flaws.
+
+- Noise (`noise_cp`): Each root move gets a random bonus from 0 to `noise_cp` centipawns. The search selects the move with the best sum of score and bonus. The bonus comes from the seed and the move.
+- Overlook (`overlook`): Each legal root move has this chance in percent that the search does not see it. The search selects from the moves that it sees. If it sees no move, it sees each move. The search always sees a legal capture of the royal king.
+- Careless (`careless`): Each search has this chance in percent that it is careless. A careless search gives each root move the score of the position right after the move. That score is the score of an end of the battle (a rout, bare kings, or the clock), or the evaluation. A careless search does not look at the reply of the opponent. It does one iteration, and the depth limit and the node limit do not apply. The noise and the overlook apply.
+
+No level of the ladder has overlook or careless at this time.
 
 | Level | Name | Depth limit | Node limit | Noise |
 | --- | --- | --- | --- | --- |
@@ -294,7 +302,7 @@ Null-move pruning is in the code and is off: it did not help in self-play.
 
 `arena --a CONFIG --b CONFIG [--rules all|standard|modified] [--positions N] [--seed N] [--max-plies N] [--threads N]` plays two configurations against each other and prints the wins, the draws, the losses, the score, and a 95% interval.
 
-- A CONFIG is `levelN` (level `N` of the ladder, where `level1` is the weakest), `reference`, or `nodes=N`, and then options with `,` between them: `eval=derived|fixed|blind`, `noise=CP`, `depth=N`, `nodes=N`, `null=0|1`, `lmr=0|1`, `threats=0|1`. The reference AI reads only `noise` and `depth`.
+- A CONFIG is `levelN` (level `N` of the ladder, where `level1` is the weakest), `reference`, or `nodes=N`, and then options with `,` between them: `eval=derived|fixed|blind`, `noise=CP`, `overlook=N` and `careless=N` (percent), `depth=N`, `nodes=N`, `null=0|1`, `lmr=0|1`, `threats=0|1`. The reference AI reads only `noise` and `depth`.
 - `eval=fixed` has the usual piece values of chess for each side. `eval=blind` has an evaluation that knows only the rules of chess.
 - The starts are the start position of chess and `--positions` armies in the style of the game: the base army of the player plus recruits against the enemy army of floor 3 to 8 with the same total value.
 - The rule sets are: ordinary chess, each flag for White only, each flag for Black only, each flag for the two sides, and eight mixed combinations.

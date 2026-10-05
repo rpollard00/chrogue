@@ -6,8 +6,9 @@
 //! A CONFIG is a base and then options, with `,` between them:
 //! - Base: `levelN` (level `N` of the ladder, where `level1` is the weakest), `reference` (the
 //!   reference AI), or `nodes=N` (the search with a node limit and no noise).
-//! - Options: `eval=derived|fixed|blind`, `noise=CP`, `depth=N`, `nodes=N`, `null=0|1`, `lmr=0|1`,
-//!   `threats=0|1`. The reference AI reads only `noise` and `depth`.
+//! - Options: `eval=derived|fixed|blind`, `noise=CP`, `overlook=N` and `careless=N` (percent),
+//!   `depth=N`, `nodes=N`, `null=0|1`, `lmr=0|1`, `threats=0|1`. The reference AI reads only
+//!   `noise` and `depth`.
 //!
 //! The starts are the start position of chess and `--positions` armies in the style of the
 //! game: the base army of the player plus recruits against the enemy army of a floor with
@@ -62,7 +63,9 @@ fn parse_config(text: &str) -> Config {
                     _ => panic!("\"{value}\" is not an evaluation"),
                 }
             }
-            "noise" => level.noise_cp = number() as i32,
+            "noise" => level.flaws.noise_cp = number() as i32,
+            "overlook" => level.flaws.overlook = number() as u32,
+            "careless" => level.flaws.careless = number() as u32,
             "depth" => level.limits.max_depth = number() as u32,
             "nodes" => level.limits.max_nodes = number(),
             "null" => level.options.null_move = number() != 0,

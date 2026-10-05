@@ -28,7 +28,7 @@ pub use perft::perft;
 pub use rules::{
     Atom, Castle, Condition, KindRules, Mode, Offset, Promotion, Promotions, Rules, RulesError, SideRules,
 };
-pub use search::{Limits, MATE, MATE_BOUND, SearchOptions, SearchResult, search};
+pub use search::{Flaws, Limits, MATE, MATE_BOUND, SearchOptions, SearchResult, search};
 pub use state::{EnPassant, NullUndo, State, StateError, Undo};
 pub use tables::Tables;
 pub use types::{Bitboard, Color, Kind, Move, MoveList, Piece, Placement, Special, Square};

@@ -61,8 +61,8 @@ fn speed(args: &[String]) {
     let turn = if args.get(1).is_some_and(|text| text == "b") { Color::Black } else { Color::White };
     let mut state = fen::from_fen(pieces, turn, Rules::standard()).unwrap_or_else(|error| panic!("{error}"));
     println!(
-        "{:<16} {:>9} {:>6} {:>9} {:>6} {:>9} {:>12}",
-        "level", "max nodes", "noise", "nodes", "depth", "ms", "nodes/s"
+        "{:<16} {:>9} {:>6} {:>8} {:>8} {:>9} {:>6} {:>9} {:>12}",
+        "level", "max nodes", "noise", "overlook", "careless", "nodes", "depth", "ms", "nodes/s"
     );
     for player in Level::LADDER.map(Player::search).iter().chain([&Player::reference()]) {
         let level = &player.level;
@@ -78,10 +78,12 @@ fn speed(args: &[String]) {
         let budget =
             if level.limits.max_nodes == u64::MAX { "-".to_string() } else { level.limits.max_nodes.to_string() };
         println!(
-            "{:<16} {:>9} {:>6} {:>9} {:>6} {:>9.3} {:>12.0}",
+            "{:<16} {:>9} {:>6} {:>8} {:>8} {:>9} {:>6} {:>9.3} {:>12.0}",
             level.name,
             budget,
-            level.noise_cp,
+            level.flaws.noise_cp,
+            level.flaws.overlook,
+            level.flaws.careless,
             result.nodes,
             result.depth,
             best * 1e3,
