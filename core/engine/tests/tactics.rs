@@ -84,6 +84,14 @@ fn search_depth(state: &mut State, depth: u32) -> SearchResult {
     search(state, &Limits::depth(depth), EvalVariant::Derived, Level::OPTIONS, 0, 1).expect("a legal move")
 }
 
+/// A weak level with noise: a depth limit of 1, a node limit of 300, and a noise of 150 centipawns.
+fn noisy() -> Level {
+    let mut level = Level::nodes("noisy", 300);
+    level.limits.max_depth = 1;
+    level.noise_cp = 150;
+    level
+}
+
 // ---- Mates of ordinary chess ----
 
 #[test]
@@ -249,7 +257,7 @@ fn a_stalemate_at_the_horizon_wins() {
     assert_eq!(result.score, win_in(1));
     assert_eq!(outcome_after(&state, &result), Some(Outcome::Stalemate { winner: WHITE }));
     for seed in 0..5 {
-        let result = choose_move(&mut state, &Level::floor(1), seed).unwrap();
+        let result = choose_move(&mut state, &noisy(), seed).unwrap();
         assert_eq!(outcome_after(&state, &result), Some(Outcome::Stalemate { winner: WHITE }), "seed {seed}");
     }
 }
@@ -382,7 +390,7 @@ fn the_capture_of_the_king_is_a_win() {
     // Black is in check and White has the move. The move generation permits the capture of
     // the king. The search gives it the score of a mate and does not look further.
     let mut state = from_fen("4k3/7p/8/8/8/8/7P/4RK2", WHITE, standard());
-    for level in [Level::floor(1), Level::floor(8)] {
+    for level in [noisy(), Level::strongest()] {
         let result = choose_move(&mut state, &level, 1).unwrap();
         assert_eq!(squares_of(result.mv), mv("e1", "e8"));
         assert_eq!(result.score, win_in(1));
@@ -396,9 +404,9 @@ fn the_search_does_not_capture_the_king_with_its_own_king_in_check() {
     let mut state = from_fen("R3k3/8/8/8/8/8/8/r3K3", WHITE, standard());
     let moves = legal(&mut state);
     assert!(!moves.iter().any(|&m| squares_of(m) == mv("a8", "e8")));
-    for floor in 1..=8 {
-        let result = choose_move(&mut state, &Level::floor(floor), 1).unwrap();
-        assert!(moves.contains(&result.mv), "floor {floor} gives {:?}, which is not legal", result.mv);
+    for level in &Level::LADDER {
+        let result = choose_move(&mut state, level, 1).unwrap();
+        assert!(moves.contains(&result.mv), "level {} gives {:?}, which is not legal", level.name, result.mv);
     }
 }
 
@@ -436,20 +444,20 @@ fn a_lost_side_takes_the_draw_of_the_clock() {
     let result = search_depth(&mut state, 1);
     assert_eq!(result.score, 0);
     assert_eq!(outcome_after(&state, &result), Some(Outcome::Clock));
-    for floor in [1, 8] {
-        let result = choose_move(&mut state, &Level::floor(floor), 1).unwrap();
-        assert_eq!(outcome_after(&state, &result), Some(Outcome::Clock), "floor {floor}");
+    for level in [noisy(), Level::strongest()] {
+        let result = choose_move(&mut state, &level, 1).unwrap();
+        assert_eq!(outcome_after(&state, &result), Some(Outcome::Clock), "level {}", level.name);
     }
 }
 
 // ---- Determinism and the levels ----
 
 #[test]
-fn floor_1_searches_each_root_move_before_it_stops() {
-    // These positions need more nodes for depth 1 than the node limit of floor 1. The level
+fn a_level_searches_each_root_move_before_it_stops() {
+    // These positions need more nodes for depth 1 than the node limit of the level. The level
     // must give the move of a full search at depth 1 with the same noise.
     let middle = "r1bq1rk1/pp2bppp/2n1pn2/2pp4/3P4/2PBPN2/PP1N1PPP/R1BQ1RK1";
-    let level = Level::floor(1);
+    let level = noisy();
     let mut longer = 0;
     for fen in [START, KIWIPETE, middle] {
         for turn in [WHITE, BLACK] {
@@ -478,8 +486,8 @@ fn the_ai_gives_no_move_when_the_battle_has_ended() {
     ];
     for (mut state, end) in ended {
         assert_eq!(outcome(&mut state), Some(end));
-        for floor in [1, 8] {
-            assert_eq!(choose_move(&mut state, &Level::floor(floor), 1), None, "{end:?}, floor {floor}");
+        for level in [noisy(), Level::strongest()] {
+            assert_eq!(choose_move(&mut state, &level, 1), None, "{end:?}, level {}", level.name);
         }
     }
 }
@@ -514,15 +522,15 @@ fn the_seed_changes_the_move_of_a_level_with_noise_and_not_of_a_level_without() 
         moves.dedup();
         moves.len()
     };
-    assert!(moves(&Level::floor(1)) > 3, "the weakest level must not play one move only");
-    assert_eq!(moves(&Level::floor(8)), 1);
+    assert!(moves(&noisy()) > 3, "a level with noise must not play one move only");
+    assert_eq!(moves(&Level::strongest()), 1);
 }
 
 #[test]
 fn a_level_with_noise_still_takes_a_win_at_once() {
     for seed in 0..20 {
         let mut state = from_fen("6k1/5ppp/8/8/8/8/5PPP/R5K1", WHITE, standard());
-        let result = choose_move(&mut state, &Level::floor(1), seed).unwrap();
+        let result = choose_move(&mut state, &noisy(), seed).unwrap();
         assert_eq!(squares_of(result.mv), mv("a1", "a8"), "seed {seed}");
     }
 }
@@ -530,7 +538,7 @@ fn a_level_with_noise_still_takes_a_win_at_once() {
 #[test]
 fn the_search_gives_no_move_when_the_side_has_no_legal_move() {
     let mut state = from_fen("k7/p1K5/P7/8/8/8/8/8", BLACK, standard());
-    for level in [Level::floor(1), Level::floor(8)] {
+    for level in [noisy(), Level::strongest()] {
         assert_eq!(choose_move(&mut state, &level, 1), None);
     }
 }

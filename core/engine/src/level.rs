@@ -31,29 +31,28 @@ impl Level {
         }
     }
 
-    const fn floor_level(name: &'static str, max_depth: u32, max_nodes: u64, noise_cp: i32) -> Level {
+    const fn rung(name: &'static str, max_depth: u32, max_nodes: u64, noise_cp: i32) -> Level {
         let mut level = Level::nodes(name, max_nodes);
         level.limits.max_depth = max_depth;
         level.noise_cp = noise_cp;
         level
     }
 
-    /// The levels of the eight floors of a run, from the weakest to the strongest. Floor 4
-    /// and floor 8 are bosses.
+    /// The levels of the AI, from the weakest to the strongest.
     pub const LADDER: [Level; 8] = [
-        Level::floor_level("Border Patrol", 1, 300, 150),
-        Level::floor_level("Scouts", 2, 1_000, 90),
-        Level::floor_level("Garrison", 3, 2_500, 50),
-        Level::floor_level("The Warden", 48, 6_000, 25),
-        Level::floor_level("Cavalry", 48, 15_000, 12),
-        Level::floor_level("Royal Guard", 48, 36_000, 6),
-        Level::floor_level("Vanguard", 48, 100_000, 0),
-        Level::floor_level("The Black King", 48, 320_000, 0),
+        Level::rung("Corporal", 1, 300, 150),
+        Level::rung("Sergeant", 2, 1_000, 90),
+        Level::rung("Lieutenant", 3, 2_500, 50),
+        Level::rung("Captain", 48, 6_000, 25),
+        Level::rung("Major", 48, 15_000, 12),
+        Level::rung("Colonel", 48, 36_000, 6),
+        Level::rung("General", 48, 100_000, 0),
+        Level::rung("Marshal", 48, 320_000, 0),
     ];
 
-    /// The level of a floor from 1 to 8. Panics for other numbers.
-    pub fn floor(floor: usize) -> Level {
-        Level::LADDER[floor - 1]
+    /// The level of a number from 1 to `LADDER.len()`. Panics for other numbers.
+    pub fn number(number: usize) -> Level {
+        Level::LADDER[number - 1]
     }
 
     /// The strongest level.

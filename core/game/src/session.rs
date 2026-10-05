@@ -649,7 +649,7 @@ fn apply(game: &mut Game, command: Command, args: &Args, debug: bool) -> Result<
         Command::DebugAiMove => {
             let level = match args.get("level") {
                 None | Some(Value::Null) => None,
-                Some(_) => Some(uint(args, "level", FLOORS.len() as u64)?.max(1) as usize),
+                Some(_) => Some(uint(args, "level", chess::LEVELS as u64)?.max(1) as usize),
             };
             let Game { screen, tuning, .. } = game;
             let Screen::Battle { run, battle, .. } = screen else { return wrong_screen(command, screen) };

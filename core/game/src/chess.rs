@@ -98,13 +98,13 @@ pub const LEVELS: usize = engine::Level::LADDER.len();
 
 /// The move of an AI level (1 to `LEVELS`) for the side that has the move.
 pub fn ai_move(state: &mut State, level: usize, seed: u64) -> Option<Move> {
-    let level = engine::Level::LADDER[level.clamp(1, LEVELS) - 1];
+    let level = engine::Level::number(level.clamp(1, LEVELS));
     engine::choose_move(state, &level, seed).map(|result| result.mv)
 }
 
 /// The name of an AI level.
 pub fn level_name(level: usize) -> &'static str {
-    engine::Level::LADDER[level.clamp(1, LEVELS) - 1].name
+    engine::Level::number(level.clamp(1, LEVELS)).name
 }
 
 pub const fn kind_letter(kind: Kind) -> char {

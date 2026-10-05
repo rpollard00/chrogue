@@ -427,6 +427,8 @@ impl UpgradeId {
 
 pub struct FloorDef {
     pub name: &'static str,
+    /// The level of the AI, from 1 to `chess::LEVELS`.
+    pub level: usize,
     /// The total piece value of the enemy army.
     pub budget: u32,
     /// The number of boss traits.
@@ -434,21 +436,20 @@ pub struct FloorDef {
     pub boss: bool,
 }
 
-const fn floor(name: &'static str, budget: u32, traits: usize, boss: bool) -> FloorDef {
-    FloorDef { name, budget, traits, boss }
+const fn floor(name: &'static str, level: usize, budget: u32, traits: usize, boss: bool) -> FloorDef {
+    FloorDef { name, level, budget, traits, boss }
 }
 
-/// The AI of floor `n` is level `n` of the engine. The tuning of a session can change the budget,
-/// the traits, and the level of a floor (`tuning.rs`).
+/// The tuning of a session can change the budget, the traits, and the level of a floor (`tuning.rs`).
 pub static FLOORS: [FloorDef; 8] = [
-    floor("Border Patrol", 5, 0, false),
-    floor("Scouts", 9, 0, false),
-    floor("Garrison", 13, 0, false),
-    floor("The Warden", 18, 1, true),
-    floor("Cavalry", 23, 0, false),
-    floor("Royal Guard", 28, 0, false),
-    floor("Vanguard", 33, 0, false),
-    floor("The Black King", 39, 2, true),
+    floor("Border Patrol", 1, 5, 0, false),
+    floor("Scouts", 2, 9, 0, false),
+    floor("Garrison", 3, 13, 0, false),
+    floor("The Warden", 4, 18, 1, true),
+    floor("Cavalry", 5, 23, 0, false),
+    floor("Royal Guard", 6, 28, 0, false),
+    floor("Vanguard", 7, 33, 0, false),
+    floor("The Black King", 8, 39, 2, true),
 ];
 
 /// The floor of a number from 1 to `FLOORS.len()`.

@@ -121,7 +121,7 @@ impl Default for Tuning {
             barred: Vec::new(),
             relic_slots: RELIC_SLOTS,
             floors: std::array::from_fn(|i| FloorTuning {
-                level: i + 1,
+                level: FLOORS[i].level,
                 budget: FLOORS[i].budget,
                 traits: FLOORS[i].traits,
             }),

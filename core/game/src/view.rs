@@ -358,7 +358,7 @@ pub fn hello(debug: bool) -> Value {
                 "budget": f.budget,
                 "traits": f.traits,
                 "boss": f.boss,
-                "level": chess::level_name(i + 1),
+                "level": chess::level_name(f.level),
                 "draft_gold": content::draft_gold(i + 1),
             })
         })

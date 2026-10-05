@@ -85,8 +85,8 @@ fn the_default_tuning_is_the_content() {
     assert_eq!((tuning.seed, tuning.barred.len(), tuning.tuned()), (None, 0, false));
     assert_eq!(tuning.relic_slots, RELIC_SLOTS);
     assert_eq!(tuning.floors.len(), FLOORS.len());
-    for (i, (floor, def)) in tuning.floors.iter().zip(&FLOORS).enumerate() {
-        assert_eq!((floor.level, floor.budget, floor.traits), (i + 1, def.budget, def.traits));
+    for (floor, def) in tuning.floors.iter().zip(&FLOORS) {
+        assert_eq!((floor.level, floor.budget, floor.traits), (def.level, def.budget, def.traits));
     }
     for ((kind, tuned), def) in RECRUIT_KINDS.iter().zip(&tuning.kinds).zip(&ENEMY_KINDS) {
         assert_eq!(*kind, def.kind);
@@ -97,14 +97,14 @@ fn the_default_tuning_is_the_content() {
     assert_eq!(BUDGET_MAX, ENEMY_KINDS.iter().map(|k| k.cap * gold_value(k.kind)).sum::<u32>());
     assert!(FLOORS.iter().all(|f| f.traits <= TRAITS_MAX && f.budget <= BUDGET_MAX));
     assert!(ENEMY_KINDS.iter().all(|k| k.weight <= WEIGHT_MAX && (1..=FLOORS.len()).contains(&k.min_floor)));
-    assert_eq!(chess::LEVELS, FLOORS.len());
+    assert!(FLOORS.iter().all(|f| (1..=chess::LEVELS).contains(&f.level)));
 
     let state = debug_state(&mut debug_session(1));
     let floors: Vec<Value> = FLOORS
         .iter()
         .enumerate()
         .map(|(i, f)| {
-            json!({ "number": i + 1, "name": f.name, "level": i + 1, "level_name": chess::level_name(i + 1),
+            json!({ "number": i + 1, "name": f.name, "level": f.level, "level_name": chess::level_name(f.level),
                     "budget": f.budget, "traits": f.traits })
         })
         .collect();
@@ -323,7 +323,7 @@ fn a_tune_of_only_the_level_does_not_start_the_battle_again() {
     assert_eq!(reply["events"], json!([{ "type": "debug_changed", "what": "tuning" }]));
     assert_eq!(reply["view"], before);
     let floor = &reply["data"]["debug"]["floors"][0];
-    assert_eq!((&floor["level"], &floor["level_name"]), (&json!(4), &json!("The Warden")));
+    assert_eq!((&floor["level"], &floor["level_name"]), (&json!(4), &json!("Captain")));
     assert_eq!(reply["data"]["debug"]["tuned"], json!(true));
 
     // A value that is the value of the tuning changes nothing, thus the battle continues too.

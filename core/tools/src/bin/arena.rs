@@ -4,8 +4,8 @@
 //!              [--seed N] [--max-plies N] [--threads N]
 //!
 //! A CONFIG is a base and then options, with `,` between them:
-//! - Base: `floor1` to `floor8` (a level of the ladder), `reference` (the reference AI),
-//!   or `nodes=N` (the search with a node limit and no noise).
+//! - Base: `levelN` (level `N` of the ladder, where `level1` is the weakest), `reference` (the
+//!   reference AI), or `nodes=N` (the search with a node limit and no noise).
 //! - Options: `eval=derived|fixed|blind`, `noise=CP`, `depth=N`, `nodes=N`, `null=0|1`, `lmr=0|1`,
 //!   `threats=0|1`. The reference AI reads only `noise` and `depth`.
 //!
@@ -39,10 +39,11 @@ fn parse_config(text: &str) -> Config {
     let base = parts.next().unwrap_or_default();
     let mut player = if base == "reference" {
         Player::reference()
-    } else if let Some(floor) = base.strip_prefix("floor") {
-        let floor: usize = floor.parse().expect("the floor must be a number");
-        assert!((1..=8).contains(&floor), "the floor must be from 1 to 8");
-        Player::search(Level::floor(floor))
+    } else if let Some(number) = base.strip_prefix("level") {
+        let number: usize = number.parse().expect("the level must be a number");
+        let levels = Level::LADDER.len();
+        assert!((1..=levels).contains(&number), "the level must be from 1 to {levels}");
+        Player::search(Level::number(number))
     } else if let Some(nodes) = base.strip_prefix("nodes=") {
         Player::search(Level::nodes("nodes", nodes.parse().expect("the nodes must be a number")))
     } else {
