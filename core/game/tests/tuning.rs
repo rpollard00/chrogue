@@ -119,7 +119,7 @@ fn the_default_tuning_is_the_content() {
     assert_eq!(state["kinds"], json!(kinds));
     assert_eq!(
         state["limits"],
-        json!({ "seed": SEED_MAX, "level": 8, "budget": 39, "traits": 2, "weight": 9.0, "relics": 10 })
+        json!({ "seed": SEED_MAX, "level": 11, "budget": 39, "traits": 2, "weight": 9.0, "relics": 10 })
     );
     assert_eq!((&state["tuned"], &state["seed"], &state["barred"]), (&json!(false), &Value::Null, &json!([])));
     assert_eq!(state["relic_slots"], json!(RELIC_SLOTS));
@@ -319,11 +319,11 @@ fn a_tune_of_only_the_level_does_not_start_the_battle_again() {
     let m = start["moves"][0].clone();
     send(&mut session, json!({ "cmd": "move", "from": m["from"], "to": m["to"] }));
     let before = send(&mut session, json!({ "cmd": "enemy_move" }))["view"].clone();
-    let reply = send(&mut session, json!({ "cmd": "debug_tune", "floor": 1, "level": 4 }));
+    let reply = send(&mut session, json!({ "cmd": "debug_tune", "floor": 1, "level": 7 }));
     assert_eq!(reply["events"], json!([{ "type": "debug_changed", "what": "tuning" }]));
     assert_eq!(reply["view"], before);
     let floor = &reply["data"]["debug"]["floors"][0];
-    assert_eq!((&floor["level"], &floor["level_name"]), (&json!(4), &json!("Captain")));
+    assert_eq!((&floor["level"], &floor["level_name"]), (&json!(7), &json!("Captain")));
     assert_eq!(reply["data"]["debug"]["tuned"], json!(true));
 
     // A value that is the value of the tuning changes nothing, thus the battle continues too.

@@ -24,7 +24,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
 - Tactics tests of the AI: `cargo test --release --test tactics`
 - Derived piece values: `cargo run --release --bin ai -- values`
 - Speed of the AI for each level: `cargo run --release --bin ai -- speed`
-- Self-play match: `cargo run --release --bin arena -- --a level8 --b reference`. See "Self-play" below.
+- Self-play match: `cargo run --release --bin arena -- --a level11 --b reference`. See "Self-play" below.
 
 ## Structure
 
@@ -283,18 +283,23 @@ A flaw makes the search play worse on purpose. Each random number of a flaw come
 - Overlook (`overlook`): Each legal root move has this chance in percent that the search does not see it. The search selects from the moves that it sees. If it sees no move, it sees each move. The search always sees a legal capture of the royal king.
 - Careless (`careless`): Each search has this chance in percent that it is careless. A careless search gives each root move the score of the position right after the move. That score is the score of an end of the battle (a rout, bare kings, or the clock), or the evaluation. A careless search does not look at the reply of the opponent. It does one iteration, and the depth limit and the node limit do not apply. The noise and the overlook apply.
 
-No level of the ladder has overlook or careless at this time.
+A careless search does not see that a move gives checkmate, unless the clock is at its limit. Only there, the score of the position tests if the opponent has a legal move.
 
-| Level | Name | Depth limit | Node limit | Noise |
-| --- | --- | --- | --- | --- |
-| 1 | Corporal | 1 | 300 | 150 |
-| 2 | Sergeant | 2 | 1 000 | 90 |
-| 3 | Lieutenant | 3 | 2 500 | 50 |
-| 4 | Captain | none | 6 000 | 25 |
-| 5 | Major | none | 15 000 | 12 |
-| 6 | Colonel | none | 36 000 | 6 |
-| 7 | General | none | 100 000 | 0 |
-| 8 | Marshal | none | 320 000 | 0 |
+The first three levels are for a player who knows only how the pieces move. They look one half move ahead, as level 4 does, and they have overlook and careless. Thus they miss some captures, and they leave pieces where the opponent can capture them. From level 4, a level has no overlook and is not careless.
+
+| Level | Name | Depth limit | Node limit | Noise | Overlook | Careless |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Recruit | 1 | 300 | 150 | 40 | 50 |
+| 2 | Cadet | 1 | 300 | 150 | 25 | 25 |
+| 3 | Private | 1 | 300 | 150 | 12 | 10 |
+| 4 | Corporal | 1 | 300 | 150 | 0 | 0 |
+| 5 | Sergeant | 2 | 1 000 | 90 | 0 | 0 |
+| 6 | Lieutenant | 3 | 2 500 | 50 | 0 | 0 |
+| 7 | Captain | none | 6 000 | 25 | 0 | 0 |
+| 8 | Major | none | 15 000 | 12 | 0 | 0 |
+| 9 | Colonel | none | 36 000 | 6 | 0 | 0 |
+| 10 | General | none | 100 000 | 0 | 0 | 0 |
+| 11 | Marshal | none | 320 000 | 0 | 0 | 0 |
 
 `Player::reference()` in `tools/src/lib.rs` is the reference AI (`tools/src/reference.rs`) at depth 2 with no noise. It is a baseline for the self-play tool and for `ai speed` only.
 

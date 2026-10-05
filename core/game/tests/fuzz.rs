@@ -110,9 +110,9 @@ fn valid(g: &mut Gen, view: &Value) -> Value {
             // The AI search on a high floor takes time, thus most enemy moves come from the list of
             // a Scout view or from the AI of floor 1.
             "enemy" => match g.below(3) {
-                0 => json!({ "cmd": "debug_ai_move", "level": 1 }),
+                0 => json!({ "cmd": "debug_ai_move", "level": 4 }),
                 1 if view["floor"]["number"].as_u64().unwrap_or(9) <= 2 => json!({ "cmd": "enemy_move" }),
-                _ => json!({ "cmd": "debug_ai_move", "level": 1 + g.below(2) }),
+                _ => json!({ "cmd": "debug_ai_move", "level": 4 + g.below(2) }),
             },
             "over" => json!({ "cmd": "continue" }),
             _ => json!({ "cmd": "give_up" }),

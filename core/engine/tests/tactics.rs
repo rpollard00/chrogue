@@ -603,6 +603,29 @@ fn a_careless_search_captures_a_defended_pawn_with_the_queen() {
 }
 
 #[test]
+fn a_higher_level_makes_fewer_mistakes_of_a_beginner() {
+    // Rxd5 wins a free queen (`a_free_queen_is_captured`), and Qxd5 loses the queen for a pawn
+    // (`a_defended_pawn_is_not_captured_by_the_queen`). The levels that look one half move
+    // ahead differ only in their overlook and in their carelessness. Each of them makes each
+    // mistake for fewer seeds than the level before it, and the last of them makes none.
+    let mistakes = [("6k1/5ppp/8/3q4/8/8/3R1PPP/6K1", false), ("6k1/5ppp/4p3/3p4/8/8/3Q1PPP/6K1", true)];
+    let shallow: Vec<&Level> = Level::LADDER.iter().filter(|level| level.limits.max_depth == 1).collect();
+    assert!(shallow.len() > 1);
+    for (fen, capture_is_the_mistake) in mistakes {
+        let count = |level: &Level| {
+            let made = |seed| {
+                let result = choose_move(&mut from_fen(fen, WHITE, standard()), level, seed).unwrap();
+                (squares_of(result.mv) == mv("d2", "d5")) == capture_is_the_mistake
+            };
+            (0..200).filter(|&seed| made(seed)).count()
+        };
+        let counts: Vec<usize> = shallow.iter().map(|level| count(level)).collect();
+        assert!(counts.windows(2).all(|pair| pair[0] > pair[1]), "{fen}: {counts:?}");
+        assert_eq!(counts.last(), Some(&0), "{fen}: {counts:?}");
+    }
+}
+
+#[test]
 fn a_careless_search_still_wins_by_rout() {
     // Rxb4 captures the last piece of Black (`the_capture_of_the_last_piece_wins_by_rout`). The
     // end of the battle is in the position right after the move, thus a careless search sees it.

@@ -30,23 +30,34 @@ impl Level {
         }
     }
 
-    const fn rung(name: &'static str, max_depth: u32, max_nodes: u64, noise_cp: i32) -> Level {
+    const fn rung(name: &'static str, max_depth: u32, max_nodes: u64, flaws: Flaws) -> Level {
         let mut level = Level::nodes(name, max_nodes);
         level.limits.max_depth = max_depth;
-        level.flaws = Flaws::noise(noise_cp);
+        level.flaws = flaws;
         level
     }
 
-    /// The levels of the AI, from the weakest to the strongest.
-    pub const LADDER: [Level; 8] = [
-        Level::rung("Corporal", 1, 300, 150),
-        Level::rung("Sergeant", 2, 1_000, 90),
-        Level::rung("Lieutenant", 3, 2_500, 50),
-        Level::rung("Captain", 48, 6_000, 25),
-        Level::rung("Major", 48, 15_000, 12),
-        Level::rung("Colonel", 48, 36_000, 6),
-        Level::rung("General", 48, 100_000, 0),
-        Level::rung("Marshal", 48, 320_000, 0),
+    /// A level that looks one half move ahead. These levels differ only in their overlook and in
+    /// their carelessness.
+    const fn shallow(name: &'static str, overlook: u32, careless: u32) -> Level {
+        Level::rung(name, 1, 300, Flaws { noise_cp: 150, overlook, careless })
+    }
+
+    /// The levels of the AI, from the weakest to the strongest. The first three levels are for
+    /// a player who knows only how the pieces move: they do not see each capture, and they
+    /// leave pieces where the opponent can capture them.
+    pub const LADDER: [Level; 11] = [
+        Level::shallow("Recruit", 40, 50),
+        Level::shallow("Cadet", 25, 25),
+        Level::shallow("Private", 12, 10),
+        Level::shallow("Corporal", 0, 0),
+        Level::rung("Sergeant", 2, 1_000, Flaws::noise(90)),
+        Level::rung("Lieutenant", 3, 2_500, Flaws::noise(50)),
+        Level::rung("Captain", 48, 6_000, Flaws::noise(25)),
+        Level::rung("Major", 48, 15_000, Flaws::noise(12)),
+        Level::rung("Colonel", 48, 36_000, Flaws::noise(6)),
+        Level::rung("General", 48, 100_000, Flaws::NONE),
+        Level::rung("Marshal", 48, 320_000, Flaws::NONE),
     ];
 
     /// The level of a number from 1 to `LADDER.len()`. Panics for other numbers.

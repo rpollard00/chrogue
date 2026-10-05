@@ -442,14 +442,14 @@ const fn floor(name: &'static str, level: usize, budget: u32, traits: usize, bos
 
 /// The tuning of a session can change the budget, the traits, and the level of a floor (`tuning.rs`).
 pub static FLOORS: [FloorDef; 8] = [
-    floor("Border Patrol", 1, 5, 0, false),
-    floor("Scouts", 2, 9, 0, false),
-    floor("Garrison", 3, 13, 0, false),
-    floor("The Warden", 4, 18, 1, true),
-    floor("Cavalry", 5, 23, 0, false),
-    floor("Royal Guard", 6, 28, 0, false),
-    floor("Vanguard", 7, 33, 0, false),
-    floor("The Black King", 8, 39, 2, true),
+    floor("Border Patrol", 4, 5, 0, false),
+    floor("Scouts", 5, 9, 0, false),
+    floor("Garrison", 6, 13, 0, false),
+    floor("The Warden", 7, 18, 1, true),
+    floor("Cavalry", 8, 23, 0, false),
+    floor("Royal Guard", 9, 28, 0, false),
+    floor("Vanguard", 10, 33, 0, false),
+    floor("The Black King", 11, 39, 2, true),
 ];
 
 /// The floor of a number from 1 to `FLOORS.len()`.

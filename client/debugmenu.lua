@@ -75,7 +75,7 @@ local L = {
   rowsY = 10.5,
   enemy = {
     headY = 7.5, headH = 1, rowsY = 9,
-    -- The floors: the number and the name, the AI level (the well has space for "8  The Black King"), the budget, and
+    -- The floors: the number and the name, the AI level (the well has space for "6  Lieutenant"), the budget, and
     -- the traits.
     floor = { name = { x = 5.25, w = 8.4 }, level = { x = 13.85, w = 13.8 }, budget = { x = 28.25, w = 7.4 }, traits = { x = 36.25, w = 7 } },
     -- The kinds: the piece and the name, the most pieces, the weight, and the first floor.
