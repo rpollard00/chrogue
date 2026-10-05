@@ -1,12 +1,13 @@
 //! The relics: the move that each rule relic gives to the player and to the enemy, the effects
 //! after a battle, and the relic slots of a run.
 
-use chrogue_game::battle::{Battle, BattleReward, Bonus, MoveReport, Recruit};
-use chrogue_game::chess::{self, Color, Kind, Outcome, Piece, Placement, Square};
+use chrogue_game::battle::{Battle, BattlePhase, BattleReward, Bonus, MoveReport, Recruit};
+use chrogue_game::chess::{self, Color, Kind, Move, Outcome, Piece, Placement, Square};
 use chrogue_game::content::{RELIC_SLOTS, RELICS_MAX, RelicId};
 use chrogue_game::protocol::Code;
 use chrogue_game::run::{
-    Blocked, CONSCRIPT_ID, Enemy, EnemyPiece, EnemyPieces, Meta, Offer, Run, Unit, roll_shop, trait_pool,
+    Blocked, CONSCRIPT_ID, Enemy, EnemyPiece, EnemyPieces, Meta, Offer, Run, Unit, generate_enemy, roll_shop,
+    trait_pool,
 };
 use chrogue_game::save::{parse_run, run_json};
 use chrogue_game::tuning::Tuning;
@@ -614,4 +615,84 @@ fn a_saved_run_keeps_its_first_traits_up_to_the_limit_and_no_relic_that_is_not_a
     saved["enemy"]["traits"] = json!(["bounty", "vault", "gambit", "gallop", "crusade"]);
     let traits = parse_run(&saved).map(|loaded| loaded.enemy.traits);
     assert_eq!(traits, Ok(vec![relic("vault"), relic("gallop")]));
+}
+
+/// The move of an AI level for White, or None if the search does not end in 20 seconds.
+fn ai_move_in_time(mut battle: Battle, level: usize) -> Option<Move> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || sender.send(chess::ai_move(&mut battle.state, level, 1)));
+    receiver.recv_timeout(std::time::Duration::from_secs(20)).ok().flatten()
+}
+
+/// A position of a battle on floor 8 with Royal Steed against Tactical Retreat and Royal March.
+/// The search of level 3 did not end: in the quiescence search, each side answered each check
+/// with a quiet move that gave check.
+#[test]
+fn the_ai_moves_when_each_side_can_answer_a_check_with_a_check() {
+    let white: Pieces = &[
+        (Kind::King, "f3"),
+        (Kind::Rook, "g6"),
+        (Kind::Bishop, "a2"),
+        (Kind::Knight, "b2"),
+        (Kind::Knight, "d2"),
+        (Kind::Pawn, "c3"),
+        (Kind::Pawn, "h3"),
+        (Kind::Pawn, "b4"),
+    ];
+    let black: Pieces = &[
+        (Kind::King, "d7"),
+        (Kind::Rook, "e8"),
+        (Kind::Bishop, "c2"),
+        (Kind::Knight, "b7"),
+        (Kind::Pawn, "f4"),
+        (Kind::Pawn, "b6"),
+        (Kind::Pawn, "d6"),
+        (Kind::Pawn, "c7"),
+    ];
+    let battle = position(white, black, &["kingKnight"], &["backpedal", "royalMarch"], false);
+    assert!(ai_move_in_time(battle, 3).is_some(), "the AI did not move in 20 seconds");
+}
+
+/// A battle on floor 8 with Royal March against Royal Steed, with level 2 against level 3. The
+/// search of move 80 did not end: each check made the search one half move longer, and each
+/// move out of check gave check.
+#[test]
+fn the_ai_moves_when_a_line_of_checks_has_no_end() {
+    let tuning = Tuning::default();
+    let mut run = Run::new(&Meta::default(), 504_533_058, &tuning);
+    run.floor = 8;
+    run.enemy = generate_enemy(run.seed, run.floor, &tuning);
+    assert_eq!(run.enemy.traits, relics(&["kingKnight", "earlyPromo"]));
+    run.relics = relics(&["sidestep", "royalMarch"]);
+    let army = [
+        (Kind::King, 4),
+        (Kind::Rook, 0),
+        (Kind::Knight, 6),
+        (Kind::Pawn, 10),
+        (Kind::Pawn, 11),
+        (Kind::Pawn, 12),
+        (Kind::Pawn, 13),
+        (Kind::Knight, 3),
+        (Kind::Rook, 2),
+        (Kind::Pawn, 14),
+        (Kind::Rook, 5),
+        (Kind::Bishop, 1),
+        (Kind::Knight, 7),
+        (Kind::Bishop, 9),
+        (Kind::Pawn, 15),
+        (Kind::Bishop, 8),
+    ];
+    run.army = army.iter().enumerate().map(|(i, &(kind, home))| Unit { id: i as u16 + 1, kind, home }).collect();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut battle = Battle::new(&run).unwrap();
+        while battle.result.is_none() {
+            let level = if battle.phase() == BattlePhase::Player { 2 } else { 3 };
+            let mv = battle.ai_move(&run, level).unwrap();
+            battle.play(&run, mv);
+        }
+        sender.send(battle.plies)
+    });
+    let plies = receiver.recv_timeout(std::time::Duration::from_secs(20));
+    assert!(plies.is_ok(), "the battle did not end in 20 seconds");
 }
