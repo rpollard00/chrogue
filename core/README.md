@@ -27,6 +27,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
 - Self-play match: `cargo run --release --bin arena -- --a level11 --b reference`. See "Self-play" below.
 - Mistakes of the levels: `cargo run --release --bin levels -- mistakes level1 level2 level3 level4`. See "Measurements of the levels" below.
 - A run floor by floor: `cargo run --release --bin levels -- floors --player level2 level1 level1 level1 level2 level2 level2 level2 level3`
+- Relics and armies in battles: `cargo run --release --bin balance -- --player 2-4 --out balance.json`. See "Measurements of relics and armies" below.
 
 ## Structure
 
@@ -45,7 +46,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
   - `src/rng.rs`: A small seeded random number generator.
   - `src/fen.rs`: A reader for the piece field of a FEN string. The tests and the tools use it.
   - `tests/`: Perft counts, the six rule flags and the results of a battle (`relic_rules.rs`), other rules as data (`data_rules.rs` for the officers, `data_moves.rs` for pawns, en passant, castles, ranges, and first-move atoms), the Zobrist key, the derived values, and the tactics of the AI. `tests/property.rs` compares the engine with a naive move generator on 6000 random rule sets: random atoms for each kind (the pawn too) with random ranges, conditions, en passant properties, clock properties, promotions, and castle rows. It also walks the move tree of 1500 more rule sets, compares each `make` with a naive `make`, and makes sure that `unmake` gives back the state and the key.
-- `tools/`: The crate `chrogue-tools`. It has the binaries `perft` (a timer), `arena` (self-play matches), `levels` (the mistakes of a level, and a run floor by floor), and `ai` (values, speed, and the move for one position). Its library has `src/reference.rs` (the reference AI), `Player` (a level of the engine or the reference AI, and the reader of a CONFIG), `src/armies.rs` (armies in the style of the game), and `src/cli.rs` (the command line of the binaries). The reference AI is the algorithm of the AI that the first version of the game had. It is a baseline opponent only. The engine and the game do not use it.
+- `tools/`: The crate `chrogue-tools`. It has the binaries `perft` (a timer), `arena` (self-play matches), `levels` (the mistakes of a level, and a run floor by floor), `ai` (values, speed, and the move for one position), and `balance` (relics and armies in battles of the game). Its library has `src/reference.rs` (the reference AI), `Player` (a level of the engine or the reference AI, and the reader of a CONFIG), `src/armies.rs` (armies in the style of the game), `src/balance.rs` (the battles of `balance`), and `src/cli.rs` (the command line of the binaries). `balance` uses the crate `chrogue-game`. The other binaries use only the engine. The reference AI is the algorithm of the AI that the first version of the game had. It is a baseline opponent only. The engine and the game do not use it.
 
 ## Movement rules
 
@@ -338,6 +339,53 @@ The same arguments give the same output.
 
 - From floor 3, the army of the player has the value of the enemy army. On floors 1 and 2, the player has the base army, which has more value.
 - The battles have no relics and no boss traits, and the gold of a run does not set the army of the player. Thus the numbers compare levels. They do not tell if a person wins a run.
+
+### Measurements of relics and armies
+
+`balance` plays battles of the game (`Battle` of `chrogue-game`). Thus a battle has the relics of the player, the traits and the formation of the enemy, and the rewards. An AI level plays each side. The player is White.
+
+`balance [--floor LIST] [--player LIST] [--enemy LIST] [--army LIST] [--traits LIST] [--relics LIST] [--games N] [--gold N] [--seed N] [--max-plies N] [--threads N] [--out FILE]` plays `--games` battles (40) for each combination of the six lists. A combination is a cell. A list has its values with `,` between them. A list of numbers can have ranges, such as `1-3,8`.
+
+- `--floor`: The floors, from 1 to 8. The default is `1-8`.
+- `--player`: The AI levels of the player, from 1 to 11. The default is `3`.
+- `--enemy`: The AI levels of the enemy. `floor` is the level of the floor in `FLOORS`. The default is `floor`.
+- `--army`: The armies of the player. The default is `auto`.
+  - `auto`: The base army plus random recruits with the weights of `RECRUITS`. The value of the army is the budget of the floor, or the value of the base army (12) if the budget is less.
+  - `auto+N`, `auto-N`: An `auto` army with `N` more or less value. The army is not smaller than the base army. An army of 16 units can have less than the value.
+  - Letters, such as `KRNPPPPBB`: These kinds. The king is on e1, and each other unit gets the next free home square.
+- `--traits`: The traits of the enemy. `floor` gives the traits that the game gives to the enemy of the floor. `none` gives no traits. Relic keys with `+` between them give these traits on each floor. The default is `floor`.
+- `--relics`: The relic sets of the player. The default is `none,each`.
+  - `none`: No relics.
+  - Relic keys with `+` between them, such as `gallop+longLeap`: One set.
+  - `each` in the place of a key: One set for each relic. Thus `each` gives each relic alone, and `gallop+each` gives Gallop with each other relic.
+  - `pairs`: Each set of two relics.
+- `--gold`: The gold of the run before each battle (0). Interest reads it.
+- A battle that gets to `--max-plies` half moves (300) is a draw with no reward.
+
+The number of battles is the product of the sizes of the six lists and `--games`. The tool prints this number before it starts. A battle between two of the first four levels takes some milliseconds on one processor. A battle between two of level 9 takes some seconds.
+
+Battle `i` of each cell has the same run seed. Thus two cells with the same floor and the same army have the same units and the same enemy kinds in battle `i`, and the difference between two relic sets is a difference battle by battle. The squares of the enemy can differ: the formation reads the movement rules of the two sides and the pieces of the player. The same arguments give the same data.
+
+The tool prints one row for each relic set: the wins, the draws, and the losses of the player, the difference of the win rate to the first relic set with its 95% interval (from the mean difference of each run seed), the mean gold reward, and the mean value of the units that the player lost.
+
+- An AI level is not a person. The numbers compare relics and armies for each pair of levels.
+- The AI does not play for gold. A relic that gives gold shows its gold, not a different way to play.
+- A battle has no run before it. The gold, the shop, and the rewards of a run do not set the army or the relics of the player.
+
+#### The data
+
+`--out` (`balance.json`) is one JSON object:
+
+- `format` (`chrogue-balance`), `version` (1), `command`, `seed`, `games`, `max_plies`, `gold`.
+- `content`: The relics (`key`, `name`, `text`, `kind`: `rule` or `effect`, `trait`), the levels (`number`, `name`), and the floors (`number`, `name`, `level`, `budget`, `traits`, `boss`) of the game.
+- `axes`: The values of the six lists: `floors`, `players`, `enemies` (a number or `floor`), `armies` and `traits` (the text of each value), and `relics` (a list of relic keys for each set).
+- `cells`: One object for each cell. `floor`, `player`, `enemy`, `army`, `traits`, and `relics` are indexes into `axes`. The other fields have one item for each battle, in the order of the battles:
+  - `results`: A text with `w` (the player won), `d` (a draw), or `l` (the player lost).
+  - `ends`: A text with `m` (checkmate), `s` (stalemate), `r` (rout), `b` (bare kings), `c` (the clock), or `x` (`max_plies`).
+  - `plies`: The half moves.
+  - `gold`: The gold reward.
+  - `lost`: The piece value of the units that the enemy captured and that did not return.
+  - `recruits` is one number: the units that the relics added to the army after the battles of the cell.
 
 ## Game layer and command server
 

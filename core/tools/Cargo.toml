@@ -1,6 +1,6 @@
 [package]
 name = "chrogue-tools"
-description = "Command-line tools for the Chrogue engine: a perft timer, self-play matches, and data of the AI."
+description = "Command-line tools for Chrogue: a perft timer, self-play matches, data of the AI, and battles of the game with relics."
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
@@ -10,3 +10,5 @@ name = "chrogue_tools"
 
 [dependencies]
 chrogue-engine = { path = "../engine" }
+chrogue-game = { path = "../game" }
+serde_json = "1"

@@ -62,7 +62,7 @@ Each run gives crowns. Crowns buy permanent upgrades on the title screen.
 - `core/game/`: The roguelite. It has runs, battles, relics, upgrades, offers, floors, saved data, and the session that runs the commands of a client.
 - `core/server/`: The program `chrogue-core`. It gives the commands of `core/PROTOCOL.md` on stdio or on a local TCP socket.
 - `core/embed/`: The library `chrogue_core`. It gives the same commands as a C interface, for a client that loads the core into its own process.
-- `core/tools/`: Tools for the engine: a timer, self-play matches, and the move of the AI for one position.
+- `core/tools/`: Tools for the engine and the game: a timer, self-play matches, the move of the AI for one position, and battles that measure relics and armies.
 - `client/`: The client. It has the screens, the motion, and the shaders. It has no game rules.
 - `web/`: The build of the client and the core for a browser, its page, its test, and the files of the deployment.
 

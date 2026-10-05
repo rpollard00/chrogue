@@ -1,8 +1,9 @@
 //! The parts that the binaries of the tools share: the reference AI, a player that is a level of
 //! the engine or the reference AI, a battle between two players, armies in the style of the game,
-//! and the command line.
+//! the battles of the game for `balance`, and the command line.
 
 pub mod armies;
+pub mod balance;
 pub mod cli;
 pub mod reference;
 
