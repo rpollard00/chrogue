@@ -1,7 +1,7 @@
 //! The material values that the engine derives from the movement rules.
 
 use chrogue_engine::eval::{FIXED_VALUES, kind_profile, officer_profile, officer_value};
-use chrogue_engine::rules::{ALFIL, CAMEL, DABBABA, DIAG, FLAG_NAMES, FORWARD, KING, KNIGHT, ORTHO};
+use chrogue_engine::rules::{ALFIL, CAMEL, DABBABA, DIAG, FLAG_NAMES, FORWARD, FORWARD_DIAG, KING, KNIGHT, ORTHO};
 use chrogue_engine::{
     Atom, Color, EvalTables, EvalVariant, Evaluator, Kind, MATE_BOUND, Mode, Offset, Promotion, Promotions, Rules,
     SideRules, fen,
@@ -83,6 +83,8 @@ fn each_relic_atom_makes_the_value_of_its_kind_higher() {
         (Kind::Knight, Atom::slide(&KNIGHT, Mode::MoveOrCapture).max_steps(2)),
         (Kind::Bishop, Atom::slide(&FORWARD, Mode::MoveOrCapture)),
         (Kind::King, Atom::slide(&KING, Mode::MoveOrCapture).max_steps(2)),
+        (Kind::Pawn, Atom::leap(&FORWARD, Mode::CaptureOnly)),
+        (Kind::Pawn, Atom::leap(&FORWARD_DIAG, Mode::MoveOnly)),
     ];
     for (kind, atom) in cases {
         let with_atom = with_atoms(kind, std::slice::from_ref(&atom));

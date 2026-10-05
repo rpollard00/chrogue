@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 
 type Pieces<'a> = &'a [(Kind, &'a str)];
 
-const RULE_RELICS: [&str; 9] = [
+const RULE_RELICS: [&str; 11] = [
     "vault",
     "crossfire",
     "closeQuarters",
@@ -27,6 +27,8 @@ const RULE_RELICS: [&str; 9] = [
     "crusade",
     "royalMarch",
     "huntress",
+    "shieldWall",
+    "echelon",
 ];
 const EFFECT_RELICS: [&str; 3] = ["apprenticeship", "coup", "gambit"];
 
@@ -164,6 +166,16 @@ fn royal_march_lets_a_king_move_two_squares() {
 #[test]
 fn huntress_lets_a_queen_capture_as_a_knight() {
     assert_gives_move("huntress", &[KING, (Kind::Queen, "d1")], &[FOE, (Kind::Pawn, "c3")], "d1", "c3");
+}
+
+#[test]
+fn shield_wall_lets_a_pawn_capture_straight_forward() {
+    assert_gives_move("shieldWall", &[KING, (Kind::Pawn, "c2")], &[FOE, (Kind::Knight, "c3")], "c2", "c3");
+}
+
+#[test]
+fn echelon_lets_a_pawn_move_diagonally_forward_to_an_empty_square() {
+    assert_gives_move("echelon", &[KING, (Kind::Pawn, "c2")], &[FOE], "c2", "d3");
 }
 
 #[test]
@@ -662,7 +674,8 @@ fn the_ai_moves_when_a_line_of_checks_has_no_end() {
     let mut run = Run::new(&Meta::default(), 504_533_058, &tuning);
     run.floor = 8;
     run.enemy = generate_enemy(run.seed, run.floor, &tuning);
-    assert_eq!(run.enemy.traits, relics(&["kingKnight", "earlyPromo"]));
+    // The traits that the seed gave when the battle was found. The pool of traits has more relics now.
+    run.enemy.traits = relics(&["kingKnight", "earlyPromo"]);
     run.relics = relics(&["sidestep", "royalMarch"]);
     let army = [
         (Kind::King, 4),

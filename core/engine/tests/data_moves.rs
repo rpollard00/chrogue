@@ -78,6 +78,41 @@ fn pawns_that_capture_straight_ahead_and_not_diagonally() {
 }
 
 #[test]
+fn a_forward_capture_and_a_quiet_diagonal_step_with_the_pawn_of_ordinary_chess() {
+    // Shield Wall and Echelon: the pawn of ordinary chess with two more atoms.
+    let side = || {
+        SideRules::standard()
+            .with_atom(Kind::Pawn, Atom::leap(&FORWARD, Mode::CaptureOnly))
+            .with_atom(Kind::Pawn, Atom::leap(&FORWARD_DIAG, Mode::MoveOnly))
+    };
+    let rules = || white(side());
+
+    // The pawn on e3 captures on e4 and on d4, and steps to the empty square f4.
+    let mut state = from_fen("4k3/8/8/8/3pp3/4P3/8/4K3", Color::White, rules());
+    assert_eq!(targets(&mut state, "e3"), squares(&["d4", "e4", "f4"]));
+    // The pawn attacks the three squares before it, thus it gives check straight ahead.
+    assert!(in_check(&from_fen("4k3/4P3/8/8/8/8/8/4K3", Color::Black, rules()), Color::Black));
+    assert!(!in_check(&from_fen("4k3/4P3/8/8/8/8/8/4K3", Color::Black, Rules::standard()), Color::Black));
+    // An unmoved pawn with a piece before it has no double step: the capture is one square.
+    let mut state = from_fen("4k3/8/8/8/8/4n3/4P3/4K3", Color::White, rules());
+    assert_eq!(targets(&mut state, "e2"), squares(&["d3", "e3", "f3"]));
+    // The capture and the diagonal step promote on the last rank.
+    let mut state = from_fen("4r2k/4P3/8/8/8/8/8/K7", Color::White, rules());
+    let promotions = moves(&mut state, "e7");
+    assert_eq!(promotions.len(), 12);
+    assert!(promotions.iter().all(|m| m.promo.is_some()));
+    for to in ["d8", "e8", "f8"] {
+        assert_eq!(promotions.iter().filter(|m| m.to == square(to)).count(), 4, "{to}");
+    }
+    // The diagonal step is not an en passant capture, and the usual en passant capture stays.
+    let mut state = from_fen("4k3/3p4/8/4P3/8/8/8/4K3", Color::Black, Rules::new(side(), SideRules::standard()));
+    let double = find(&mut state, "d7", "d5");
+    state.make(double);
+    assert_eq!(find(&mut state, "e5", "d6").special, Special::EnPassant);
+    assert_eq!(find(&mut state, "e5", "f6").special, Special::None);
+}
+
+#[test]
 fn a_sideways_pawn_step_that_only_moves() {
     let sidestep = |atom: Atom| white(SideRules::standard().with_atom(Kind::Pawn, atom));
     let rules = || sidestep(Atom::leap(&[(-1, 0), (1, 0)], Mode::MoveOnly));

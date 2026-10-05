@@ -6,7 +6,9 @@
 //! - Upgrade: add one entry to `UPGRADES`. A new kind of effect needs a kind in `UpgradeEffect`.
 //! - Floor: add one entry to `FLOORS`.
 
-use crate::chess::{ALFIL, Atom, CAMEL, DABBABA, DIAG, FORWARD, KING, KNIGHT, Kind, Mode, ORTHO, Offset, SideRules};
+use crate::chess::{
+    ALFIL, Atom, CAMEL, DABBABA, DIAG, FORWARD, FORWARD_DIAG, KING, KNIGHT, Kind, Mode, ORTHO, Offset, SideRules,
+};
 
 /// An edit of `SideRules::standard()` that a relic gives to its side. The engine builds its
 /// tables and the AI its piece values from the result, thus the AI sees each relic.
@@ -84,7 +86,7 @@ const fn hook(key: &'static str, name: &'static str, text: &'static str, effect:
     RelicDef { key, name, text, foe_text: None, rules: &[], effect: Some(effect) }
 }
 
-pub static RELICS: [RelicDef; 22] = [
+pub static RELICS: [RelicDef; 24] = [
     rule(
         "forcedMarch",
         "Forced March",
@@ -226,6 +228,20 @@ pub static RELICS: [RelicDef; 22] = [
         "Gambit",
         "When the enemy captures one of your pieces, you get half of its shop price in gold after the battle.",
         Effect::LossGold,
+    ),
+    rule(
+        "shieldWall",
+        "Shield Wall",
+        "Your pawns can capture a piece that is one square straight forward.",
+        "Enemy pawns can capture a piece that is one square straight forward.",
+        &[RuleEdit::Leap { kind: Kind::Pawn, offsets: &FORWARD, mode: Mode::CaptureOnly }],
+    ),
+    rule(
+        "echelon",
+        "Echelon",
+        "Your pawns can move one square diagonally forward to an empty square.",
+        "Enemy pawns can move one square diagonally forward to an empty square.",
+        &[RuleEdit::Leap { kind: Kind::Pawn, offsets: &FORWARD_DIAG, mode: Mode::MoveOnly }],
     ),
 ];
 
