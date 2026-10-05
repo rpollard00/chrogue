@@ -28,10 +28,11 @@ To do the two steps without the script:
 
 ### In a browser
 
-The Emscripten SDK and the Rust target `wasm32-unknown-emscripten` are also necessary. `web/README.md` has the steps to install them.
+The Emscripten SDK, the Rust target `wasm32-unknown-emscripten`, and Python 3 are also necessary. `web/README.md` has the build prerequisites and installation steps.
 
-1. Run `web/build.sh`.
-2. Give the folder `web/dist` to a static server, and open its page.
+Run `web/run.sh`. It builds the game, serves `http://127.0.0.1:8000/`, and opens the page in your browser. Ctrl+C stops the server.
+
+After a change of the client only, run `web/run.sh game`. Use `--no-open` to open the page yourself, or `--port 8001` for another port. `web/README.md` has the other local launch details.
 
 ## Run the tests
 

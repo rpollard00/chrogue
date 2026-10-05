@@ -37,6 +37,25 @@ After a change of `client` only, run `web/build.sh game`. It makes `game.love` a
 
 `build.sh` keeps the source of LÖVE and its build in `~/.cache/chrogue-tools/web`. Set `CHROGUE_WEB_WORK` for a different folder. `CHROGUE_WEB_DIST` sets a different folder for the result.
 
+## Run locally
+
+Python 3 is also necessary for the launcher.
+
+Run `web/run.sh` from the repository root. It builds the changed parts, serves `http://127.0.0.1:8000/`, and opens the page in your browser. The first build takes some minutes. Ctrl+C stops the server.
+
+| Command | Function |
+|---|---|
+| `web/run.sh game` | Packages the client and page only. A full build must exist first |
+| `web/run.sh --no-open` | Prints the page address without opening the browser |
+| `web/run.sh --port 8001` | Serves the game on another port |
+| `web/run.sh --help` | Shows the options without building |
+
+The options can go together, for example `web/run.sh game --port 8001 --no-open`.
+
+The launcher uses the same build environment variables as `build.sh`. It serves `CHROGUE_WEB_DIST` when that variable is set. A relative folder is relative to the folder where you run the command. For example: `CHROGUE_WEB_DIST="./scratch/web files" web/run.sh --no-open`.
+
+The server accepts connections from this computer only. It sends `love.wasm` as `application/wasm` and disables the browser cache for local files. If the port is busy, the launcher stops before it opens the browser. If the browser does not open, the server stays available at the printed address.
+
 ## The result
 
 `web/dist` has four files. A server gives them as static files.
@@ -51,17 +70,20 @@ The server must give `love.wasm` with the type `application/wasm`. `httpd.conf` 
 
 A new build has a new stamp. Thus a browser does not use `love.wasm` of an old build with `love.js` of a new one. The address of `index.html` has no stamp: a browser can show the page of the old build for some time after a deployment.
 
-To look at the game, give the folder to a static server, and open the page. For example, with Bun: `bunx serve web/dist`.
+`web/run.sh` serves the result locally. To use another static server, give it the result folder and open its page.
 
 ## Options
 
 Five options of the client come from the address of the page: `seed`, `debug`, `no-save`, `script`, and `background`. `?seed=7&debug` is `--seed 7 --debug`. `../client/README.md` tells their functions. The page does not give the other options to the game: they are for a window or for a socket.
+
+For the default local server, open `http://127.0.0.1:8000/?seed=7&debug` to use those page options.
 
 ## Saved data
 
 The core keeps `meta.json` and `run.json` in the save folder of LÖVE. In a browser, that folder is in the IndexedDB of the browser, for the address of the page. The page gets the saved files before the game starts, and each change of the folder goes to the browser.
 
 - The saved data is for one browser and one address. A different browser, or a different address of the same game, has its own data.
+- The local launcher keeps port 8000 by default. A different port, or `localhost` instead of `127.0.0.1`, has separate saved data.
 - Two pages of the game in one browser do not see the changes of each other. The page that saves last sets the data.
 - If the browser has no IndexedDB, or does not give the saved files in 10 seconds, the game runs with the save folder in memory, and the data that the browser keeps does not change. The game then starts with no saved data each time. The console of the page has the reason. The game does not tell the player.
 
