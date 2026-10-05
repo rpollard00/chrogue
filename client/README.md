@@ -82,7 +82,7 @@ The client looks for the library at `../core/target/release/libchrogue_core.so`,
 
 - `--seed`, `--no-debug`, `--no-save`, and `--save-dir` have the same function. `--connect`, `--keep-alive`, and `--no-auth` have no function.
 - The client sends one request in each frame, and the core answers in the call. No token, no time limit, and no reconnection are necessary.
-- While the core selects the enemy move, the window does not draw. On floor 8, this time is 0.1 to 0.2 seconds.
+- While the core selects the enemy move, the window does not draw. At the strongest level of the AI, this time is 0.1 to 0.2 seconds. At the levels that the floors have by default, it is usually less than 1 ms.
 - If the library is missing, or if another core holds the lock of the save folder, the window shows the reason.
 
 ### The token
@@ -155,7 +155,7 @@ The run fails if a game stops with an error, if the core refused a command that 
 
 - `test/flow.lua`: a full session from the title to the title, at 1280 by 720 and 1920 by 1080, and one time with `--embed`.
 - `test/showcase.lua`: the largest content (the last boss, a full army, 10 relics) and a won run.
-- `test/floor8.lua`: 12 moves against the boss of floor 8. It prints the longest frame while the core selects the enemy move.
+- `test/floor8.lua`: 12 moves against the boss of floor 8, with the strongest level of the AI. It prints the longest frame while the core selects the enemy move.
 - `test/reconnect-a.lua`, `test/reconnect-b.lua`: the reconnection with `--keep-alive` and `--connect`.
 - `test/lost.lua`: the core stops, and the client starts a new core.
 - `test/fps.lua`: the frames per second on the camp and the battle, in each effects mode.

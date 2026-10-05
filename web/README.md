@@ -9,7 +9,7 @@ The web build is the same game as the desktop game. It has no game rules of its 
 - LÖVE for a browser has no LuaJIT, thus the client cannot load the core with the FFI. The build links the library of the core (`../core/embed`) into LÖVE as the Lua module `chrogue_core`. `chrogue_core_lua.c` is that module.
 - The client always has the core in its process in a browser (`../client/README.md`, "The core in the process of the game"). It sends the same requests as on the desktop.
 - LÖVE comes from the source of a port of LÖVE 11.5 to Emscripten: `alexjgriffith/megasource` and `alexjgriffith/love`, at the commits in `build.sh`. This port uses WebAssembly exceptions, as the library of the core does. The usual `love.js` does not, thus it cannot have the core.
-- The page has no threads. A page with threads needs HTTP headers that the server of the game (BusyBox `httpd`) does not send. Thus the core selects the enemy move in the frame, and the picture stops for 0.1 to 0.2 seconds on floor 8.
+- The page has no threads. A page with threads needs HTTP headers that the server of the game (BusyBox `httpd`) does not send. Thus the core selects the enemy move in the frame, and the picture stops for 0.1 to 0.2 seconds at the strongest level of the AI. At the levels that the floors have by default, a move is usually done in less than 1 ms.
 - The game draws with WebGL 1. See "Limits".
 
 ## Build

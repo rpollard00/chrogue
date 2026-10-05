@@ -46,6 +46,16 @@ A run has 4 relic slots. In the camp, the player can discard a relic to make a s
 
 Decision source: the user gave this decision on 3 October 2026. The first version had a limit of 10 relics with no discard.
 
+### The first run is for a beginner at chess
+
+A player who knows how the pieces move, and no more, can play the first run. An older child is such a player.
+
+- The weakest levels of the enemy AI make the mistakes of a beginner. Such a level misses a capture, and it leaves a piece where the player can capture it. A level that only searches less does not make these mistakes.
+- The first run has only about three levels of the AI. The larger enemy army and the relics of the enemy make a later floor harder. A stronger AI does not.
+- To complete the run, the player needs a little more skill than at its start.
+
+Decision source: the user gave this direction on 4 October 2026.
+
 ### The core and the client talk through commands
 
 The core takes JSON commands and gives the state of the game (`core/PROTOCOL.md`).
@@ -116,11 +126,13 @@ The user decided to wait on these items.
 
 - The user has ideas for the start positions of a battle. They wait for more playtests.
 - The enemy slot of the camp is long and looks empty for a small army. It needs a better design at a later time.
+- A harder run after the player wins runs. The user expects a stronger enemy AI and armies of more equal value, as the stakes of Balatro make a run harder. The engine has the levels for it. The game has no function for it.
 
 ## Open
 
 No decision at this time.
 
+- The levels of the AI in the first run. At this time, the floors have the three beginner levels: level 1 on floors 1 to 3, level 2 on floors 4 to 7, and level 3 on floor 8. The user did not confirm this setting. Playtests with a beginner decide it.
 - The phone layout of the client. The client has only the wide layout. The phone layout of the TypeScript game went away with that game, and the user wants a new plan.
 - A battle in progress is not saved. If the player starts the game again in a battle, the battle starts again from its first move.
 - The core describes the pawn moves and the castles as data, as it does for the other pieces. The user did not confirm this part.

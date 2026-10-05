@@ -109,7 +109,7 @@ The `phase` of the battle view tells who acts: `player`, `enemy`, or `over`.
 | Command | Arguments | Phase | Effect |
 | --- | --- | --- | --- |
 | `move` | `from`, `to`, `promo` (optional: `q`, `r`, `b`, `n`) | `player` | Plays the move of the player. A promotion needs `promo` (error `promo_required`). After the move the phase is `enemy`, or `over`. |
-| `enemy_move` | | `enemy` | The AI of the floor selects and plays the enemy move. The command blocks until the move is done. On floor 8 a move usually takes less than 100 ms; a board with many queens (an army of 7 queens against 23 queens) takes up to about 190 ms. |
+| `enemy_move` | | `enemy` | The AI of the floor selects and plays the enemy move. The command blocks until the move is done. At the levels that the floors have by default, a move usually takes less than 1 ms. At level 11, the strongest level, a move usually takes less than 100 ms; a board with many queens (an army of 7 queens against 23 queens) takes up to about 190 ms. |
 | `give_up` | | `player`, `enemy` | Ends the run as a loss. Goes to `over`. |
 | `continue` | | `over` | Goes to `camp`, or to `over` if the run is won or lost. The core settled the battle when it ended (see below). |
 | `to_title` | | any | Goes to the title. A battle with no result is not saved: `continue_run` starts it again from its start. After the result, the title has the run in the camp, or no run if the run ended. |

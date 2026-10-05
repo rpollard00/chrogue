@@ -29,7 +29,7 @@ local net = {
 
 local START_LIMIT = 10
 local RETRY_TIME = 1
--- The time that the client waits for a response before it closes the connection. enemy_move can take longer on floor 8.
+-- The time that the client waits for a response before it closes the connection. enemy_move can take longer at a high level of the AI.
 net.TIMEOUT = 5
 net.ENEMY_TIMEOUT = 15
 

@@ -440,16 +440,19 @@ const fn floor(name: &'static str, level: usize, budget: u32, traits: usize, bos
     FloorDef { name, level, budget, traits, boss }
 }
 
-/// The tuning of a session can change the budget, the traits, and the level of a floor (`tuning.rs`).
+/// A run has three levels of the AI: one for the floors before the first boss, one from the first
+/// boss to the floor before the last boss, and one for the last boss. They are the beginner levels
+/// of the engine, thus the larger army and the traits make a later floor harder. The tuning of a
+/// session can change the budget, the traits, and the level of a floor (`tuning.rs`).
 pub static FLOORS: [FloorDef; 8] = [
-    floor("Border Patrol", 4, 5, 0, false),
-    floor("Scouts", 5, 9, 0, false),
-    floor("Garrison", 6, 13, 0, false),
-    floor("The Warden", 7, 18, 1, true),
-    floor("Cavalry", 8, 23, 0, false),
-    floor("Royal Guard", 9, 28, 0, false),
-    floor("Vanguard", 10, 33, 0, false),
-    floor("The Black King", 11, 39, 2, true),
+    floor("Border Patrol", 1, 5, 0, false),
+    floor("Scouts", 1, 9, 0, false),
+    floor("Garrison", 1, 13, 0, false),
+    floor("The Warden", 2, 18, 1, true),
+    floor("Cavalry", 2, 23, 0, false),
+    floor("Royal Guard", 2, 28, 0, false),
+    floor("Vanguard", 2, 33, 0, false),
+    floor("The Black King", 3, 39, 2, true),
 ];
 
 /// The floor of a number from 1 to `FLOORS.len()`.

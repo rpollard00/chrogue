@@ -1,6 +1,7 @@
 --[[
-  The boss of floor 8, with 10 relics: the banner, the fans, and 12 moves by clicks. The dump has the longest frame while the
-  core selects each enemy move (client.enemyMove.worstFrameMs) and the time of each enemy_move request.
+  The boss of floor 8, with 10 relics: the banner, the fans, and 12 moves by clicks. The boss has level 11, the strongest
+  level of the AI, thus the core needs time for each enemy move. The dump has the longest frame while the core selects each
+  enemy move (client.enemyMove.worstFrameMs) and the time of each enemy_move request.
   Run with: --seed 7 --debug --no-save --script test/floor8.lua
 ]]
 local w, h = love.graphics.getDimensions()
@@ -26,6 +27,7 @@ end
 local steps = {
   { 'screen', 'title' }, { 'press', 'newRun' }, { 'screen', 'battle' },
   { 'send', { cmd = 'debug_set_floor', floor = 8 } },
+  { 'send', { cmd = 'debug_tune', floor = 8, level = 11 } },
 }
 for _, id in ipairs(RELICS) do steps[#steps + 1] = { 'send', { cmd = 'debug_set_relic', relic = id, on = true } } end
 local rest = {

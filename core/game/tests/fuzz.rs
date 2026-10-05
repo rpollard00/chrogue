@@ -68,7 +68,7 @@ fn piece_kind(g: &mut Gen) -> &'static str {
 }
 
 /// A `debug_tune` with numbers that are mostly in their ranges. The level stays, thus the AI of
-/// the first floors stays fast.
+/// each floor stays fast.
 fn tune(g: &mut Gen) -> Value {
     match g.below(4) {
         0 => json!({ "cmd": "debug_tune", "reset": true }),
@@ -107,11 +107,11 @@ fn valid(g: &mut Gen, view: &Value) -> Value {
                 let promo = if g.chance(0.8) { m.get("promo").cloned() } else { None };
                 json!({ "cmd": "move", "from": m["from"], "to": m["to"], "promo": promo })
             }
-            // The AI search on a high floor takes time, thus most enemy moves come from the list of
-            // a Scout view or from the AI of floor 1.
+            // The AI search at a high level takes time, thus the enemy moves come from the AI of the
+            // floor, which is a beginner level, and from levels 4 and 5.
             "enemy" => match g.below(3) {
                 0 => json!({ "cmd": "debug_ai_move", "level": 4 }),
-                1 if view["floor"]["number"].as_u64().unwrap_or(9) <= 2 => json!({ "cmd": "enemy_move" }),
+                1 => json!({ "cmd": "enemy_move" }),
                 _ => json!({ "cmd": "debug_ai_move", "level": 4 + g.below(2) }),
             },
             "over" => json!({ "cmd": "continue" }),

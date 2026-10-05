@@ -124,7 +124,8 @@ local steps = {
   expect('the reward is skipped', function(v) return v.reward.state == 'skipped' and v.can_start end),
   { 'key', 'return' }, { 'screen', 'battle' },
 
-  -- Battle 3, floor 3: the enemy queen takes the last rook. Your king is alone.
+  -- Battle 3, floor 3: the enemy queen takes the last rook. Your king is alone. Level 6 of the AI does not overlook the capture.
+  { 'send', { cmd = 'debug_tune', floor = 3, level = 6 } },
   { 'send', { cmd = 'debug_set_army', units = { { kind = K, home = 4 }, { kind = R, home = 0 } } } },
   { 'send', { cmd = 'debug_set_enemy', pieces = { { kind = K, square = 63 }, { kind = Q, square = 9 } } } },
   { 'settle' }, { 'wait', 2 },

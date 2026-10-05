@@ -173,7 +173,9 @@ fn a_battle_outlives_a_connection_and_quit_ends_the_process() {
             client.send(json!({ "cmd": "debug_ai_move", "level": 1 }));
         }
     }
-    // The enemy move on floor 8, from the start of each battle.
+    // The enemy move of the strongest level of the AI on floor 8, from the start of each battle.
+    let strongest = client.send(json!({ "cmd": "debug_state" }))["data"]["debug"]["limits"]["level"].clone();
+    client.send(json!({ "cmd": "debug_tune", "floor": 8, "level": strongest }));
     let mut enemy = Vec::new();
     for _ in 0..12 {
         client.send(json!({ "cmd": "to_title" }));
@@ -193,7 +195,7 @@ fn a_battle_outlives_a_connection_and_quit_ends_the_process() {
         }
     }
     println!(
-        "TCP round trip: view median {:?} (max {:?}, {} bytes); move median {:?}; enemy_move floor 8 median {:?} max {:?} ({} moves)",
+        "TCP round trip: view median {:?} (max {:?}, {} bytes); move median {:?}; enemy_move of the strongest level median {:?} max {:?} ({} moves)",
         median(views.clone()),
         views.iter().max().unwrap(),
         after.to_string().len(),
