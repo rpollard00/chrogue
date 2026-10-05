@@ -46,7 +46,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
   - `src/rng.rs`: A small seeded random number generator.
   - `src/fen.rs`: A reader for the piece field of a FEN string. The tests and the tools use it.
   - `tests/`: Perft counts, the six rule flags and the results of a battle (`relic_rules.rs`), other rules as data (`data_rules.rs` for the officers, `data_moves.rs` for pawns, en passant, castles, ranges, and first-move atoms), the Zobrist key, the derived values, and the tactics of the AI. `tests/property.rs` compares the engine with a naive move generator on 6000 random rule sets: random atoms for each kind (the pawn too) with random ranges, conditions, en passant properties, clock properties, promotions, and castle rows. It also walks the move tree of 1500 more rule sets, compares each `make` with a naive `make`, and makes sure that `unmake` gives back the state and the key.
-- `tools/`: The crate `chrogue-tools`. It has the binaries `perft` (a timer), `arena` (self-play matches), `levels` (the mistakes of a level, and a run floor by floor), `ai` (values, speed, and the move for one position), and `balance` (relics and armies in battles of the game). Its library has `src/reference.rs` (the reference AI), `Player` (a level of the engine or the reference AI, and the reader of a CONFIG), `src/armies.rs` (armies in the style of the game), `src/balance.rs` (the battles of `balance`), and `src/cli.rs` (the command line of the binaries). `balance` uses the crate `chrogue-game`. The other binaries use only the engine. The reference AI is the algorithm of the AI that the first version of the game had. It is a baseline opponent only. The engine and the game do not use it.
+- `tools/`: The crate `chrogue-tools`. It has the binaries `perft` (a timer), `arena` (self-play matches), `levels` (the mistakes of a level, and a run floor by floor), `ai` (values, speed, and the move for one position), and `balance` (relics and armies in battles of the game). Its library has `src/reference.rs` (the reference AI), `Player` (a level of the engine or the reference AI, and the reader of a CONFIG), `src/armies.rs` (armies in the style of the game), `src/balance.rs` (the battles of `balance`), and `src/cli.rs` (the command line of the binaries). `balance` uses the crate `chrogue-game`. The other binaries use only the engine. `tools/report/` makes an HTML report from the data of `balance`. The reference AI is the algorithm of the AI that the first version of the game had. It is a baseline opponent only. The engine and the game do not use it.
 
 ## Movement rules
 
@@ -386,6 +386,10 @@ The tool prints one row for each relic set: the wins, the draws, and the losses 
   - `gold`: The gold reward.
   - `lost`: The piece value of the units that the enemy captured and that did not return.
   - `recruits` is one number: the units that the relics added to the army after the battles of the cell.
+
+#### The report
+
+`tools/report/` makes one HTML file from the data: `bun install` one time, then `bun run report balance.json` in `tools/report/`. The file has the data in it and opens from the disk. `tools/report/README.md` describes its views, its statistics, and the TypeScript module that reads the data in a script.
 
 ## Game layer and command server
 
