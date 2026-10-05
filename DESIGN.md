@@ -86,7 +86,7 @@ The debug menu is a development tool (`client/README.md`, "The debug menu"). It 
 
 - The menu is above the layout, as a dialog is. It does not move or resize an area of a screen.
 - The menu is the one place that lists the relics. The game shows no such list ("Composition").
-- The panel of the menu has a set size, and each tab has a set layout for its largest content: 22 relics, 8 floors, 5 kinds of pieces, and the 16 upgrades of the medal board. A row with no content stays empty.
+- The panel of the menu has a set size, and each tab has a set layout for its largest content: 22 relics, 8 floors, 5 kinds of pieces, the 16 upgrades of the medal board, and 11 backgrounds. A row with no content stays empty.
 - The menu uses the objects of the game: keys, wells, medals, and the paper tip. A toggle is a key that has an amber ring, an amber lamp, and an amber label when it is on.
 
 Decision source: the user asked for the menu on 3 October 2026. Status: provisional.

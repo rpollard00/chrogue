@@ -32,6 +32,7 @@ The options come after the game folder. The client gives `--seed`, `--no-save`, 
 - `--embed`: the core is in the process of the game, and the client uses no socket. See "The core in the process of the game".
 - `--script FILE`: a Lua file of test steps. See "Test scripts".
 - `--novsync`: no limit for the frames per second, for a measurement.
+- `--background NAME`: the background at the start. The names are the `id` values of `shaders.BACKGROUNDS` in `shaders.lua`, for example `walnut`. The default is `swirl`.
 
 ## Keys
 
@@ -48,12 +49,13 @@ The debug menu is a development tool. It is available on each screen, unless the
 
 While the menu is open, the screen below it takes no click and no key. The screen continues: the enemy moves, and the motion plays.
 
-The menu shows the debug state of the core (`../core/PROTOCOL.md`, "Debug state"), and each control sends one debug command. The limits of each number come from the core. Only the gold and the crowns have no limit in the core: their steppers stop at 9999 gold and at 999 crowns, the largest numbers that the purses of the game have space for. If the core refuses a command, the line at the bottom of the menu shows the message of the core until the next action.
+The menu shows the debug state of the core (`../core/PROTOCOL.md`, "Debug state"), and each control sends one debug command. Only the Effects tab is different. The limits of each number come from the core. Only the gold and the crowns have no limit in the core: their steppers stop at 9999 gold and at 999 crowns, the largest numbers that the purses of the game have space for. If the core refuses a command, the line at the bottom of the menu shows the message of the core until the next action.
 
 - Run: the seed of this run, and the seed of new runs. To set the seed of new runs, click the field, type at most 9 digits, and press `Enter` or Set. Random clears the seed. New run starts a new run from each screen, with no question. The stepper Relic slots changes the relic slots of the run and of each new run, and it works with no run. The other steppers change the floor and the gold of the run.
 - Relics: the heading shows the relics of the run against its relic slots. With no run, it shows the slots of new runs. One row for each relic. Owned gives the relic to the run or removes it. Offered permits or stops the relic as a reward, as a shop item, and as a boss trait. Trait gives the relic to the enemy or removes it. The pointer on a name shows the text of the relic. Offer all and Offer none change Offered for each relic.
 - Enemy: for each floor, the AI level, the budget of the enemy army, and the number of boss traits. For each kind of piece, the most pieces in an army, the weight, and the first floor. A click on a budget stepper with `Shift` changes the budget by 5. A value that differs from its default is amber. Defaults sets each number of this tab to its default.
 - Upgrades: the crowns, and the level of each upgrade.
+- Effects: the background, and the effects mode of `F1`. This tab changes the shaders of the client. It sends no command, and it works before the core gives its debug state. The backgrounds other than Swirl are experiments for the look of the game. The selection is not saved: the game starts with Swirl, or with the background of `--background`.
 
 A command that changes the run or the upgrades during a battle starts the battle again (`../core/PROTOCOL.md`, "Debug commands"). The settings of the Enemy tab, the seed of new runs, and Offered are not saved: a new core starts with the defaults.
 

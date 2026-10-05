@@ -4,12 +4,14 @@
   of the core (core/PROTOCOL.md, "Debug commands").
   The menu draws only the state of the core: the debug state of the responses (`data.debug`) and the content of `hello`.
   It has no game rules, and the limits of its numbers come from the core. Each control sends one command.
+  The Effects tab is different: it changes the shaders of the client, and it sends no command.
   The module has the name `debugmenu`, because `debug` is a library of Lua.
 ]]
 local gfx = require('gfx')
 local icons = require('icons')
 local json = require('json')
 local layout = require('layout')
+local shaders = require('shaders')
 local theme = require('theme')
 local ui = require('ui')
 local C, px = theme.color, gfx.px
@@ -29,12 +31,13 @@ local ROW = 2.6
 
 --[[
   The set layout of the menu, in stage units. The panel is in the center of the stage. Each tab has the rectangles of its
-  largest content: 22 relics, 8 floors, 5 kinds, and the 16 upgrades of the medal board.
+  largest content: 22 relics, 8 floors, 5 kinds, the 16 upgrades of the medal board, and 11 backgrounds.
 ]]
 local L = {
   panel = rect(4, 2.5, 72, 40),
   heading = rect(5.25, 3.5, 8, 2.25),
-  tabs = { rect(14, 3.5, 7.6, 2.25), rect(22.1, 3.5, 7.6, 2.25), rect(30.2, 3.5, 7.6, 2.25), rect(38.3, 3.5, 7.6, 2.25) },
+  tabs = { rect(14, 3.5, 7.6, 2.25), rect(22.1, 3.5, 7.6, 2.25), rect(30.2, 3.5, 7.6, 2.25), rect(38.3, 3.5, 7.6, 2.25),
+    rect(46.4, 3.5, 7.6, 2.25) },
   close = rect(69.55, 3.5, 5.2, 2.25),
   rule = rect(5.25, 6.6, 69.5, px(1)),
   status = rect(5.25, 39.85, 69.5, 1.4),
@@ -90,6 +93,16 @@ local L = {
     perColumn = 8,
     level = { w = 10 },
   },
+  effects = {
+    backgroundHead = rect(5.25, 7.5, 20, 1),
+    -- One column of 11 rows: the key of a background (it has space for "Walnut and tour"), and its note.
+    rows = 11, rowsY = 9,
+    background = { x = 5.25, w = 13 },
+    note = { x = 19, w = 30 },
+    modeHead = rect(52, 7.5, 20, 1),
+    mode = { x = 52, w = 13 },
+    modeNote = rect(52, 17.2, 22.75, 2.25),
+  },
 }
 
 -- The parts of row `i` of the relics or of the upgrades: the medal, the name (it has space for "Close Quarters"), and the
@@ -101,7 +114,7 @@ local function row(i, perColumn)
   return { medal = { x = x + 1.2, y = y + 1.3, size = 2 }, name = rect(x + 2.9, y + 0.3, 9.2, 2), x = x + 12.3, y = y + 0.3 }
 end
 
-local TABS = { { 'run', 'Run' }, { 'relics', 'Relics' }, { 'enemy', 'Enemy' }, { 'upgrades', 'Upgrades' } }
+local TABS = { { 'run', 'Run' }, { 'relics', 'Relics' }, { 'enemy', 'Enemy' }, { 'upgrades', 'Upgrades' }, { 'effects', 'Effects' } }
 -- The core has no limit for the gold and for the crowns. The steppers stop at the largest numbers that the purses of the
 -- game have space for: 4 digits of gold and 3 digits of crowns (layout.lua).
 local GOLD_MAX, CROWNS_MAX = 9999, 999
@@ -517,6 +530,25 @@ function BUILD.upgrades(self, items, d, content)
   end
 end
 
+-- The shaders of the client. This tab needs no state of the core.
+function BUILD.effects(self, items)
+  local E = L.effects
+  kicker(items, 'Background', E.backgroundHead)
+  for i, background in ipairs(shaders.BACKGROUNDS) do
+    if i > E.rows then break end
+    local y = E.rowsY + (i - 1) * ROW
+    key(items, 'background', background.id, rect(E.background.x, y, E.background.w, 2.25), background.label,
+      { on = shaders.background == background.id, sends = false, act = function() shaders.setBackground(background.id) end })
+    label(items, background.note, rect(E.note.x, y, E.note.w, 2.25), { size = 0.85, color = C.dim })
+  end
+  kicker(items, 'Effects (F1)', E.modeHead)
+  for i, mode in ipairs(shaders.MODES) do
+    key(items, 'mode', i, rect(E.mode.x, E.rowsY + (i - 1) * ROW, E.mode.w, 2.25), mode.name,
+      { on = shaders.mode == i, sends = false, act = function() shaders.mode = i end })
+  end
+  label(items, 'With all off, the game shows no background.', E.modeNote, { size = 0.85, color = C.dim })
+end
+
 -- The elements of the menu: the tabs, the Close key, and the elements of the current tab. Each element has `rect` and
 -- `draw`. A control also has `id`. The list changes only with the state, thus it is kept until the next change.
 function menu:items()
@@ -527,7 +559,7 @@ function menu:items()
       act = function() self.tab = tab[1] end })
   end
   key(items, 'close', nil, L.close, 'Close', { sends = false, act = function() self:close() end })
-  if self.debug then BUILD[self.tab](self, items, self.debug, self.content) end
+  if self.debug or self.tab == 'effects' then BUILD[self.tab](self, items, self.debug, self.content) end
   self.cache = items
   return items
 end

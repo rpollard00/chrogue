@@ -55,7 +55,7 @@ To look at the game, give the folder to a static server, and open the page. For 
 
 ## Options
 
-Four options of the client come from the address of the page: `seed`, `debug`, `no-save`, and `script`. `?seed=7&debug` is `--seed 7 --debug`. `../client/README.md` tells their functions. The page does not give the other options to the game: they are for a window or for a socket.
+Five options of the client come from the address of the page: `seed`, `debug`, `no-save`, `script`, and `background`. `?seed=7&debug` is `--seed 7 --debug`. `../client/README.md` tells their functions. The page does not give the other options to the game: they are for a window or for a socket.
 
 ## Saved data
 

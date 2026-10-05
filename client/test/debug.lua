@@ -5,6 +5,7 @@
   - The core does not accept a third trait or an 11th relic. The status line shows the message, and the game continues.
   - The stepper of the relic slots works with no run, and a new run has its slots.
   - A budget stepper changes the debug state, and an upgrade stepper changes the level of the upgrade.
+  - The Effects tab selects a background and an effects mode.
   Run with: --seed 7 --no-save --script test/debug.lua
 ]]
 local json = require('json')
@@ -122,6 +123,15 @@ return {
   { 'press', 'tab', 'upgrades' }, { 'press', 'upgrade', { 'pawn', '+' } }, { 'settle' },
   expect('the upgrade stepper changes the level', function(v, c, app) return app.debugMenu.debug.meta.upgrades.pawn == 1 end),
   shot('debug-upgrades'),
+
+  -- Effects: a background and an effects mode. The tab sends no command.
+  { 'press', 'tab', 'effects' }, { 'press', 'background', 'walnutTour' }, { 'press', 'mode', 2 },
+  expect('the Effects tab selects the background and the mode', function()
+    local shaders = require('shaders')
+    return shaders.background == 'walnutTour' and shaders.mode == 2
+  end),
+  { 'wait', 0.2 }, shot('debug-effects'),
+  { 'press', 'background', 'swirl' }, { 'press', 'mode', 1 },
 
   { 'press', 'close' },
   expect('Close closes the menu', function(v, c, app) return not app.debugMenu.isOpen end),

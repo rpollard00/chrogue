@@ -1,5 +1,5 @@
 -- The three shaders of the experiment, and the canvases that they need.
--- 1. background: a slow swirl behind the layout.
+-- 1. background: the surface behind the layout. The swirl is the default. The debug menu selects a different one.
 -- 2. post: the full scene goes to a canvas, and the canvas goes to the window through this shader.
 -- 3. foil: a sheen on the relic medals and on the relic card. It moves with the time and with the pointer.
 local gfx = require('gfx')
@@ -10,9 +10,9 @@ local shaders = {}
 
 -- F1 changes the mode.
 shaders.MODES = {
-  { label = 'Effects: all on', background = true, foil = true, post = true },
-  { label = 'Effects: post pass off', background = true, foil = true, post = false },
-  { label = 'Effects: all off', background = false, foil = false, post = false },
+  { label = 'Effects: all on', name = 'All on', background = true, foil = true, post = true },
+  { label = 'Effects: post pass off', name = 'Post pass off', background = true, foil = true, post = false },
+  { label = 'Effects: all off', name = 'All off', background = false, foil = false, post = false },
 }
 shaders.mode = 1
 
@@ -29,7 +29,7 @@ precision highp float;
 #endif
 ]]
 
-local BACKGROUND = PRECISION .. [[
+local SWIRL = PRECISION .. [[
 extern float time;
 extern vec2 resolution;
 
@@ -75,6 +75,199 @@ vec4 effect(mediump vec4 color, Image tex, mediump vec2 uv, mediump vec2 pixel) 
   return vec4(col, 1.0);
 }
 ]]
+
+--[[
+  The other backgrounds are experiments for the look of the game. Each one gives `scene`: the color at `p`, a point in
+  stage units from the center of the window. `u` is the pixels of one unit.
+]]
+local SCENE_HEAD = PRECISION .. [[
+extern float time;
+extern vec2 resolution;
+
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) {
+    v += a * noise(p);
+    p = p * 2.03 + vec2(17.0, 9.0);
+    a *= 0.5;
+  }
+  return v;
+}
+
+// One lamp above the center of the table. The light is wide and soft, and it changes slowly.
+float lamp(vec2 p) {
+  float r = length((p - vec2(0.0, -5.0)) * vec2(0.60, 1.0));
+  return exp(-r * r / 620.0) * (1.0 + 0.025 * sin(time * 0.35));
+}
+
+// The dark surface of the line drawings, with dark corners.
+vec3 slate(vec2 p, vec3 ink, float a) {
+  return mix(vec3(0.066, 0.072, 0.088), ink, a) * (1.0 - 0.38 * smoothstep(20.0, 46.0, length(p * vec2(0.8, 1.0))));
+}
+]]
+
+local SCENE_MAIN = [[
+vec4 effect(mediump vec4 color, Image tex, mediump vec2 uv, mediump vec2 pixel) {
+  vec2 sc = love_PixelCoord;
+  float u = min(resolution.x / 80.0, resolution.y / 45.0);
+  vec3 col = scene((sc - 0.5 * resolution) / u, u);
+  col += (hash(sc) - 0.5) * 2.0 / 255.0;
+  return vec4(col, 1.0);
+}
+]]
+
+-- The hatch of a printed chess diagram: lines at 45 degrees on the dark squares.
+local HATCH = [[
+vec3 scene(vec2 p, float u) {
+  float S = 7.5;
+  vec2 g = p / S;
+  vec2 cell = floor(g);
+  float dark = mod(cell.x + cell.y, 2.0);
+  float period = 0.42;
+  float c = abs(fract((p.x + p.y) * 0.7071 / period) - 0.5) * period;
+  float aa = 0.75 / u;
+  float hatch = 1.0 - smoothstep(0.055 - aa, 0.055 + aa, c);
+  // The frame of each square: one thin line.
+  vec2 e = abs(fract(g) - 0.5) * S;
+  float frame = 1.0 - smoothstep(0.03 - aa, 0.03 + aa, S * 0.5 - max(e.x, e.y));
+  // One square at a time becomes a small amount brighter, and then goes back.
+  float wake = smoothstep(0.90, 1.0, sin(time * 0.22 + hash(cell) * 6.2831853));
+  return slate(p, vec3(0.150, 0.166, 0.205), dark * hatch * (0.55 + 0.45 * wake) + frame * 0.35);
+}
+]]
+
+--[[
+  A closed knight's tour: one line through the 64 squares of a board. There is one figure at each side of the center,
+  and the left figure is the mirror of the right figure. A light goes along the line, one move of the knight at a time.
+]]
+local TOUR = [[
+extern vec2 path[65];
+
+float segment(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a, ba = b - a;
+  return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0));
+}
+
+float tour(vec2 p, float u) {
+  // The distance between two squares. The figure has the height of the stage, thus only one row of figures shows.
+  vec2 L = vec2(5.0, 6.0);
+  float side = mod(floor(p.x / 40.0), 2.0);
+  vec2 l = vec2(mod(p.x, 40.0) - 20.0, p.y);
+  if (side > 0.5) l.x = -l.x;
+  float aa = 0.75 / u;
+  float head = mod(time * 1.1, 64.0);
+  float a = 0.0;
+  for (int i = 0; i < 64; i++) {
+    float d = segment(l, (path[i] - 3.5) * L, (path[i + 1] - 3.5) * L);
+    float lit = 0.42 + 0.58 * exp(-mod(head - float(i), 64.0) * 0.22);
+    a = max(a, (1.0 - smoothstep(0.055 - aa, 0.055 + aa, d)) * lit);
+  }
+  return a;
+}
+]]
+
+-- The nap of green baize: short fibers in each direction, and a soft mottle where a hand went across it.
+local FELT = [[
+vec3 felt(vec2 p) {
+  float fiber = noise(p * vec2(26.0, 7.0)) + noise(p.yx * vec2(26.0, 7.0) + 31.0) + noise((p.x + p.y) * vec2(14.0, 0.0) + (p.x - p.y) * vec2(0.0, 5.0));
+  float mottle = fbm(p * 0.16) - 0.5;
+  vec3 col = mix(vec3(0.018, 0.050, 0.040), vec3(0.060, 0.170, 0.125), clamp(lamp(p) * 0.95 + mottle * 0.22, 0.0, 1.0));
+  return col * (1.0 + (fiber / 3.0 - 0.5) * 0.34);
+}
+]]
+
+-- A table top of walnut: wide boards along the screen. Each board has its own grain and tone.
+local WALNUT = [[
+vec3 walnut(vec2 p) {
+  float H = 12.5;
+  float row = floor(p.y / H + 0.5);
+  float inBoard = (fract(p.y / H + 0.5) - 0.5) * H;
+  vec2 g = vec2(p.x + row * 37.0, p.y + row * 5.3);
+  float rings = 0.5 + 0.5 * sin((g.y * 1.9 + fbm(g * vec2(0.035, 0.22)) * 22.0) * 1.25);
+  float grain = rings * 0.45 + fbm(g * vec2(0.10, 5.5)) * 0.40 + noise(g * vec2(1.6, 42.0)) * 0.15;
+  float tone = 0.86 + 0.28 * hash(vec2(row, 3.0));
+  vec3 col = mix(vec3(0.050, 0.030, 0.020), vec3(0.230, 0.132, 0.072), grain * tone * (0.22 + 0.78 * lamp(p)));
+  return col * (0.45 + 0.55 * smoothstep(0.0, 0.09, H * 0.5 - abs(inBoard)));
+}
+]]
+
+-- The top of a games table: leather with a pebble grain, and two gilt lines near the edge of the stage.
+local LEATHER = [[
+// The distance to the nearest point of a cell pattern.
+float cells(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  float d = 1.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 o = vec2(float(x), float(y));
+      vec2 c = o + vec2(hash(i + o), hash(i + o + 7.7)) - f;
+      d = min(d, dot(c, c));
+    }
+  }
+  return sqrt(d);
+}
+
+float box(vec2 p, vec2 size) {
+  vec2 d = abs(p) - size;
+  return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}
+
+vec3 scene(vec2 p, float u) {
+  float aa = 0.75 / u;
+  float h = cells(p * 3.4);
+  // The light from above is on the top side of each pebble.
+  float slope = cells((p + vec2(0.0, 0.05)) * 3.4) - cells((p - vec2(0.0, 0.05)) * 3.4);
+  float mottle = fbm(p * 0.22) - 0.5;
+  vec3 col = mix(vec3(0.045, 0.014, 0.014), vec3(0.205, 0.062, 0.052), clamp(lamp(p) * 0.9 + mottle * 0.25, 0.0, 1.0));
+  col *= 0.90 + 0.22 * h + slope * 0.9;
+  float outer = 1.0 - smoothstep(0.07 - aa, 0.07 + aa, abs(box(p, vec2(39.45, 21.95))));
+  float inner = 1.0 - smoothstep(0.025 - aa, 0.025 + aa, abs(box(p, vec2(39.05, 21.55))));
+  return mix(col, vec3(0.62, 0.47, 0.22) * (0.55 + 0.6 * h), max(outer, inner * 0.8) * 0.75);
+}
+]]
+
+local function scene(...) return SCENE_HEAD .. table.concat({ ... }) .. SCENE_MAIN end
+
+-- The backgrounds, in the sequence of the debug menu. `note` tells where the picture comes from.
+shaders.BACKGROUNDS = {
+  { id = 'swirl', label = 'Swirl', note = 'The default: slow marble', source = SWIRL },
+  { id = 'hatch', label = 'Diagram hatch', note = 'The dark squares of a printed diagram', source = scene(HATCH) },
+  { id = 'tour', label = "Knight's tour", note = 'One line through the 64 squares',
+    source = scene(TOUR, 'vec3 scene(vec2 p, float u) { return slate(p, vec3(0.185, 0.205, 0.255), tour(p, u)); }\n') },
+  { id = 'lamp', label = 'Lamp', note = 'No picture: one soft light',
+    source = scene('vec3 scene(vec2 p, float u) { return mix(vec3(0.040, 0.044, 0.056), vec3(0.125, 0.138, 0.170), lamp(p)); }\n') },
+  { id = 'felt', label = 'Baize', note = 'The green cloth of a games table',
+    source = scene(FELT, 'vec3 scene(vec2 p, float u) { return felt(p); }\n') },
+  { id = 'walnut', label = 'Walnut', note = 'The boards of a chess table',
+    source = scene(WALNUT, 'vec3 scene(vec2 p, float u) { return walnut(p); }\n') },
+  { id = 'leather', label = 'Leather', note = 'A leather top with gilt lines', source = scene(LEATHER) },
+  { id = 'feltTour', label = 'Baize and tour', note = "The knight's tour as chalk on baize",
+    source = scene(FELT, TOUR, 'vec3 scene(vec2 p, float u) { return mix(felt(p), vec3(0.30, 0.46, 0.38), tour(p, u) * 0.55); }\n') },
+  { id = 'walnutTour', label = 'Walnut and tour', note = "The knight's tour as brass inlay in walnut",
+    source = scene(WALNUT, TOUR, 'vec3 scene(vec2 p, float u) { return mix(walnut(p), vec3(0.62, 0.47, 0.22) * (0.45 + 0.55 * lamp(p)), tour(p, u) * 0.8); }\n') },
+}
+shaders.background = 'swirl'
+
+-- The squares of the knight's tour, as points of a board from 0 to 7. The last point is the first point again.
+local TOUR_PATH = {
+  { 0, 0 }, { 2, 1 }, { 4, 0 }, { 6, 1 }, { 7, 3 }, { 6, 5 }, { 7, 7 }, { 5, 6 },
+  { 7, 5 }, { 6, 7 }, { 4, 6 }, { 2, 7 }, { 0, 6 }, { 1, 4 }, { 0, 2 }, { 1, 0 },
+  { 3, 1 }, { 5, 0 }, { 7, 1 }, { 6, 3 }, { 4, 2 }, { 3, 0 }, { 1, 1 }, { 0, 3 },
+  { 1, 5 }, { 0, 7 }, { 2, 6 }, { 0, 5 }, { 1, 7 }, { 3, 6 }, { 5, 7 }, { 7, 6 },
+  { 6, 4 }, { 5, 2 }, { 6, 0 }, { 7, 2 }, { 5, 1 }, { 7, 0 }, { 6, 2 }, { 5, 4 },
+  { 6, 6 }, { 7, 4 }, { 5, 5 }, { 4, 7 }, { 3, 5 }, { 4, 3 }, { 2, 2 }, { 3, 4 },
+  { 1, 3 }, { 0, 1 }, { 2, 0 }, { 4, 1 }, { 5, 3 }, { 3, 2 }, { 4, 4 }, { 2, 3 },
+  { 0, 4 }, { 1, 6 }, { 3, 7 }, { 2, 5 }, { 3, 3 }, { 4, 5 }, { 2, 4 }, { 1, 2 },
+}
+TOUR_PATH[#TOUR_PATH + 1] = TOUR_PATH[1]
 
 local FOIL = PRECISION .. [[
 extern float time;
@@ -131,14 +324,15 @@ vec4 effect(mediump vec4 color, Image tex, mediump vec2 uv, mediump vec2 pixel) 
 }
 ]]
 
-local background, foil, post
+-- The shader of each background that the game showed, by its id.
+local backgrounds = {}
+local foil, post
 local scene, msaa
 -- The pixels of a canvas for each unit of the window, in each direction.
 local density = 1
 local pool = {}
 
 function shaders.load()
-  background = lg.newShader(BACKGROUND)
   foil = lg.newShader(FOIL)
   post = lg.newShader(POST)
   msaa = math.min(4, lg.getSystemLimits().canvasmsaa)
@@ -165,10 +359,34 @@ function shaders.current() return shaders.MODES[shaders.mode] end
 
 function shaders.cycle() shaders.mode = shaders.mode % #shaders.MODES + 1 end
 
+local function byId(id)
+  for _, entry in ipairs(shaders.BACKGROUNDS) do
+    if entry.id == id then return entry end
+  end
+end
+
+function shaders.setBackground(id)
+  assert(byId(id), 'No background ' .. tostring(id))
+  shaders.background = id
+end
+
+-- A background gets its shader when the game shows it for the first time.
+local function backgroundShader()
+  local id = shaders.background
+  local shader = backgrounds[id]
+  if not shader then
+    shader = lg.newShader(byId(id).source)
+    if shader:hasUniform('path') then shader:send('path', unpack(TOUR_PATH)) end
+    backgrounds[id] = shader
+  end
+  return shader
+end
+
 function shaders.beginScene(time)
   lg.setCanvas({ scene, stencil = true })
   lg.clear(0.082, 0.090, 0.110, 1)
   if shaders.current().background then
+    local background = backgroundShader()
     background:send('time', time)
     background:send('resolution', { scene:getPixelDimensions() })
     lg.setShader(background)
