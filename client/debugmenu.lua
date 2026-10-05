@@ -31,7 +31,7 @@ local ROW = 2.6
 
 --[[
   The set layout of the menu, in stage units. The panel is in the center of the stage. Each tab has the rectangles of its
-  largest content: 22 relics, 8 floors, 5 kinds, the 16 upgrades of the medal board, and 11 backgrounds.
+  largest content: 26 relics, 8 floors, 5 kinds, the 16 upgrades of the medal board, and 11 backgrounds.
 ]]
 local L = {
   panel = rect(4, 2.5, 72, 40),
@@ -69,8 +69,8 @@ local L = {
     traits = rect(17.75, 7.5, 12, 2.25),
     offerAll = rect(60.05, 7.5, 7, 2.25),
     offerNone = rect(67.55, 7.5, 7.2, 2.25),
-    -- Two columns of 11 rows.
-    perColumn = 11,
+    -- Two columns of 13 rows. The rows are nearer than the rows of the other tabs.
+    perColumn = 13, step = 2.25,
     toggle = { w = 6.8, step = 7.25 },
   },
   -- The rows of the relics and of the upgrades: the left side of each of the two columns, and the top of the first row.
@@ -106,11 +106,12 @@ local L = {
 }
 
 -- The parts of row `i` of the relics or of the upgrades: the medal, the name (it has space for "Close Quarters"), and the
--- place of the controls. Nil for a row that the columns have no space for.
-local function row(i, perColumn)
+-- place of the controls. `step` is the distance between two rows (ROW with no value). Nil for a row that the columns
+-- have no space for.
+local function row(i, perColumn, step)
   local x = L.columns[math.floor((i - 1) / perColumn) + 1]
   if not x then return nil end
-  local y = L.rowsY + ((i - 1) % perColumn) * ROW
+  local y = L.rowsY + ((i - 1) % perColumn) * (step or ROW)
   return { medal = { x = x + 1.2, y = y + 1.3, size = 2 }, name = rect(x + 2.9, y + 0.3, 9.2, 2), x = x + 12.3, y = y + 0.3 }
 end
 
@@ -438,7 +439,7 @@ function BUILD.relics(self, items, d, content)
   key(items, 'offerAll', nil, R.offerAll, 'Offer all', { disabled = #d.barred == 0, act = function() offer(true) end })
   key(items, 'offerNone', nil, R.offerNone, 'Offer none', { disabled = #d.barred >= #relics, act = function() offer(false) end })
   for i, relic in ipairs(relics) do
-    local slot = row(i, R.perColumn)
+    local slot = row(i, R.perColumn, R.step)
     if not slot then break end
     medal(items, { kind = 'icon', id = relic.id }, slot.medal, C.relic)
     -- The pointer on the name shows the text of the relic.
