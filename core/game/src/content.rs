@@ -285,9 +285,15 @@ pub static RELICS: [RelicDef; 27] = [
     rule(
         "blessing",
         "Blessing",
-        "The enemy cannot capture your pawns that are next to one of your bishops.",
-        "You cannot capture enemy pawns that are next to an enemy bishop.",
-        &[RuleEdit::Shield { protector: Kind::Bishop, protected: Kind::Pawn, range: 1 }],
+        "The enemy cannot capture your pieces that are next to one of your bishops. Your king has no such protection.",
+        "You cannot capture enemy pieces that are next to an enemy bishop. The enemy king has no such protection.",
+        &[
+            RuleEdit::Shield { protector: Kind::Bishop, protected: Kind::Pawn, range: 1 },
+            RuleEdit::Shield { protector: Kind::Bishop, protected: Kind::Knight, range: 1 },
+            RuleEdit::Shield { protector: Kind::Bishop, protected: Kind::Bishop, range: 1 },
+            RuleEdit::Shield { protector: Kind::Bishop, protected: Kind::Rook, range: 1 },
+            RuleEdit::Shield { protector: Kind::Bishop, protected: Kind::Queen, range: 1 },
+        ],
     ),
 ];
 

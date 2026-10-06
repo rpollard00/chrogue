@@ -198,12 +198,19 @@ fn divine_right_lets_a_bishop_next_to_its_king_move_as_a_rook() {
 }
 
 #[test]
-fn blessing_stops_the_capture_of_a_pawn_next_to_a_bishop() {
+fn blessing_stops_the_capture_of_a_piece_next_to_a_bishop() {
     let own: Pieces = &[KING, (Kind::Bishop, "d3"), (Kind::Pawn, "d4"), (Kind::Pawn, "h4")];
     let other: Pieces = &[FOE, (Kind::Rook, "d8"), (Kind::Rook, "h8")];
     // The enemy rook cannot capture the pawn next to the bishop. It can capture the other pawn.
     let blessed = position(own, other, &["blessing"], &[], false);
     assert!(!can_move(&blessed, sq("d8"), sq("d4")) && can_move(&blessed, sq("h8"), sq("h4")));
+    // An officer next to the bishop has the protection too. The bishop has it only next to another bishop.
+    let officers: Pieces =
+        &[KING, (Kind::Bishop, "c3"), (Kind::Knight, "d4"), (Kind::Bishop, "h3"), (Kind::Bishop, "h4")];
+    let rooks: Pieces = &[FOE, (Kind::Rook, "d8"), (Kind::Rook, "c8"), (Kind::Rook, "h8")];
+    let blessed = position(officers, rooks, &["blessing"], &[], false);
+    assert!(!can_move(&blessed, sq("d8"), sq("d4")) && can_move(&blessed, sq("c8"), sq("c3")));
+    assert!(!can_move(&blessed, sq("h8"), sq("h4")));
     assert!(can_move(&position(own, other, &[], &["blessing"], false), sq("d8"), sq("d4")));
     // The same relic as a trait protects the pawns of the enemy.
     let (from, to) = (sq("d8") ^ 56, sq("d4") ^ 56);
