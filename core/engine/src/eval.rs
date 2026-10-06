@@ -35,7 +35,9 @@
 //! The number of moves is for an empty board from the second rank, thus the double step and
 //! the start of the promotion zone change it.
 //!
-//! A new atom can only add reach and coverage, thus it never makes a value lower.
+//! A hook adds its targets in the same way: each square of its leg must be empty.
+//!
+//! A new atom or hook can only add reach and coverage, thus it never makes a value lower.
 
 use std::sync::Arc;
 
@@ -193,6 +195,22 @@ pub fn kind_profile(rules: &KindRules) -> Profile {
                 }
             }
         }
+        for hook in &rules.hooks {
+            for &(leg, last) in &hook.bends {
+                let mut clear = 1.0;
+                let mut s = from;
+                for squares in 1..=hook.max_leg {
+                    let Some(corner) = offset_square(s, leg) else { break };
+                    clear *= P_EMPTY;
+                    s = corner;
+                    if squares >= hook.min_leg
+                        && let Some(to) = offset_square(corner, last)
+                    {
+                        reach.add(to, clear, hook.mode.can_move(), hook.mode.can_capture());
+                    }
+                }
+            }
+        }
         reach
     });
     let squares = if rules.promotion.is_some() { !zone & !0xFF } else { !0 };
@@ -201,7 +219,7 @@ pub fn kind_profile(rules: &KindRules) -> Profile {
 
 /// The profile of a kind with these atoms and no promotion.
 pub fn officer_profile(atoms: &[Atom]) -> Profile {
-    kind_profile(&KindRules { atoms: atoms.to_vec(), promotion: None })
+    kind_profile(&KindRules { atoms: atoms.to_vec(), promotion: None, hooks: Vec::new() })
 }
 
 /// The number of moves from each square to the promotion zone of White on an empty board, by

@@ -13,7 +13,7 @@
 
 use crate::rules::{Condition, Promotions};
 use crate::state::{State, Undo};
-use crate::tables::{Group, KindTables, LeapSet, SideTables, Slide, Steps};
+use crate::tables::{Group, HookAttackLine, HookSlide, KindTables, LeapSet, SideTables, Slide, Steps};
 use crate::types::{Bitboard, Color, Kind, Move, MoveList, Special, Square, bit, pop_square};
 
 /// The first piece on a line, or None if the line has no piece.
@@ -36,6 +36,13 @@ fn slide_parts(slide: &Slide, from: Square, occupied: Bitboard) -> (Bitboard, Bi
         Some(blocker) => (ray & !slide.rays[blocker as usize] & !bit(blocker), bit(blocker)),
         None => (ray, 0),
     }
+}
+
+/// The squares where the last step of a hook from `from` can end: the leg is empty to its corner.
+#[inline(always)]
+fn hook_targets(hook: &HookSlide, from: Square, occupied: Bitboard) -> Bitboard {
+    let (empty, _) = slide_parts(&hook.leg, from, occupied);
+    hook.last_step(empty & !hook.near[from as usize])
 }
 
 /// The first square of a line.
@@ -89,7 +96,34 @@ pub fn is_attacked(state: &State, s: Square, by: Color) -> bool {
             }
         }
     }
+    for line in &side.hook_attackers {
+        if hook_attacker(state, line, target, theirs, occupied).is_some() {
+            return true;
+        }
+    }
     false
+}
+
+/// The piece of `theirs` that attacks the target along a line of hooks, and the corner of its leg.
+#[inline(always)]
+fn hook_attacker(
+    state: &State,
+    line: &HookAttackLine,
+    target: usize,
+    theirs: Bitboard,
+    occupied: Bitboard,
+) -> Option<(Square, Square)> {
+    let corner = line.corner[target];
+    if corner == 64 || occupied & bit(corner) != 0 {
+        return None;
+    }
+    let ray = line.rays[corner as usize];
+    let attackers = line.kinds.iter().fold(0, |set, &kind| set | state.kind_set(kind)) & theirs;
+    if ray & attackers == 0 {
+        return None;
+    }
+    let blocker = first_blocker(ray & occupied, line.ascending)?;
+    (attackers & bit(blocker) != 0 && line.near[corner as usize] & bit(blocker) == 0).then_some((blocker, corner))
 }
 
 /// True if the king of a side is attacked. A side with no king is never in check.
@@ -103,8 +137,8 @@ pub fn in_check(state: &State, color: Color) -> bool {
 
 /// The squares where a move of a piece that is not a king can end the check of the king of
 /// `color` (the king on the lowest square). For each enemy piece that attacks the king: the
-/// square of the piece, and for a slide the squares between the piece and the king. A move
-/// must capture each such piece or block each such slide. A leap cannot be blocked. All the
+/// square of the piece, and for a slide or a hook the squares that the piece passes. A move
+/// must capture each such piece or block each such slide or hook. A leap cannot be blocked. All the
 /// squares if the king is not in check or the side has no king.
 ///
 /// The attackers are those of `is_attacked`, thus a move of a piece that is not a king to
@@ -150,6 +184,13 @@ pub fn evasion_squares(state: &State, color: Color) -> Bitboard {
                 // The squares of the line from the king to the attacker, with the attacker.
                 squares &= ray & !line.rays[blocker as usize];
             }
+        }
+    }
+    for line in &side.hook_attackers {
+        if let Some((attacker, corner)) = hook_attacker(state, line, target, theirs, occupied) {
+            // The corner and the squares of the leg, with the attacker.
+            let ray = line.rays[corner as usize];
+            squares &= bit(corner) | ray & !line.rays[attacker as usize];
         }
     }
     squares
@@ -218,6 +259,15 @@ fn step_targets(steps: &Steps, from: Square, occupied: Bitboard, foes: Bitboard)
             captures |= hit & foes;
         }
     }
+    for hook in &steps.hooks {
+        let targets = hook_targets(hook, from, occupied);
+        if hook.leg.quiet {
+            quiets |= targets & !occupied;
+        }
+        if hook.leg.capture {
+            captures |= targets & foes;
+        }
+    }
     (quiets, captures)
 }
 
@@ -235,6 +285,15 @@ fn step_reach(steps: &Steps, from: Square, occupied: Bitboard) -> (Bitboard, Bit
         }
         if slide.capture {
             attacks |= empty | hit;
+        }
+    }
+    for hook in &steps.hooks {
+        let targets = hook_targets(hook, from, occupied);
+        if hook.leg.quiet {
+            quiets |= targets & !occupied;
+        }
+        if hook.leg.capture {
+            attacks |= targets;
         }
     }
     (quiets, attacks)

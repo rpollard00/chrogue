@@ -3,8 +3,8 @@
 use chrogue_engine::eval::{FIXED_VALUES, kind_profile, officer_profile, officer_value};
 use chrogue_engine::rules::{ALFIL, CAMEL, DABBABA, DIAG, FLAG_NAMES, FORWARD, FORWARD_DIAG, KING, KNIGHT, ORTHO};
 use chrogue_engine::{
-    Atom, Color, EvalTables, EvalVariant, Evaluator, Kind, MATE_BOUND, Mode, Offset, Promotion, Promotions, Rules,
-    SideRules, fen,
+    Atom, Color, EvalTables, EvalVariant, Evaluator, Hook, Kind, MATE_BOUND, Mode, Offset, Promotion, Promotions,
+    Rules, SideRules, fen,
 };
 
 /// The values of White with these rules.
@@ -63,6 +63,22 @@ fn each_rule_flag_for_a_kind_makes_the_value_of_that_kind_higher() {
             }
         }
     }
+}
+
+#[test]
+fn a_hook_makes_the_value_of_its_kind_higher() {
+    let standard = values(SideRules::standard());
+    let hook = |mode| values(SideRules::standard().with_hook(Kind::Rook, Hook::right_angle(&ORTHO, 2, mode)));
+    let (both, quiet) = (hook(Mode::MoveOrCapture), hook(Mode::MoveOnly));
+    let rook = Kind::Rook.index();
+    // A hook that captures is worth more than a hook that only moves. The rook stays below the queen.
+    assert!(standard[rook] < quiet[rook] && quiet[rook] < both[rook] && both[rook] < standard[Kind::Queen.index()]);
+    for other in [Kind::Knight, Kind::Bishop, Kind::Queen] {
+        assert_eq!(both[other.index()], standard[other.index()], "the hook changed {other:?}");
+    }
+    // A hook with a longer leg at the least has fewer targets.
+    let long = values(SideRules::standard().with_hook(Kind::Rook, Hook::right_angle(&ORTHO, 4, Mode::MoveOrCapture)));
+    assert!(standard[rook] < long[rook] && long[rook] < both[rook]);
 }
 
 #[test]

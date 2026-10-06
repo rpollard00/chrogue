@@ -5,7 +5,7 @@
 //! tables come from the same data, thus an offset does not have to be symmetric.
 
 use crate::eval::EvalTables;
-use crate::rules::{Atom, Castle, Condition, Offset, Promotions, Rules, RulesError, SideRules};
+use crate::rules::{Atom, Castle, Condition, Hook, Offset, Promotions, Rules, RulesError, SideRules};
 use crate::types::{Bitboard, Color, Kind, Special, Square, bit};
 
 /// The leap targets of one kind from one square, divided by what the leap can do there.
@@ -35,17 +35,49 @@ pub struct Slide {
     pub rays: [Bitboard; 64],
 }
 
-/// The leaps and the slides of some atoms.
+/// One bend of a hook: a leg, and one last step from each empty square of the leg that is far
+/// enough.
+#[derive(Clone, Debug)]
+pub struct HookSlide {
+    /// The leg. `quiet` and `capture` tell what the last step can do.
+    pub leg: Slide,
+    /// For each square, the squares of the leg that are too near for the last step.
+    pub near: [Bitboard; 64],
+    /// The last step, after the mirror for Black.
+    pub last: Offset,
+    /// The smallest number of squares of the leg.
+    min_leg: u8,
+    /// The squares from which the last step stays on the board.
+    sources: Bitboard,
+}
+
+impl HookSlide {
+    /// The number of squares of the leg that are too near for the last step.
+    fn near_steps(&self) -> u8 {
+        self.min_leg - 1
+    }
+
+    /// The squares one last step from each square of `corners`.
+    #[inline(always)]
+    pub fn last_step(&self, corners: Bitboard) -> Bitboard {
+        let shift = self.last.1 as i32 * 8 + self.last.0 as i32;
+        let corners = corners & self.sources;
+        if shift > 0 { corners << shift } else { corners >> -shift }
+    }
+}
+
+/// The leaps and the slides of some atoms, and the hooks.
 #[derive(Clone, Debug)]
 pub struct Steps {
     /// `leaps[from]`
     pub leaps: [LeapSet; 64],
     pub slides: Vec<Slide>,
+    pub hooks: Vec<HookSlide>,
 }
 
 impl Steps {
     fn new() -> Steps {
-        Steps { leaps: [LeapSet::default(); 64], slides: Vec::new() }
+        Steps { leaps: [LeapSet::default(); 64], slides: Vec::new(), hooks: Vec::new() }
     }
 
     fn add(&mut self, atom: &Atom, forward: i8) {
@@ -82,6 +114,36 @@ impl Steps {
         }
     }
 
+    fn add_hook(&mut self, hook: &Hook, forward: i8) {
+        let (can_move, can_capture) = (hook.mode.can_move(), hook.mode.can_capture());
+        for &((df, dr), (lf, lr)) in &hook.bends {
+            let (dir, last) = ((df, dr * forward), (lf, lr * forward));
+            let same = |bend: &&mut HookSlide| {
+                (bend.leg.dir, bend.leg.steps, bend.last, bend.min_leg) == (dir, hook.max_leg, last, hook.min_leg)
+            };
+            match self.hooks.iter_mut().find(same) {
+                Some(bend) => {
+                    bend.leg.quiet |= can_move;
+                    bend.leg.capture |= can_capture;
+                }
+                None => self.hooks.push(HookSlide {
+                    leg: Slide {
+                        dir,
+                        steps: hook.max_leg,
+                        rays: rays(dir, hook.max_leg),
+                        ascending: ascending(dir),
+                        quiet: can_move,
+                        capture: can_capture,
+                    },
+                    near: rays(dir, hook.min_leg - 1),
+                    last,
+                    min_leg: hook.min_leg,
+                    sources: (0..64u8).filter(|&s| offset_square(s, last).is_some()).fold(0, |set, s| set | bit(s)),
+                }),
+            }
+        }
+    }
+
     /// Two atoms can give the same leap target. Keeps each target in one set only.
     fn normalize(&mut self) {
         for set in &mut self.leaps {
@@ -91,14 +153,22 @@ impl Steps {
         }
     }
 
-    /// The squares that a leap or a slide can get to on an empty board, with any mode.
+    /// The squares that a leap, a slide, or a hook can get to on an empty board, with any mode.
     fn reach(&self, from: Square) -> Bitboard {
         let leaps = &self.leaps[from as usize];
-        self.slides.iter().fold(leaps.both | leaps.quiet | leaps.capture, |set, slide| set | slide.rays[from as usize])
+        let slides = self
+            .slides
+            .iter()
+            .fold(leaps.both | leaps.quiet | leaps.capture, |set, slide| set | slide.rays[from as usize]);
+        self.hooks
+            .iter()
+            .fold(slides, |set, hook| set | hook.last_step(hook.leg.rays[from as usize] & !hook.near[from as usize]))
     }
 
     fn can_capture(&self) -> bool {
-        self.slides.iter().any(|slide| slide.capture) || self.leaps.iter().any(|set| set.both | set.capture != 0)
+        self.slides.iter().any(|slide| slide.capture)
+            || self.hooks.iter().any(|hook| hook.leg.capture)
+            || self.leaps.iter().any(|set| set.both | set.capture != 0)
     }
 }
 
@@ -204,6 +274,21 @@ pub struct SlideAttackGroup {
     pub lines: Vec<AttackLine>,
 }
 
+/// One bend of the hooks of a side, from the attacked square toward the attacker.
+#[derive(Clone, Debug)]
+pub struct HookAttackLine {
+    pub kinds: Vec<Kind>,
+    /// For each attacked square, the square where the leg ends: one last step before the attacked
+    /// square. 64 if that square is off the board.
+    pub corner: [Square; 64],
+    /// For each corner, the squares of the leg behind it, where an attacker can be.
+    pub rays: [Bitboard; 64],
+    /// For each corner, the squares of `rays` that are too near: the leg must be longer.
+    pub near: [Bitboard; 64],
+    /// True if the square index increases from the corner toward the attacker.
+    pub ascending: bool,
+}
+
 /// The tables of one side.
 #[derive(Clone, Debug)]
 pub struct SideTables {
@@ -222,11 +307,13 @@ pub struct SideTables {
     pub unmoved_leap_attackers: [[Bitboard; 64]; Kind::COUNT],
     pub unmoved_leap_attacker_kinds: Vec<Kind>,
     pub slide_attackers: Vec<SlideAttackGroup>,
+    pub hook_attackers: Vec<HookAttackLine>,
     /// `attack_zone[kind][target]`: the squares from which a piece of the kind can attack the
-    /// target on an empty board, by a leap or a slide, with or without a condition.
+    /// target on an empty board, by a leap, a slide, or a hook, with or without a condition.
     pub attack_zone: [[Bitboard; 64]; Kind::COUNT],
     /// `slide_zone[target]`: the squares of the lines along which a slide of this side can
-    /// attack the target. A piece that leaves such a square can open a line.
+    /// attack the target, and the squares of the legs of its hooks. A piece that leaves such a
+    /// square can open a line.
     pub slide_zone: [Bitboard; 64],
     /// The castles, with the squares of this color.
     pub castles: Vec<Castle>,
@@ -393,6 +480,10 @@ fn kind_tables(kind: Kind, rules: &SideRules, color: Color) -> (KindTables, Step
             }
         }
     }
+    // A kind with a hook has plain atoms only (`RulesError::BadHook`), thus it is a simple kind.
+    for hook in &kind_rules.hooks {
+        always.add_hook(hook, forward);
+    }
     always.normalize();
     unmoved.normalize();
     let mut groups = Vec::new();
@@ -428,7 +519,9 @@ fn kind_tables(kind: Kind, rules: &SideRules, color: Color) -> (KindTables, Step
         let set = &always.leaps[from];
         set.both | set.quiet | set.capture
     });
-    let leap_attacks_only = !unmoved.can_capture() && always.slides.iter().all(|slide| !slide.capture);
+    let leap_attacks_only = !unmoved.can_capture()
+        && always.slides.iter().all(|slide| !slide.capture)
+        && always.hooks.iter().all(|hook| !hook.leg.capture);
     let simple = groups.len() <= 1
         && groups
             .iter()
@@ -630,6 +723,30 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
         group.lines.push(line);
     }
 
+    // An attacker whose leg goes in direction `d` is in direction `-d` from the corner of the leg.
+    let mut hook_attackers: Vec<HookAttackLine> = Vec::new();
+    for kind in Kind::ALL {
+        for hook in always[kind.index()].hooks.iter().filter(|hook| hook.leg.capture) {
+            let toward_attacker = (-hook.leg.dir.0, -hook.leg.dir.1);
+            let line = HookAttackLine {
+                kinds: vec![kind],
+                corner: std::array::from_fn(|target| {
+                    offset_square(target as Square, (-hook.last.0, -hook.last.1)).unwrap_or(64)
+                }),
+                rays: rays(toward_attacker, hook.leg.steps),
+                near: rays(toward_attacker, hook.near_steps()),
+                ascending: ascending(toward_attacker),
+            };
+            match hook_attackers
+                .iter_mut()
+                .find(|other| (other.corner, other.rays, other.near) == (line.corner, line.rays, line.near))
+            {
+                Some(other) => other.kinds.push(kind),
+                None => hook_attackers.push(line),
+            }
+        }
+    }
+
     // The castle squares are empty when the castle is possible, thus only a move to an empty
     // square can have the same squares as a castle.
     let king = &kinds[Kind::King.index()];
@@ -651,14 +768,26 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
     let attack_zone: [[Bitboard; 64]; Kind::COUNT] = std::array::from_fn(|k| {
         std::array::from_fn(|target| {
             let leaps = leap_attackers[k][target] | unmoved_leap_attackers[k][target];
-            slide_attackers
+            let slides = slide_attackers
                 .iter()
                 .filter(|group| group.kinds.contains(&Kind::ALL[k]))
-                .fold(leaps, |zone, group| zone | group.reach[target])
+                .fold(leaps, |zone, group| zone | group.reach[target]);
+            hook_attackers.iter().filter(|line| line.kinds.contains(&Kind::ALL[k])).fold(
+                slides,
+                |zone, line| match line.corner[target] {
+                    64 => zone,
+                    corner => zone | line.rays[corner as usize] & !line.near[corner as usize],
+                },
+            )
         })
     });
-    let slide_zone: [Bitboard; 64] =
-        std::array::from_fn(|target| slide_attackers.iter().fold(0, |zone, group| zone | group.reach[target]));
+    let slide_zone: [Bitboard; 64] = std::array::from_fn(|target| {
+        let slides = slide_attackers.iter().fold(0, |zone, group| zone | group.reach[target]);
+        hook_attackers.iter().fold(slides, |zone, line| match line.corner[target] {
+            64 => zone,
+            corner => zone | bit(corner) | line.rays[corner as usize],
+        })
+    });
 
     SideTables {
         always,
@@ -669,6 +798,7 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
         leap_attackers,
         unmoved_leap_attackers,
         slide_attackers,
+        hook_attackers,
         kinds,
         castles,
         king_move_to_castle_square,

@@ -11,7 +11,7 @@ use chrogue_engine::fen::{KIWIPETE, square};
 use chrogue_engine::movegen::{evasion_moves, evasion_squares, may_give_check};
 use chrogue_engine::rules::{ALFIL, CAMEL, DABBABA, DIAG, FORWARD, KING, KNIGHT, ORTHO};
 use chrogue_engine::{
-    Atom, Castle, Color, Kind, Mode, Move, MoveList, Outcome, Piece, Placement, Promotion, Promotions, Rules,
+    Atom, Castle, Color, Hook, Kind, Mode, Move, MoveList, Outcome, Piece, Placement, Promotion, Promotions, Rules,
     RulesError, SideRules, Special, Square, State, StateError, Tables, in_check, is_attacked, is_legal, legal_moves,
     moves_from, outcome, perft, pseudo_moves,
 };
@@ -47,6 +47,66 @@ fn a_rook_that_also_leaps_as_a_knight_moves_and_gives_check_that_way() {
     let mut state = check;
     assert_eq!(targets(&mut state, "e8"), squares(&["e7", "f8"]));
     assert!(legal(&mut state).iter().all(|m| m.from == square("e8")));
+}
+
+/// A rook that can also go two squares or more in a line and then one square to the side.
+fn hook_rook() -> SideRules {
+    SideRules::standard().with_hook(Kind::Rook, Hook::right_angle(&ORTHO, 2, Mode::MoveOrCapture))
+}
+
+#[test]
+fn a_rook_with_a_hook_turns_after_two_empty_squares_or_more() {
+    let rules = || white(hook_rook());
+
+    // The pawn on a2 blocks the file. On the rank, the legs to c1 and to d1 turn to c2 and d2.
+    // The leg to b1 is too short for b2, and the rook has no knight leap to b3.
+    let mut state = from_fen("4k3/8/8/8/8/1p6/P7/R3K3", Color::White, rules());
+    assert_eq!(targets(&mut state, "a1"), squares(&["b1", "c1", "d1", "c2", "d2"]));
+    // The last step captures. A piece on a square of the leg stops the hook behind it.
+    let mut state = from_fen("4k3/8/8/8/8/8/3p1p2/R3n2K", Color::White, rules());
+    let rook = targets(&mut state, "a1");
+    assert!(rook.contains(&square("d2")) && !rook.contains(&square("f2")) && !rook.contains(&square("b2")));
+    assert_eq!(find_special(&mut state, "a1", "d2"), Special::None);
+}
+
+fn find_special(state: &mut State, from: &str, to: &str) -> Special {
+    legal(state).iter().find(|m| (m.from, m.to) == (square(from), square(to))).expect("the move").special
+}
+
+#[test]
+fn a_hook_gives_check_that_a_piece_can_block_on_the_leg() {
+    let rules = || white(hook_rook());
+
+    // The rook on a7 attacks e8 by the leg to e7. It attacks d8 and f8 in the same way, thus
+    // the king has no square: checkmate.
+    let mut mate = from_fen("4k3/R7/8/8/8/8/8/4K3", Color::Black, rules());
+    assert!(in_check(&mate, Color::Black));
+    assert!(!in_check(&from_fen("4k3/R7/8/8/8/8/8/4K3", Color::Black, Rules::standard()), Color::Black));
+    assert!(legal(&mut mate).is_empty());
+    // A piece on the leg stops the check.
+    assert!(!in_check(&from_fen("4k3/R1n5/8/8/8/8/8/4K3", Color::Black, rules()), Color::Black));
+    // The bishop ends the check on a square of the leg: b7 or d7.
+    let mut state = from_fen("2b1k3/R7/8/8/8/8/8/4K3", Color::Black, rules());
+    assert_eq!(targets(&mut state, "c8"), squares(&["b7", "d7"]));
+    assert!(legal(&mut state).iter().all(|m| m.from == square("c8")));
+    // A piece that leaves the leg opens the check, thus the knight on c7 cannot move.
+    let mut pinned = from_fen("4k3/R1n5/8/8/8/8/8/4K3", Color::Black, rules());
+    assert!(targets(&mut pinned, "c7").is_empty());
+    // The rules are for White only.
+    assert!(!in_check(&from_fen("4K3/r7/8/8/8/8/8/4k3", Color::White, rules()), Color::White));
+}
+
+#[test]
+fn a_hook_of_black_is_the_mirror_of_the_hook_of_white() {
+    // One bend: a leg forward, then one step toward the h file.
+    let bend = Hook { bends: vec![((0, 1), (1, 0))], min_leg: 1, max_leg: 2, mode: Mode::MoveOnly };
+    let side = || SideRules::standard().with_kind(Kind::Rook, Vec::new()).with_hook(Kind::Rook, bend.clone());
+    let mut state = from_fen("r3k3/8/8/8/8/8/8/R3K3", Color::White, Rules::new(side(), side()));
+    assert_eq!(targets(&mut state, "a1"), squares(&["b2", "b3"]));
+    let mut state = from_fen("r3k3/8/8/8/8/8/8/R3K3", Color::Black, Rules::new(side(), side()));
+    assert_eq!(targets(&mut state, "a8"), squares(&["b7", "b6"]));
+    // A hook that only moves attacks no square.
+    assert!(!is_attacked(&state, square("b7"), Color::Black));
 }
 
 #[test]
@@ -387,6 +447,22 @@ fn rules_and_states_that_are_not_valid_give_an_error() {
     assert!(State::new(&[], Rules::new(distance, SideRules::standard())).is_err());
     assert!(SideRules::from_flags(["noSuchFlag"]).is_err());
     assert!(SideRules::from_flags(chrogue_engine::rules::FLAG_NAMES).unwrap().validate().is_ok());
+
+    // A hook needs a leg of 1 to 7 squares, offsets on the board, and a kind with plain atoms
+    // and no promotion.
+    let hook = |min_leg, max_leg| Hook { bends: vec![((1, 0), (0, 1))], min_leg, max_leg, mode: Mode::MoveOrCapture };
+    assert!(SideRules::standard().with_hook(Kind::Rook, hook(1, 7)).validate().is_ok());
+    for bad in [hook(0, 7), hook(3, 2), hook(1, 8), Hook { bends: vec![((1, 0), (0, 0))], ..hook(1, 7) }] {
+        assert_eq!(SideRules::standard().with_hook(Kind::Rook, bad).validate(), Err(RulesError::BadHook(Kind::Rook)));
+    }
+    assert_eq!(
+        SideRules::standard().with_hook(Kind::Pawn, hook(1, 7)).validate(),
+        Err(RulesError::BadHook(Kind::Pawn))
+    );
+    let first_move = SideRules::standard()
+        .with_atom(Kind::Rook, Atom::leap(&KNIGHT, Mode::MoveOnly).if_unmoved())
+        .with_hook(Kind::Rook, hook(1, 7));
+    assert_eq!(first_move.validate(), Err(RulesError::BadHook(Kind::Rook)));
 
     // An officer can have an atom that makes en passant squares.
     let rook = SideRules::standard().with_atom(Kind::Rook, Atom::slide(&ORTHO, Mode::MoveOnly).makes_en_passant());

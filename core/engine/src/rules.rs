@@ -5,7 +5,8 @@
 //! Each kind, the pawn too, moves by a list of atoms. An atom is a list of offsets, a number of
 //! steps, a mode, a condition, and three properties for en passant and the clock. A leap is an
 //! atom with one step, and a slide is an atom with `Atom::MAX_STEPS`. A kind can also have a
-//! promotion. The castles of a side are rows of `Castle`.
+//! promotion. A kind can also have hooks: slides that end with one step in another direction.
+//! The castles of a side are rows of `Castle`.
 
 use crate::types::{Bitboard, Color, Kind, Square, bit};
 
@@ -134,6 +135,32 @@ impl Atom {
     }
 }
 
+/// A slide that turns: the piece goes `min_leg` to `max_leg` squares along a leg, and then one
+/// last step in another direction. Each square of the leg must be empty. The last step can
+/// capture (see `mode`). A hook with the legs of a rook and a last step to the side is a knight
+/// move with a long leg that a piece can block.
+///
+/// Only a kind with plain atoms and no promotion can have a hook (`RulesError::BadHook`).
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+pub struct Hook {
+    /// The direction of the leg and the last step of each bend, from the view of White.
+    pub bends: Vec<(Offset, Offset)>,
+    /// The smallest number of squares of the leg, from 1.
+    pub min_leg: u8,
+    /// The largest number of squares of the leg, to `Atom::MAX_STEPS`.
+    pub max_leg: u8,
+    pub mode: Mode,
+}
+
+impl Hook {
+    /// A leg of `min_leg` squares or more along each direction, then one step to the left or
+    /// to the right of the leg.
+    pub fn right_angle(dirs: &[Offset], min_leg: u8, mode: Mode) -> Hook {
+        let bends = dirs.iter().flat_map(|&(df, dr)| [((df, dr), (-dr, df)), ((df, dr), (dr, -df))]).collect();
+        Hook { bends, min_leg, max_leg: Atom::MAX_STEPS, mode }
+    }
+}
+
 /// The kinds that a piece can become: one to four different kinds. A piece cannot become a
 /// pawn or a king.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -195,6 +222,7 @@ impl Promotion {
 pub struct KindRules {
     pub atoms: Vec<Atom>,
     pub promotion: Option<Promotion>,
+    pub hooks: Vec<Hook>,
 }
 
 /// One castle: a king and a partner piece move in one move. The squares are from the view of
@@ -293,6 +321,10 @@ pub enum RulesError {
     /// The castle at this index has a square off the board, a king that does not move, the king
     /// and the partner on the same square, or the same king squares as an earlier castle.
     BadCastle(usize),
+    /// A hook of the kind has a leg or a last step of (0, 0) or larger than the board, or a number
+    /// of leg squares that is not from 1 to `Atom::MAX_STEPS`. Or the kind has a promotion, or an
+    /// atom with a condition or an en passant property.
+    BadHook(Kind),
 }
 
 impl std::fmt::Display for RulesError {
@@ -312,6 +344,7 @@ impl std::fmt::Display for RulesError {
             RulesError::NoPromotion => write!(f, "The list of promotion kinds is empty"),
             RulesError::KingMakesEnPassant => write!(f, "An atom of the king makes en passant squares"),
             RulesError::BadCastle(index) => write!(f, "The castle at index {index} is not valid"),
+            RulesError::BadHook(kind) => write!(f, "A hook of kind {} is not valid", kind.letter()),
         }
     }
 }
@@ -334,12 +367,16 @@ impl SideRules {
         use Mode::MoveOrCapture as Both;
         SideRules {
             kinds: [
-                KindRules { atoms: standard_pawn_atoms(), promotion: Some(Promotion::STANDARD) },
-                KindRules { atoms: vec![Atom::leap(&KNIGHT, Both)], promotion: None },
-                KindRules { atoms: vec![Atom::slide(&DIAG, Both)], promotion: None },
-                KindRules { atoms: vec![Atom::slide(&ORTHO, Both)], promotion: None },
-                KindRules { atoms: vec![Atom::slide(&ORTHO, Both), Atom::slide(&DIAG, Both)], promotion: None },
-                KindRules { atoms: vec![Atom::leap(&KING, Both)], promotion: None },
+                KindRules { atoms: standard_pawn_atoms(), promotion: Some(Promotion::STANDARD), hooks: Vec::new() },
+                KindRules { atoms: vec![Atom::leap(&KNIGHT, Both)], promotion: None, hooks: Vec::new() },
+                KindRules { atoms: vec![Atom::slide(&DIAG, Both)], promotion: None, hooks: Vec::new() },
+                KindRules { atoms: vec![Atom::slide(&ORTHO, Both)], promotion: None, hooks: Vec::new() },
+                KindRules {
+                    atoms: vec![Atom::slide(&ORTHO, Both), Atom::slide(&DIAG, Both)],
+                    promotion: None,
+                    hooks: Vec::new(),
+                },
+                KindRules { atoms: vec![Atom::leap(&KING, Both)], promotion: None, hooks: Vec::new() },
             ],
             castles: Castle::STANDARD.to_vec(),
         }
@@ -360,6 +397,12 @@ impl SideRules {
     /// Adds an atom to the movement of a kind.
     pub fn with_atom(mut self, kind: Kind, atom: Atom) -> SideRules {
         self.kinds[kind.index()].atoms.push(atom);
+        self
+    }
+
+    /// Adds a hook to the movement of a kind.
+    pub fn with_hook(mut self, kind: Kind, hook: Hook) -> SideRules {
+        self.kinds[kind.index()].hooks.push(hook);
         self
     }
 
@@ -472,6 +515,17 @@ impl SideRules {
                 }
                 if atom.makes_en_passant && kind == Kind::King {
                     return Err(RulesError::KingMakesEnPassant);
+                }
+            }
+            let plain = rules.promotion.is_none()
+                && rules.atoms.iter().all(|atom| {
+                    atom.condition == Condition::Always && !atom.makes_en_passant && !atom.captures_en_passant
+                });
+            for hook in &rules.hooks {
+                let on_board = |(df, dr): Offset| (df, dr) != (0, 0) && df.abs() <= 7 && dr.abs() <= 7;
+                let legs = 1 <= hook.min_leg && hook.min_leg <= hook.max_leg && hook.max_leg <= Atom::MAX_STEPS;
+                if !plain || !legs || hook.bends.iter().any(|&(leg, last)| !on_board(leg) || !on_board(last)) {
+                    return Err(RulesError::BadHook(kind));
                 }
             }
         }

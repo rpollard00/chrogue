@@ -45,7 +45,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
   - `src/level.rs`: The levels of the AI and `choose_move`.
   - `src/rng.rs`: A small seeded random number generator.
   - `src/fen.rs`: A reader for the piece field of a FEN string. The tests and the tools use it.
-  - `tests/`: Perft counts, the six rule flags and the results of a battle (`relic_rules.rs`), other rules as data (`data_rules.rs` for the officers, `data_moves.rs` for pawns, en passant, castles, ranges, and first-move atoms), the Zobrist key, the derived values, and the tactics of the AI. `tests/property.rs` compares the engine with a naive move generator on 6000 random rule sets: random atoms for each kind (the pawn too) with random ranges, conditions, en passant properties, clock properties, promotions, and castle rows. It also walks the move tree of 1500 more rule sets, compares each `make` with a naive `make`, and makes sure that `unmake` gives back the state and the key.
+  - `tests/`: Perft counts, the six rule flags and the results of a battle (`relic_rules.rs`), other rules as data (`data_rules.rs` for the officers, `data_moves.rs` for pawns, en passant, castles, ranges, and first-move atoms), the Zobrist key, the derived values, and the tactics of the AI. `tests/property.rs` compares the engine with a naive move generator on 6000 random rule sets: random atoms for each kind (the pawn too) with random ranges, conditions, en passant properties, clock properties, promotions, hooks, and castle rows. It also walks the move tree of 1500 more rule sets, compares each `make` with a naive `make`, and makes sure that `unmake` gives back the state and the key.
 - `tools/`: The crate `chrogue-tools`. It has the binaries `perft` (a timer), `arena` (self-play matches), `levels` (the mistakes of a level, and a run floor by floor), `ai` (values, speed, and the move for one position), and `balance` (relics and armies in battles of the game). Its library has `src/reference.rs` (the reference AI), `Player` (a level of the engine or the reference AI, and the reader of a CONFIG), `src/armies.rs` (armies in the style of the game), `src/balance.rs` (the battles of `balance`), and `src/cli.rs` (the command line of the binaries). `balance` uses the crate `chrogue-game`. The other binaries use only the engine. `tools/report/` makes an HTML report from the data of `balance`. The reference AI is the algorithm of the AI that the first version of the game had. It is a baseline opponent only. The engine and the game do not use it.
 
 ## Movement rules
@@ -73,6 +73,20 @@ The atoms of a kind with the same condition and the same three properties form o
 - A target that an earlier group gave is not given again. Thus the first group decides the properties of a move.
 - An en passant capture takes the place of a quiet move to the same square.
 - A target is a `Special::DoubleStep` move if a slide of a group with `makes_en_passant` gives it after one square or more. Its en passant squares are the squares that it passes on each such slide of the kind that can be used.
+
+### Hooks
+
+A kind can also have hooks (`KindRules::hooks`). A `Hook` is a slide that turns: the piece goes `min_leg` to `max_leg` squares along a leg, and then one last step in another direction. Each square of the leg must be empty. The last step moves or captures by the `mode` of the hook. A hook has these fields:
+
+- `bends`: Pairs of (the direction of the leg, the last step), from the view of White. For Black, the engine mirrors the rank steps.
+- `min_leg`, `max_leg`: The number of squares of the leg, from 1 to `Atom::MAX_STEPS`.
+- `mode`: What the last step can do on its target square.
+
+`Hook::right_angle(dirs, min_leg, mode)` makes a hook with a leg along each direction and a last step to the left or to the right of the leg. With the directions of the rook and a `min_leg` of 2, the hook is a knight move with a long leg that a piece can block.
+
+- A hook gives a target that no atom of the kind gives. The move has no special property.
+- A hook that can capture attacks its targets, thus it gives check. A piece on a square of the leg stops the check.
+- Only a kind with no promotion, and with atoms that have no condition and no en passant property, can have a hook (`RulesError::BadHook`).
 
 ### Promotion
 
@@ -109,7 +123,7 @@ The six rule flags are edits of it:
 
 ### Add a movement rule
 
-1. Write the rule as an edit of `SideRules`. Do not change `tables.rs` or `movegen.rs`.
+1. Write the rule as an edit of `SideRules`: atoms, hooks, a promotion, or castles. Do not change `tables.rs` or `movegen.rs`.
 2. If the game needs a name for the rule, add a method to `SideRules` in `engine/src/rules.rs`.
 3. Add a test to `engine/tests/data_rules.rs` or `engine/tests/data_moves.rs` for the moves and for the check that the rule gives.
 

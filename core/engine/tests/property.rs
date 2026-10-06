@@ -3,7 +3,7 @@
 //! The naive generator in this file reads the rules data directly. It walks the offsets square
 //! by square and uses no table of the engine. It follows the rules of `core/README.md`: the
 //! groups of atoms, the steps of an atom, the conditions, en passant, the promotion, the clock,
-//! and the castle rows. For each random rule set and position, the test compares all the pseudo
+//! the hooks, and the castle rows. For each random rule set and position, the test compares all the pseudo
 //! moves (of the pawns too), the castles, and the attacked squares of the two colors, also after
 //! each move that makes en passant squares. A second test walks the move tree, compares each
 //! `make` with a naive `make`, and makes sure that `unmake` gives back the full state and the
@@ -15,7 +15,7 @@ use chrogue_engine::movegen::{evasion_moves, evasion_squares, may_give_check};
 use chrogue_engine::rng::Rng;
 use chrogue_engine::zobrist::key_from_scratch;
 use chrogue_engine::{
-    Atom, Bitboard, Castle, Color, Condition, Kind, Mode, Move, MoveList, Offset, Piece, Placement, Promotion,
+    Atom, Bitboard, Castle, Color, Condition, Hook, Kind, Mode, Move, MoveList, Offset, Piece, Placement, Promotion,
     Promotions, Rules, SideRules, Special, Square, State, in_check, is_attacked, legal_moves, pseudo_moves,
 };
 
@@ -89,6 +89,17 @@ fn random_pawn_atom(rng: &mut Rng) -> Atom {
     atom
 }
 
+/// A hook with 1 to 3 random bends, or the hook of `Hook::right_angle` along random directions.
+fn random_hook(rng: &mut Rng) -> Hook {
+    let mode = MODES[rng.below(3) as usize];
+    let min_leg = 1 + rng.below(3) as u8;
+    if rng.below(2) == 0 {
+        return Hook::right_angle(&random_offsets(rng, 1), min_leg, mode);
+    }
+    let bends = (0..1 + rng.below(3)).map(|_| (random_offsets(rng, 2)[0], random_offsets(rng, 2)[0])).collect();
+    Hook { bends, min_leg, max_leg: min_leg + rng.below(8 - min_leg as u64) as u8, mode }
+}
+
 fn random_promotion(rng: &mut Rng) -> Promotion {
     let mut kinds = [Kind::Queen, Kind::Knight, Kind::Rook, Kind::Bishop];
     rng.shuffle(&mut kinds);
@@ -149,6 +160,17 @@ fn random_side(rng: &mut Rng) -> SideRules {
             _ => (rng.below(12) == 0).then(|| random_promotion(rng)),
         };
         side = side.with_promotion(kind, promotion);
+        // Only a kind with plain atoms and no promotion can have a hook (`RulesError::BadHook`).
+        let plain = promotion.is_none()
+            && side
+                .atoms(kind)
+                .iter()
+                .all(|atom| atom.condition == Condition::Always && !atom.makes_en_passant && !atom.captures_en_passant);
+        if plain && rng.below(3) == 0 {
+            for _ in 0..1 + rng.below(2) {
+                side = side.with_hook(kind, random_hook(rng));
+            }
+        }
     }
     // A king never makes en passant squares (`RulesError::KingMakesEnPassant`).
     for atom in &mut side.kinds[Kind::King.index()].atoms {
@@ -236,6 +258,25 @@ fn walk(state: &State, from: Square, atom: &Atom, forward: i8) -> Vec<Reached> {
     squares
 }
 
+/// The squares where the last step of a hook ends: each square of the leg is empty, and the leg
+/// has `min_leg` squares or more.
+fn hook_targets(state: &State, from: Square, hook: &Hook, forward: i8) -> Vec<Square> {
+    let mut targets = Vec::new();
+    for &((df, dr), (lf, lr)) in &hook.bends {
+        let mut at = from;
+        for squares in 1..=hook.max_leg {
+            let Some(corner) = step(at, (df, dr * forward)).filter(|&s| state.piece_at(s).is_none()) else { break };
+            at = corner;
+            if squares >= hook.min_leg
+                && let Some(to) = step(corner, (lf, lr * forward))
+            {
+                targets.push(to);
+            }
+        }
+    }
+    targets
+}
+
 fn usable(atom: &Atom, piece: Piece) -> bool {
     atom.condition == Condition::Always || !piece.moved
 }
@@ -254,6 +295,11 @@ fn naive_attacks(state: &State, color: Color) -> Bitboard {
         for atom in rules.atoms(piece.kind).iter().filter(|atom| atom.mode.can_capture() && usable(atom, piece)) {
             for reached in walk(state, from, atom, color.forward()) {
                 attacked |= 1 << reached.to;
+            }
+        }
+        for hook in rules.kind(piece.kind).hooks.iter().filter(|hook| hook.mode.can_capture()) {
+            for to in hook_targets(state, from, hook, color.forward()) {
+                attacked |= 1 << to;
             }
         }
     }
@@ -349,6 +395,17 @@ fn naive_piece_moves(state: &State, from: Square, piece: Piece, captures_only: b
                 if ep_given.insert(to) {
                     push(moves, to, Special::EnPassant);
                 }
+            }
+        }
+    }
+    // A hook gives a target that no atom gave.
+    for hook in &rules.hooks {
+        for to in hook_targets(state, from, hook, forward) {
+            let piece = state.piece_at(to);
+            let capture = foe(&piece) && hook.mode.can_capture();
+            let quiet = piece.is_none() && hook.mode.can_move() && !captures_only;
+            if (quiet || capture) && given.insert(to) {
+                push(moves, to, Special::None);
             }
         }
     }
