@@ -7,7 +7,8 @@ use chrogue_engine as engine;
 pub use engine::rng::{Rng, mix};
 pub use engine::rules::{ALFIL, CAMEL, DABBABA, DIAG, FORWARD, FORWARD_DIAG, KING, KNIGHT, ORTHO};
 pub use engine::{
-    Atom, Color, Hook, Kind, Mode, Move, Offset, Outcome, Piece, Placement, Shield, SideRules, Special, Square,
+    Atom, Aura, Boon, Color, Hook, Kind, Mode, Move, Offset, Outcome, Piece, Placement, Shield, SideRules, Special,
+    Square,
 };
 
 /// The state of a battle in the engine.
@@ -43,6 +44,41 @@ pub fn side_rules(state: &State, color: Color) -> &SideRules {
 /// The pieces on the board with their squares, from a1 to h8.
 pub fn pieces(state: &State) -> Vec<(Square, Piece)> {
     (0..64).filter_map(|s| state.piece_at(s).map(|p| (s, p))).collect()
+}
+
+/// An aura of a side on the board now.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct AuraNow {
+    /// The ids of the pieces of the source kind, from the smallest id.
+    pub sources: Vec<u16>,
+    /// The squares of the pieces that have the boon, from a1 to h8.
+    pub holders: Vec<Square>,
+    /// The squares where the aura shows, from a1 to h8: the squares of the sources, and the
+    /// squares in the range of a source that are empty or have a piece with the boon.
+    pub zone: Vec<Square>,
+}
+
+/// An aura of a side on the board now.
+pub fn aura_now(state: &State, color: Color, aura: &Aura) -> AuraNow {
+    let squares = |set: u64| (0..64).filter(|&s| set & (1 << s) != 0).collect::<Vec<Square>>();
+    let holders = engine::aura_holders(state, color, aura);
+    let empty = !(state.color_set(Color::White) | state.color_set(Color::Black));
+    let source_set = state.pieces(color, aura.source);
+    let mut sources: Vec<u16> =
+        squares(source_set).into_iter().filter_map(|s| state.piece_at(s)).map(|p| p.id).collect();
+    sources.sort_unstable();
+    AuraNow {
+        sources,
+        holders: squares(holders),
+        zone: squares(source_set | engine::aura_zone(state, color, aura) & (empty | holders)),
+    }
+}
+
+pub const fn boon_name(boon: Boon) -> &'static str {
+    match boon {
+        Boon::Shield => "shield",
+        Boon::Moves => "moves",
+    }
 }
 
 /// The number of half moves with no capture.

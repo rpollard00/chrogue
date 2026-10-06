@@ -3,12 +3,13 @@
 //! - Relic: add one entry to `RELICS`. If the entry has a `foe_text`, a boss can have it as a trait.
 //! - Relic effect at a new point of a battle: add a kind to `Effect`, and apply it in `battle.rs`.
 //! - Movement rule: add a kind to `RuleEdit` if no kind gives it. The AI reads the rules data.
+//!   The battle view reads the auras of a relic from the same data (`RelicId::auras`).
 //! - Upgrade: add one entry to `UPGRADES`. A new kind of effect needs a kind in `UpgradeEffect`.
 //! - Floor: add one entry to `FLOORS`.
 
 use crate::chess::{
-    ALFIL, Atom, CAMEL, DABBABA, DIAG, FORWARD, FORWARD_DIAG, Hook, KING, KNIGHT, Kind, Mode, ORTHO, Offset, Shield,
-    SideRules,
+    ALFIL, Atom, Aura, CAMEL, DABBABA, DIAG, FORWARD, FORWARD_DIAG, Hook, KING, KNIGHT, Kind, Mode, ORTHO, Offset,
+    Shield, SideRules,
 };
 
 /// An edit of `SideRules::standard()` that a relic gives to its side. The engine builds its
@@ -316,6 +317,12 @@ impl RelicId {
 
     pub fn key(self) -> &'static str {
         self.def().key
+    }
+
+    /// The auras that the rules of the relic give to its side: its shields and its rules of
+    /// `RuleEdit::SlideNear`. They come from the rules data, thus a relic needs no second list.
+    pub fn auras(self) -> Vec<Aura> {
+        rules_for(&[self]).auras()
     }
 
     /// True if a boss can have the relic as a trait.

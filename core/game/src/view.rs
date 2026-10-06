@@ -2,7 +2,7 @@
 
 use serde_json::{Value, json};
 
-use crate::battle::{Battle, BattlePhase, is_capture};
+use crate::battle::{Battle, BattlePhase, boons_at, is_capture};
 use crate::chess::{self, Color, Kind, Move};
 use crate::content::{
     self, ARMY_MAX, FLOORS, RECRUIT_KINDS, RECRUITS, RELIC_PRICE, RELIC_SLOTS, RELICS, RELICS_MAX, REROLL_COST,
@@ -98,11 +98,37 @@ fn result_view(battle: &Battle, run: &Run) -> Value {
 }
 
 fn battle_view(run: &Run, battle: &Battle, meta: &Meta) -> Value {
+    let keys = |ids: &[RelicId]| ids.iter().map(|id| id.key()).collect::<Vec<_>>();
     let phase = battle.phase();
     let mut state = battle.state.clone();
+    let auras = battle.auras(run);
     let pieces: Vec<Value> = chess::pieces(&state)
         .into_iter()
-        .map(|(s, p)| json!({ "id": p.id, "kind": letter(p.kind), "color": chess::color_letter(p.color), "square": s }))
+        .map(|(s, p)| {
+            let boons: Vec<Value> = boons_at(&auras, p.color, s)
+                .into_iter()
+                .map(|(boon, relics)| json!({ "boon": chess::boon_name(boon), "relics": keys(&relics) }))
+                .collect();
+            json!({
+                "id": p.id,
+                "kind": letter(p.kind),
+                "color": chess::color_letter(p.color),
+                "square": s,
+                "auras": boons,
+            })
+        })
+        .collect();
+    let auras: Vec<Value> = auras
+        .iter()
+        .map(|aura| {
+            json!({
+                "relic": aura.relic.key(),
+                "color": chess::color_letter(aura.color),
+                "boon": chess::boon_name(aura.boon),
+                "sources": aura.sources,
+                "zone": aura.zone,
+            })
+        })
         .collect();
     let scout = meta.can_scout();
     let (moves, enemy_moves) = if phase == BattlePhase::Player {
@@ -129,6 +155,7 @@ fn battle_view(run: &Run, battle: &Battle, meta: &Meta) -> Value {
         "phase": phase.code(),
         "turn": chess::color_letter(chess::turn(&state)),
         "pieces": pieces,
+        "auras": auras,
         "check": chess::check_square(&state),
         "last": battle.last.map(|m| json!({ "from": m.from, "to": m.to })),
         "moves": moves,

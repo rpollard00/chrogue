@@ -1,6 +1,6 @@
 //! One battle of a run. This module connects the chess engine to the run and its relics.
 
-use crate::chess::{self, Color, Kind, Move, Outcome, Piece, Placement, Special, Square, State};
+use crate::chess::{self, Boon, Color, Kind, Move, Outcome, Piece, Placement, Special, Square, State};
 use crate::content::{self, ARMY_MAX, Effect, FLOORS, RelicId};
 use crate::formation;
 use crate::random::{Dice, Stream};
@@ -108,6 +108,39 @@ pub struct MoveReport {
     pub unit_lost: Option<(UnitId, bool)>,
 }
 
+/// An aura of a relic of one side on the board now. The player has the relics of the run, and
+/// the enemy has its traits.
+#[derive(Clone, PartialEq, Debug)]
+pub struct RelicAura {
+    pub relic: RelicId,
+    pub color: Color,
+    pub boon: Boon,
+    /// The ids of the pieces that give the boon, from the smallest id.
+    pub sources: Vec<u16>,
+    /// The squares of the pieces that have the boon.
+    pub holders: Vec<Square>,
+    /// The squares where the aura shows (`chess::AuraNow::zone`).
+    pub zone: Vec<Square>,
+}
+
+/// The boons of the piece of a color on a square: the shield first. Each boon has the relics that
+/// give it, in the order of `auras`.
+pub fn boons_at(auras: &[RelicAura], color: Color, square: Square) -> Vec<(Boon, Vec<RelicId>)> {
+    let mut boons = Vec::new();
+    for boon in [Boon::Shield, Boon::Moves] {
+        let mut relics: Vec<RelicId> = Vec::new();
+        for aura in auras.iter().filter(|a| (a.color, a.boon) == (color, boon) && a.holders.contains(&square)) {
+            if !relics.contains(&aura.relic) {
+                relics.push(aura.relic);
+            }
+        }
+        if !relics.is_empty() {
+            boons.push((boon, relics));
+        }
+    }
+    boons
+}
+
 /// The relics of a list that have an effect, in the order of the list.
 fn effects(ids: &[RelicId]) -> impl Iterator<Item = (RelicId, Effect)> + '_ {
     ids.iter().filter_map(|&id| id.def().effect.map(|effect| (id, effect)))
@@ -203,6 +236,38 @@ impl Battle {
             (None, Color::White) => BattlePhase::Player,
             (None, Color::Black) => BattlePhase::Enemy,
         }
+    }
+
+    /// The auras on the board now: of each relic of the player, and then of each trait of the
+    /// enemy, in the order of their lists. An aura with no source piece on the board is not in
+    /// the list. The battle does not keep this list: it comes from the state and the rules data.
+    ///
+    /// The rules of the state are the rules of the battle. A debug command can change the relics
+    /// of the run after the battle has its rules, thus an aura that the rules of the state do not
+    /// have is not in the list.
+    pub fn auras(&self, run: &Run) -> Vec<RelicAura> {
+        let mut list = Vec::new();
+        for (color, ids) in [(Color::White, &run.relics), (Color::Black, &run.enemy.traits)] {
+            let in_battle = chess::side_rules(&self.state, color).auras();
+            let in_battle = |aura: &chess::Aura| {
+                let same = |a: &&chess::Aura| (a.boon, a.source, a.range) == (aura.boon, aura.source, aura.range);
+                in_battle.iter().find(same).is_some_and(|a| a.targets & aura.targets == aura.targets)
+            };
+            for (i, &relic) in ids.iter().enumerate() {
+                // A relic counts one time (`content::rules_for`).
+                if ids[..i].contains(&relic) {
+                    continue;
+                }
+                for aura in relic.auras().into_iter().filter(in_battle) {
+                    let now = chess::aura_now(&self.state, color, &aura);
+                    if !now.sources.is_empty() {
+                        let chess::AuraNow { sources, holders, zone } = now;
+                        list.push(RelicAura { relic, color, boon: aura.boon, sources, holders, zone });
+                    }
+                }
+            }
+        }
+        list
     }
 
     /// The legal move of the side to move that has these squares and this promotion.

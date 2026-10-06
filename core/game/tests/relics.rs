@@ -3,7 +3,7 @@
 
 use chrogue_game::battle::{Battle, BattlePhase, BattleReward, Bonus, MoveReport, Recruit};
 use chrogue_game::chess::{self, Color, Kind, Move, Outcome, Piece, Placement, Square};
-use chrogue_game::content::{RELIC_SLOTS, RELICS_MAX, RelicId};
+use chrogue_game::content::{RELIC_SLOTS, RELICS_MAX, RelicId, UpgradeId};
 use chrogue_game::protocol::Code;
 use chrogue_game::run::{
     Blocked, CONSCRIPT_ID, Enemy, EnemyPiece, EnemyPieces, Meta, Offer, Run, Unit, generate_enemy, roll_shop,
@@ -216,6 +216,211 @@ fn blessing_stops_the_capture_of_a_piece_next_to_a_bishop() {
     let (from, to) = (sq("d8") ^ 56, sq("d4") ^ 56);
     assert!(!can_move(&position(own, other, &[], &["blessing"], true), from, to));
     assert!(can_move(&position(own, other, &["blessing"], &[], true), from, to));
+}
+
+// ---- The auras of the battle view ----
+
+/// The meta with the Scout upgrade: the view then has the moves of the enemy.
+fn scout_meta() -> Meta {
+    let mut meta = Meta::default();
+    meta.upgrades.insert(UpgradeId::parse("scout").unwrap(), 1);
+    meta
+}
+
+fn battle_view(run: &Run, battle: &Battle) -> Value {
+    view(&Screen::Battle { run: run.clone(), battle: Box::new(battle.clone()), settled: None }, &scout_meta())
+}
+
+/// A battle with Scout and its view: these pieces, these relics, and these traits. White has
+/// the move. The id of a white piece is its position in the list plus 1.
+fn aura_battle(white: Pieces, black: Pieces, keys: &[&str], traits: &[&str]) -> (Run, Battle, Value) {
+    let mut run = run_of(&[], &[], keys);
+    run.enemy.traits = relics(traits);
+    let battle = position(white, black, keys, traits, false);
+    let view = battle_view(&run, &battle);
+    (run, battle, view)
+}
+
+/// The piece of the view on a square.
+fn piece_on<'a>(view: &'a Value, square: &str) -> &'a Value {
+    let pieces = view["pieces"].as_array().unwrap();
+    pieces.iter().find(|p| p["square"] == json!(sq(square))).unwrap_or_else(|| panic!("no piece on {square}"))
+}
+
+/// The `auras` of the piece of the view on a square.
+fn boons_on<'a>(view: &'a Value, square: &str) -> &'a Value {
+    &piece_on(view, square)["auras"]
+}
+
+fn squares(names: &[&str]) -> Value {
+    let mut list: Vec<Square> = names.iter().map(|name| sq(name)).collect();
+    list.sort_unstable();
+    json!(list)
+}
+
+/// Each piece with a boon of a relic is on a zone square of an aura of that relic, of its color,
+/// and of that boon. No move of the view captures a piece with a shield.
+fn assert_auras_agree(view: &Value) {
+    let auras = view["auras"].as_array().unwrap();
+    for piece in view["pieces"].as_array().unwrap() {
+        for entry in piece["auras"].as_array().unwrap() {
+            let relics = entry["relics"].as_array().unwrap();
+            assert!(!relics.is_empty(), "{piece}");
+            for relic in relics {
+                let in_zone = auras.iter().any(|aura| {
+                    (&aura["relic"], &aura["color"], &aura["boon"]) == (relic, &piece["color"], &entry["boon"])
+                        && aura["zone"].as_array().unwrap().contains(&piece["square"])
+                });
+                assert!(in_zone, "{piece} is in no zone of {relic}");
+            }
+            if entry["boon"] == json!("shield") {
+                for list in ["moves", "enemy_moves"] {
+                    let captures = view[list].as_array().unwrap().iter().filter(|m| m["capture"] == json!(true));
+                    assert!(captures.clone().all(|m| m["to"] != piece["square"]), "a move of {list} captures {piece}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn the_view_gives_the_shield_of_blessing_to_the_pieces_next_to_a_bishop() {
+    let army: Pieces = &[KING, (Kind::Bishop, "c1"), (Kind::Pawn, "b2"), (Kind::Pawn, "d2"), (Kind::Knight, "a1")];
+    let army = [army, &[(Kind::Pawn, "a7")]].concat();
+    let (_, _, view) = aura_battle(&army, &[FOE, (Kind::Rook, "d8"), (Kind::Rook, "b8")], &["blessing"], &[]);
+    let shield = json!([{ "boon": "shield", "relics": ["blessing"] }]);
+    assert_eq!(boons_on(&view, "b2"), &shield);
+    assert_eq!(boons_on(&view, "d2"), &shield);
+    for bare in ["e1", "c1", "a1", "a7", "e8", "d8", "b8"] {
+        assert_eq!(boons_on(&view, bare), &json!([]), "{bare}");
+    }
+    // With Scout, the view has the moves of the enemy rooks. No rook captures a pawn with a shield.
+    assert!(view["enemy_moves"].as_array().unwrap().iter().any(|m| m["from"] == json!(sq("d8"))));
+    assert_auras_agree(&view);
+}
+
+#[test]
+fn the_view_gives_a_bishop_the_boons_of_blessing_and_of_divine_right() {
+    let army: Pieces = &[KING, (Kind::Bishop, "d1"), (Kind::Bishop, "d2")];
+    let (_, _, view) = aura_battle(army, &[FOE], &["blessing"], &[]);
+    let shield = json!([{ "boon": "shield", "relics": ["blessing"] }]);
+    assert_eq!((boons_on(&view, "d1"), boons_on(&view, "d2")), (&shield, &shield));
+
+    // The shield is first, and each boon has its relic. The order of the relics does not matter.
+    for keys in [["blessing", "divineRight"], ["divineRight", "blessing"]] {
+        let (_, _, view) = aura_battle(army, &[FOE], &keys, &[]);
+        let both =
+            json!([{ "boon": "shield", "relics": ["blessing"] }, { "boon": "moves", "relics": ["divineRight"] }]);
+        assert_eq!((boons_on(&view, "d1"), boons_on(&view, "d2")), (&both, &both));
+        assert_eq!(boons_on(&view, "e1"), &json!([]));
+        // The auras are in the order of the relics of the run.
+        let relics: Vec<&Value> = view["auras"].as_array().unwrap().iter().map(|aura| &aura["relic"]).collect();
+        assert_eq!(relics, [&json!(keys[0]), &json!(keys[1])]);
+        assert_auras_agree(&view);
+    }
+}
+
+#[test]
+fn the_view_gives_the_boon_of_a_trait_to_the_enemy_only() {
+    let army: Pieces = &[KING, (Kind::Bishop, "c1"), (Kind::Pawn, "b2"), (Kind::Rook, "d1")];
+    let enemy: Pieces = &[FOE, (Kind::Bishop, "d8"), (Kind::Pawn, "d7"), (Kind::Pawn, "a7")];
+    let (_, _, view) = aura_battle(army, enemy, &[], &["blessing"]);
+    assert_eq!(boons_on(&view, "d7"), &json!([{ "boon": "shield", "relics": ["blessing"] }]));
+    for bare in ["e1", "c1", "b2", "d1", "e8", "d8", "a7"] {
+        assert_eq!(boons_on(&view, bare), &json!([]), "{bare}");
+    }
+    // The rook on d1 attacks the pawn on d7, but the view has no such capture.
+    assert!(view["moves"].as_array().unwrap().iter().any(|m| m["from"] == json!(sq("d1"))));
+    let auras = view["auras"].as_array().unwrap();
+    assert_eq!(auras.len(), 1);
+    assert_eq!((&auras[0]["relic"], &auras[0]["color"]), (&json!("blessing"), &json!("b")));
+    assert_eq!(auras[0]["sources"], json!([piece_on(&view, "d8")["id"]]));
+    assert_auras_agree(&view);
+}
+
+#[test]
+fn the_zone_of_blessing_has_the_empty_squares_and_the_pieces_with_the_shield() {
+    let army: Pieces = &[KING, (Kind::Bishop, "d1"), (Kind::Bishop, "d2"), (Kind::Knight, "c3"), (Kind::Pawn, "c2")];
+    let (_, _, view) = aura_battle(army, &[FOE, (Kind::Pawn, "e2")], &["blessing", "divineRight"], &[]);
+    let mut sources = [piece_on(&view, "d1")["id"].as_u64().unwrap(), piece_on(&view, "d2")["id"].as_u64().unwrap()];
+    sources.sort_unstable();
+    // The two bishops protect each other, thus their squares are in the zone. The king on e1 and
+    // the enemy pawn on e2 cannot have the shield, thus their squares are not.
+    let blessing = json!({
+        "relic": "blessing",
+        "color": "w",
+        "boon": "shield",
+        "sources": sources,
+        "zone": squares(&["c1", "d1", "c2", "d2", "c3", "d3", "e3"]),
+    });
+    // The zone of Divine Right has the king (its source), the bishops that move as a rook, and
+    // the empty squares around the king.
+    let divine = json!({
+        "relic": "divineRight",
+        "color": "w",
+        "boon": "moves",
+        "sources": [piece_on(&view, "e1")["id"]],
+        "zone": squares(&["d1", "e1", "f1", "d2", "f2"]),
+    });
+    assert_eq!(view["auras"], json!([blessing, divine]));
+    assert_auras_agree(&view);
+}
+
+#[test]
+fn an_aura_with_no_source_on_the_board_is_not_in_the_view() {
+    // The player has no bishop, thus Blessing has no aura. Divine Right has the king.
+    let (_, _, view) = aura_battle(&[KING, (Kind::Pawn, "e2")], &[FOE], &["blessing", "divineRight"], &["blessing"]);
+    let relics: Vec<&Value> = view["auras"].as_array().unwrap().iter().map(|aura| &aura["relic"]).collect();
+    assert_eq!(relics, [&json!("divineRight")]);
+    assert!(view["pieces"].as_array().unwrap().iter().all(|p| p["auras"] == json!([])));
+}
+
+#[test]
+fn a_piece_loses_its_boon_when_the_bishop_goes_away() {
+    let army: Pieces = &[KING, (Kind::Bishop, "d3"), (Kind::Pawn, "d4"), (Kind::Pawn, "c2")];
+    let (run, mut battle, view) = aura_battle(army, &[FOE, (Kind::Pawn, "a7")], &["blessing"], &[]);
+    let shield = json!([{ "boon": "shield", "relics": ["blessing"] }]);
+    assert_eq!((boons_on(&view, "d4"), boons_on(&view, "c2")), (&shield, &shield));
+    play(&mut battle, &run, "d3", "f5");
+    let after = battle_view(&run, &battle);
+    assert_eq!((boons_on(&after, "d4"), boons_on(&after, "c2")), (&json!([]), &json!([])));
+    // The zone goes with the bishop, in each phase. A bishop with no second bishop near it has
+    // no shield, but its square is in the zone: it is the source.
+    assert_eq!(after["phase"], json!("enemy"));
+    assert_eq!(after["auras"][0]["zone"], squares(&["e4", "f4", "g4", "e5", "f5", "g5", "e6", "f6", "g6"]));
+    // The core keeps no aura: the same state gives the same view.
+    assert_eq!(battle_view(&run, &battle).to_string(), after.to_string());
+}
+
+#[test]
+fn the_view_has_only_the_auras_of_the_rules_of_the_battle() {
+    // The battle starts with no relic. Then the run gets Blessing and the enemy gets it as a
+    // trait, as a debug command can do after the battle has its result. The rules of the battle
+    // do not change: the rook can capture the pawn next to the bishop, thus the pawn has no badge.
+    let army: Pieces = &[KING, (Kind::Bishop, "d3"), (Kind::Pawn, "d4")];
+    let enemy: Pieces = &[FOE, (Kind::Rook, "d8"), (Kind::Bishop, "a8"), (Kind::Pawn, "a7")];
+    let (mut run, battle, view) = aura_battle(army, enemy, &[], &[]);
+    assert_eq!(view["auras"], json!([]));
+    run.relics = relics(&["blessing", "divineRight"]);
+    run.enemy.traits = relics(&["blessing"]);
+    let view = battle_view(&run, &battle);
+    assert!(view["enemy_moves"].as_array().unwrap().iter().any(|m| m["to"] == json!(sq("d4"))));
+    assert_eq!(view["auras"], json!([]));
+    assert!(view["pieces"].as_array().unwrap().iter().all(|p| p["auras"] == json!([])));
+    // A battle that starts with the relics has the auras.
+    let (_, _, view) = aura_battle(army, enemy, &["blessing", "divineRight"], &["blessing"]);
+    assert_eq!(view["auras"].as_array().unwrap().len(), 3);
+}
+
+#[test]
+fn a_battle_with_no_proximity_relic_has_no_aura() {
+    let army: Pieces = &[KING, (Kind::Bishop, "d1"), (Kind::Pawn, "d2")];
+    let (_, _, view) = aura_battle(army, &[FOE, (Kind::Bishop, "d8")], &["sidestep", "bounty"], &["crusade"]);
+    assert_eq!(view["auras"], json!([]));
+    assert!(view["pieces"].as_array().unwrap().iter().all(|p| p["auras"] == json!([])));
+    // Only the relics with a rule that needs a near piece have an aura.
+    let with_auras: Vec<&str> = RelicId::all().filter(|id| !id.auras().is_empty()).map(|id| id.key()).collect();
+    assert_eq!(with_auras, ["divineRight", "blessing"]);
 }
 
 #[test]

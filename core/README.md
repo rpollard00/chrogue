@@ -445,7 +445,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
 - `game/src/run.rs`: `Meta`, `Run`, `Unit`, `Enemy`, `Offer`, the enemy of each floor, rewards, the shop, and upgrades.
 - `game/src/random.rs`: The dice, and the streams of random numbers of a run.
 - `game/src/tuning.rs`: The tuning: the debug settings of a session. It has the fixed seed of new runs, the barred relics, the budget, the traits, and the AI level of each floor, and the cap, the weight, and the first floor of each kind in an enemy army. Its defaults come from the content.
-- `game/src/battle.rs`: One battle on the engine: relic effects, gold, lost and rescued units, the reward, and `settle`.
+- `game/src/battle.rs`: One battle on the engine: relic effects, gold, lost and rescued units, the reward, and `settle`. `Battle::auras` gives the auras of the relics on the board for the view.
 - `game/src/formation.rs`: The squares of the enemy army at the start of a battle.
 - `game/src/save.rs`: The `Storage` trait, a file storage (with the lock of the directory and safe writes) and a memory storage, and the check of saved data. A file that the core cannot use is set aside as `<name>.bad-<unix time>`, never written over.
 - `game/src/session.rs`: `Screen`, `Session::command`, and the commands.
@@ -461,7 +461,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
 
 A relic has movement rules and an effect. The movement rules are a list of `RuleEdit`: edits of `SideRules::standard()` that the engine and the AI read. The effect is one kind of `Effect`, at a fixed point of a battle.
 
-`RuleEdit::Leap` and `RuleEdit::Slide` add one atom to one kind: a leap, or a slide of 1 to `steps` steps. `RuleEdit::Hook` adds one hook to one kind: a line of `min_leg` or more empty squares, and then one square to the side. `RuleEdit::SlideNear` adds a slide that a piece has only near another piece of its side, and `RuleEdit::Shield` adds a shield. Thus a relic with such a rule needs no code. A relic with a text for the enemy (`foe_text`) can be a boss trait.
+`RuleEdit::Leap` and `RuleEdit::Slide` add one atom to one kind: a leap, or a slide of 1 to `steps` steps. `RuleEdit::Hook` adds one hook to one kind: a line of `min_leg` or more empty squares, and then one square to the side. `RuleEdit::SlideNear` adds a slide that a piece has only near another piece of its side, and `RuleEdit::Shield` adds a shield. Thus a relic with such a rule needs no code. The battle view shows the auras of these two rules (`RelicId::auras`, and `auras` in `PROTOCOL.md`): a relic with such a rule gets its badge and its zone with no more data. The zone of an aura has the squares of its source pieces, and the squares in their range that are empty or have a piece with the boon (`chess::aura_now`). `Battle::auras` gives only the auras that the rules of the battle have. A relic with a text for the enemy (`foe_text`) can be a boss trait.
 
 The effects have these points of a battle:
 

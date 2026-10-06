@@ -119,6 +119,11 @@ fn scripted_session() -> Seen {
     s.send(json!({ "cmd": "debug_ai_move", "level": 2 }));
     s.send(json!({ "cmd": "enemy_move" }));
 
+    // A battle with the aura of Blessing.
+    s.send(json!({ "cmd": "debug_set_relic", "relic": "blessing", "on": true }));
+    s.army(units(&[("k", 4), ("b", 3), ("p", 11)]), pieces(&[("k", 60)]));
+    s.send(json!({ "cmd": "debug_set_relic", "relic": "blessing", "on": false }));
+
     // A won battle with Bounty and Interest, and the camp.
     s.send(json!({ "cmd": "debug_set_gold", "gold": 20 }));
     s.army(units(&[("k", 4), ("r", 0)]), pieces(&[("k", 60), ("r", 8)]));
