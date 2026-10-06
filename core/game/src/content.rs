@@ -7,7 +7,8 @@
 //! - Floor: add one entry to `FLOORS`.
 
 use crate::chess::{
-    ALFIL, Atom, CAMEL, DABBABA, DIAG, FORWARD, FORWARD_DIAG, Hook, KING, KNIGHT, Kind, Mode, ORTHO, Offset, SideRules,
+    ALFIL, Atom, CAMEL, DABBABA, DIAG, FORWARD, FORWARD_DIAG, Hook, KING, KNIGHT, Kind, Mode, ORTHO, Offset, Shield,
+    SideRules,
 };
 
 /// An edit of `SideRules::standard()` that a relic gives to its side. The engine builds its
@@ -28,6 +29,12 @@ pub enum RuleEdit {
     /// The kind can also go `min_leg` or more empty squares along each offset, and then one square
     /// to the left or to the right of that line.
     Hook { kind: Kind, offsets: &'static [Offset], mode: Mode, min_leg: u8 },
+    /// The kind can also slide along each offset while another piece of the side of kind `near` is
+    /// `range` squares away or less.
+    SlideNear { kind: Kind, offsets: &'static [Offset], mode: Mode, near: Kind, range: u8 },
+    /// The enemy cannot capture a piece of kind `protected` while another piece of the side of kind
+    /// `protector` is `range` squares away or less.
+    Shield { protector: Kind, protected: Kind, range: u8 },
 }
 
 impl RuleEdit {
@@ -42,6 +49,12 @@ impl RuleEdit {
             }
             RuleEdit::Hook { kind, offsets, mode, min_leg } => {
                 rules.with_hook(kind, Hook::right_angle(offsets, min_leg, mode))
+            }
+            RuleEdit::SlideNear { kind, offsets, mode, near, range } => {
+                rules.with_atom(kind, Atom::slide(offsets, mode).if_near(near, range))
+            }
+            RuleEdit::Shield { protector, protected, range } => {
+                rules.with_shield(Shield { protector, protected, range })
             }
         }
     }
@@ -92,7 +105,7 @@ const fn hook(key: &'static str, name: &'static str, text: &'static str, effect:
     RelicDef { key, name, text, foe_text: None, rules: &[], effect: Some(effect) }
 }
 
-pub static RELICS: [RelicDef; 25] = [
+pub static RELICS: [RelicDef; 27] = [
     rule(
         "forcedMarch",
         "Forced March",
@@ -255,6 +268,26 @@ pub static RELICS: [RelicDef; 25] = [
         "Your rooks can go two or more empty squares in a straight line and then one square to the side. They can capture a piece there.",
         "Enemy rooks can go two or more empty squares in a straight line and then one square to the side. They can capture a piece there.",
         &[RuleEdit::Hook { kind: Kind::Rook, offsets: &ORTHO, mode: Mode::MoveOrCapture, min_leg: 2 }],
+    ),
+    rule(
+        "divineRight",
+        "Divine Right",
+        "Your bishops that are next to your king can also move as a rook.",
+        "Enemy bishops that are next to the enemy king can also move as a rook.",
+        &[RuleEdit::SlideNear {
+            kind: Kind::Bishop,
+            offsets: &ORTHO,
+            mode: Mode::MoveOrCapture,
+            near: Kind::King,
+            range: 1,
+        }],
+    ),
+    rule(
+        "blessing",
+        "Blessing",
+        "The enemy cannot capture your pawns that are next to one of your bishops.",
+        "You cannot capture enemy pawns that are next to an enemy bishop.",
+        &[RuleEdit::Shield { protector: Kind::Bishop, protected: Kind::Pawn, range: 1 }],
     ),
 ];
 

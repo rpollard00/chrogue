@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 
 type Pieces<'a> = &'a [(Kind, &'a str)];
 
-const RULE_RELICS: [&str; 12] = [
+const RULE_RELICS: [&str; 14] = [
     "vault",
     "crossfire",
     "closeQuarters",
@@ -30,6 +30,8 @@ const RULE_RELICS: [&str; 12] = [
     "shieldWall",
     "echelon",
     "enfilade",
+    "divineRight",
+    "blessing",
 ];
 const EFFECT_RELICS: [&str; 3] = ["apprenticeship", "coup", "gambit"];
 
@@ -185,6 +187,28 @@ fn enfilade_lets_a_rook_turn_to_the_side_after_two_empty_squares() {
     // A piece on the line stops the turn behind it.
     let mut blocked = position(&[KING, (Kind::Rook, "a1"), (Kind::Pawn, "b1")], &[FOE], &["enfilade"], &[], false);
     assert!(blocked.find_move(sq("a1"), sq("c2"), None).is_err());
+}
+
+#[test]
+fn divine_right_lets_a_bishop_next_to_its_king_move_as_a_rook() {
+    assert_gives_move("divineRight", &[KING, (Kind::Bishop, "d1")], &[FOE], "d1", "d4");
+    // A bishop that is two squares from the king moves only as a bishop.
+    let mut far = position(&[KING, (Kind::Bishop, "c1")], &[FOE], &["divineRight"], &[], false);
+    assert!(far.find_move(sq("c1"), sq("c4"), None).is_err());
+}
+
+#[test]
+fn blessing_stops_the_capture_of_a_pawn_next_to_a_bishop() {
+    let own: Pieces = &[KING, (Kind::Bishop, "d3"), (Kind::Pawn, "d4"), (Kind::Pawn, "h4")];
+    let other: Pieces = &[FOE, (Kind::Rook, "d8"), (Kind::Rook, "h8")];
+    // The enemy rook cannot capture the pawn next to the bishop. It can capture the other pawn.
+    let blessed = position(own, other, &["blessing"], &[], false);
+    assert!(!can_move(&blessed, sq("d8"), sq("d4")) && can_move(&blessed, sq("h8"), sq("h4")));
+    assert!(can_move(&position(own, other, &[], &["blessing"], false), sq("d8"), sq("d4")));
+    // The same relic as a trait protects the pawns of the enemy.
+    let (from, to) = (sq("d8") ^ 56, sq("d4") ^ 56);
+    assert!(!can_move(&position(own, other, &[], &["blessing"], true), from, to));
+    assert!(can_move(&position(own, other, &["blessing"], &[], true), from, to));
 }
 
 #[test]
