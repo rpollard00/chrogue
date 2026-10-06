@@ -107,11 +107,14 @@ pub struct SearchOptions {
     /// The threat term of the evaluation. It is always on in the game. The self-play tool
     /// can set it off to measure it.
     pub threats: bool,
+    /// The formation term of the evaluation. It is always on in the game. The self-play tool
+    /// can set it off to measure it.
+    pub formation: bool,
 }
 
 impl SearchOptions {
     /// All the parts that can be off are off.
-    pub const NONE: SearchOptions = SearchOptions { null_move: false, lmr: false, threats: false };
+    pub const NONE: SearchOptions = SearchOptions { null_move: false, lmr: false, threats: false, formation: false };
 }
 
 /// The quiescence search tests for a side with no legal move (a loss) when the side to move
@@ -226,6 +229,9 @@ impl Searcher {
         let size = limits.max_nodes.saturating_mul(2).clamp(1 << 10, 1 << 20).next_power_of_two() as usize;
         let mut eval = Evaluator::new(state, variant);
         eval.threats = options.threats;
+        if !options.formation {
+            eval.forget_formation();
+        }
         Searcher {
             eval,
             options,

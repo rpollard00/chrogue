@@ -1,10 +1,12 @@
 //! The material values that the engine derives from the movement rules.
 
 use chrogue_engine::eval::{FIXED_VALUES, kind_profile, officer_profile, officer_value};
+use chrogue_engine::fen::{KIWIPETE, START, square};
+use chrogue_engine::movegen::{condition_holds, shielded};
 use chrogue_engine::rules::{ALFIL, CAMEL, DABBABA, DIAG, FLAG_NAMES, FORWARD, FORWARD_DIAG, KING, KNIGHT, ORTHO};
 use chrogue_engine::{
-    Atom, Color, EvalTables, EvalVariant, Evaluator, Hook, Kind, MATE_BOUND, Mode, Offset, Promotion, Promotions,
-    Rules, SideRules, fen,
+    Atom, Color, Condition, EvalTables, EvalVariant, Evaluator, Flaws, Hook, Kind, Level, Limits, MATE_BOUND, Mode,
+    Move, Offset, Promotion, Promotions, Rules, SearchOptions, Shield, SideRules, fen, search,
 };
 
 /// The values of White with these rules.
@@ -273,4 +275,255 @@ fn the_threat_term_does_not_count_a_piece_with_a_shield() {
     };
     let shield = chrogue_engine::Shield { protector: Kind::Bishop, protected: Kind::Pawn, range: 1 };
     assert!(score(SideRules::standard().with_shield(shield)) < score(SideRules::standard()));
+}
+
+// ---- The formation term ----
+
+/// The bishop also slides as a rook while its king is `range` squares away or less.
+fn near_king(range: u8) -> Atom {
+    Atom::slide(&ORTHO, Mode::MoveOrCapture).if_near(Kind::King, range)
+}
+
+fn with_near_bishop() -> SideRules {
+    SideRules::standard().with_atom(Kind::Bishop, near_king(1))
+}
+
+fn with_shield(protected: Kind, range: u8) -> SideRules {
+    SideRules::standard().with_shield(Shield { protector: Kind::Bishop, protected, range })
+}
+
+/// The formation term of a position for White: the evaluation with the term minus the
+/// evaluation without it. White has the move, thus the other terms cancel.
+fn formation_term(pieces: &str, rules: Rules) -> i32 {
+    let state = fen::from_fen(pieces, Color::White, rules).unwrap();
+    let with_term = Evaluator::new(&state, EvalVariant::Derived);
+    let mut without = with_term.clone();
+    without.forget_formation();
+    with_term.evaluate(&state) - without.evaluate(&state)
+}
+
+/// The position with the colours and the ranks exchanged.
+fn mirror(pieces: &str) -> String {
+    let swap = |ch: char| if ch.is_ascii_uppercase() { ch.to_ascii_lowercase() } else { ch.to_ascii_uppercase() };
+    pieces.split('/').rev().map(|row| row.chars().map(swap).collect::<String>()).collect::<Vec<_>>().join("/")
+}
+
+/// Positions with pawns and bishops of the two sides at different distances.
+const FORMATION_POSITIONS: [&str; 6] = [
+    START,
+    KIWIPETE,
+    "4k3/8/8/8/8/2P5/3B4/4K3",
+    "r1bqk2r/pp2bppp/2n1pn2/2pp4/3P1B2/2PBPN2/PP3PPP/RN1QK2R",
+    "4k3/2b5/1p1p4/p3p3/P3P1B1/1P1P1P2/2B3P1/4K3",
+    "2b1k3/pp4pp/8/2PpP3/3B4/8/PP1B2PP/4K3",
+];
+
+#[test]
+fn rules_with_no_formation_have_no_formation_term() {
+    let mut sides = vec![SideRules::standard(), SideRules::from_flags(FLAG_NAMES).unwrap()];
+    sides.extend(FLAG_NAMES.map(|flag| SideRules::from_flags([flag]).unwrap()));
+    for side in sides {
+        let rules = Rules::new(side.clone(), side);
+        assert!(EvalTables::new(&rules).sides.iter().all(|side| side.formation.is_empty()));
+        for pieces in FORMATION_POSITIONS {
+            assert_eq!(formation_term(pieces, rules.clone()), 0, "{pieces}");
+        }
+    }
+}
+
+#[test]
+fn the_formation_term_grows_as_a_piece_gets_near_its_anchor() {
+    let term = |pieces| formation_term(pieces, Rules::new(with_near_bishop(), SideRules::standard()));
+    let (d1, c1, b1, a1) = (
+        term("4k3/8/8/8/8/8/8/3BK3"),
+        term("4k3/8/8/8/8/8/8/2B1K3"),
+        term("4k3/8/8/8/8/8/8/1B2K3"),
+        term("4k3/8/8/8/8/8/8/B3K3"),
+    );
+    assert!(d1 > c1 && c1 > b1 && b1 > a1, "{d1} {c1} {b1} {a1}");
+    assert_eq!(a1, 0);
+    // The king is not the anchor of a second bishop that is far from it.
+    assert_eq!(term("4k3/8/8/8/8/8/8/B2BK3"), d1);
+    // A bishop is not the anchor of a bishop: the atom names the king.
+    assert_eq!(term("4k3/8/8/8/8/8/BB6/7K"), 0);
+}
+
+#[test]
+fn the_size_of_the_formation_term_comes_from_the_rule() {
+    let bishop_next_to_king = "4k3/8/8/8/8/8/8/3BK3";
+    let near = |atom: Atom| {
+        let side = SideRules::standard().with_atom(Kind::Bishop, atom);
+        formation_term(bishop_next_to_king, Rules::new(side, SideRules::standard()))
+    };
+    // An atom that adds less reach gives a smaller term.
+    let (slide, step) = (near(near_king(1)), near(near_king(1).max_steps(1)));
+    assert!(0 < step && step < slide, "{step} {slide}");
+
+    // A shield of a more valuable kind gives a larger term.
+    let shield =
+        |protected, pieces| formation_term(pieces, Rules::new(with_shield(protected, 1), SideRules::standard()));
+    let (pawn, queen) = (shield(Kind::Pawn, "4k3/8/8/8/8/2P5/3B4/4K3"), shield(Kind::Queen, "4k3/8/8/8/8/2Q5/3B4/4K3"));
+    assert!(0 < pawn && pawn < queen, "{pawn} {queen}");
+    // Each piece with the shield counts.
+    assert_eq!(shield(Kind::Pawn, "4k3/8/8/8/8/2P1P3/3B4/4K3"), 2 * pawn);
+    // Two shields of the same kinds are one row with the larger range.
+    let twice =
+        with_shield(Kind::Pawn, 1).with_shield(Shield { protector: Kind::Bishop, protected: Kind::Pawn, range: 2 });
+    for pieces in FORMATION_POSITIONS {
+        let wide = formation_term(pieces, Rules::new(with_shield(Kind::Pawn, 2), SideRules::standard()));
+        assert_eq!(formation_term(pieces, Rules::new(twice.clone(), SideRules::standard())), wide, "{pieces}");
+    }
+    // A pawn that is far from each bishop adds nothing.
+    assert_eq!(shield(Kind::Pawn, "4k3/8/8/7P/8/2P5/3B4/4K3"), pawn);
+}
+
+#[test]
+fn the_pieces_in_formation_by_a_shield_are_the_pieces_with_the_shield() {
+    for range in [1, 2] {
+        let side = with_shield(Kind::Pawn, range);
+        let rules = Rules::new(side.clone(), side);
+        let mut with_a_shield = 0;
+        for pieces in FORMATION_POSITIONS {
+            let state = fen::from_fen(pieces, Color::White, rules.clone()).unwrap();
+            let eval = Evaluator::new(&state, EvalVariant::Derived);
+            for color in Color::ALL {
+                assert_eq!(eval.formed(&state, color), shielded(&state, color), "{pieces}, {color:?}, range {range}");
+                with_a_shield += shielded(&state, color).count_ones();
+            }
+        }
+        assert!(with_a_shield > 20, "range {range}: {with_a_shield}");
+    }
+    // The term of White is the number of pawns with the shield times the term of one such
+    // pawn, when no other pawn is one or two squares too far from a bishop.
+    let rules = Rules::new(with_shield(Kind::Pawn, 1), SideRules::standard());
+    let one = formation_term("4k3/8/8/8/8/2P5/3B4/4K3", rules.clone());
+    for pieces in ["4k3/8/8/8/2P1P3/3B4/2P1P3/4K3", "4k3/8/8/8/8/1PPP4/2B5/4K3", "4k3/P7/8/8/8/8/4PPP1/4KB2"] {
+        let state = fen::from_fen(pieces, Color::White, rules.clone()).unwrap();
+        let count = shielded(&state, Color::White).count_ones() as i32;
+        assert!(count > 0);
+        assert_eq!(formation_term(pieces, rules.clone()), count * one, "{pieces}");
+    }
+}
+
+#[test]
+fn the_formation_term_is_the_same_for_the_two_colours() {
+    let sides = [
+        with_near_bishop(),
+        with_shield(Kind::Pawn, 1),
+        with_shield(Kind::Pawn, 2).with_atom(Kind::Bishop, near_king(2)),
+    ];
+    for side in sides {
+        let mut sum = 0;
+        for pieces in FORMATION_POSITIONS {
+            let white = formation_term(pieces, Rules::new(side.clone(), SideRules::standard()));
+            let black = formation_term(&mirror(pieces), Rules::new(SideRules::standard(), side.clone()));
+            assert_eq!(black, -white, "{pieces}");
+            sum += white;
+        }
+        assert!(sum > 0);
+    }
+}
+
+/// The move of a search of the levels with depth 1 and no flaw, with or without the formation term.
+fn formation_move(pieces: &str, rules: Rules, formation: bool) -> Move {
+    let mut state = fen::from_fen(pieces, Color::White, rules).unwrap();
+    let options = SearchOptions { formation, ..Level::OPTIONS };
+    search(&mut state, &Limits::depth(1), EvalVariant::Derived, options, Flaws::NONE, 1).expect("a legal move").mv
+}
+
+#[test]
+fn the_search_moves_a_piece_into_formation() {
+    // The bishop on d3 attacks no piece. From f1 it is next to its king, and its lines are not open.
+    let pieces = "6k1/5ppp/8/8/8/3B4/5PPP/6K1";
+    let rules = Rules::new(with_near_bishop(), SideRules::standard());
+    let in_formation_after = |m: Move| {
+        let mut state = fen::from_fen(pieces, Color::White, rules.clone()).unwrap();
+        state.make(m);
+        let bishop = state.pieces(Color::White, Kind::Bishop).trailing_zeros() as u8;
+        condition_holds(&state, Condition::Near { kind: Kind::King, range: 1 }, Color::White, bishop)
+    };
+    let with_term = formation_move(pieces, rules.clone(), true);
+    assert_eq!((with_term.from, with_term.to), (square("d3"), square("f1")));
+    assert!(in_formation_after(with_term));
+    // The search without the term does not go there.
+    assert!(!in_formation_after(formation_move(pieces, rules.clone(), false)));
+
+    // A bishop that cannot get next to its king in one move goes one square nearer.
+    let far = formation_move("6k1/5ppp/8/8/3B4/8/5PPP/6K1", rules.clone(), true);
+    assert_eq!((far.from, far.to), (square("d4"), square("e3")));
+}
+
+#[test]
+fn the_search_leaves_a_formation_to_capture_a_piece() {
+    // The bishop on d2 is next to its king, thus it slides as a rook. The rook on d6 has no defender.
+    let rules = Rules::new(with_near_bishop(), SideRules::standard());
+    for formation in [true, false] {
+        let m = formation_move("4k3/p7/3r4/8/8/8/3B4/3K4", rules.clone(), formation);
+        assert_eq!((m.from, m.to), (square("d2"), square("d6")));
+    }
+}
+
+#[test]
+fn each_near_condition_of_a_kind_has_its_own_row() {
+    // The slide starts at the distance 1 from the king, and the leap starts at the distance 3.
+    let (slide, leap) = (near_king(1), Atom::leap(&KNIGHT, Mode::MoveOrCapture).if_near(Kind::King, 3));
+    let term = |atoms: &[&Atom], pieces: &str| {
+        let side = atoms.iter().fold(SideRules::standard(), |side, &atom| side.with_atom(Kind::Bishop, atom.clone()));
+        formation_term(pieces, Rules::new(side, SideRules::standard()))
+    };
+    // The bishop at the distances 1, 2, 3, and 4 from its king.
+    let distances = ["4k3/8/8/8/8/8/8/3BK3", "4k3/8/8/8/8/8/8/2B1K3", "4k3/8/8/8/8/8/8/1B2K3", "4k3/8/8/8/8/8/8/B3K3"];
+    let both = distances.map(|pieces| term(&[&slide, &leap], pieces));
+    // The term grows at each step toward the king, also inside the range of the leap.
+    assert!(both[0] > both[1] && both[1] > both[2] && both[2] > both[3] && both[3] > 0, "{both:?}");
+    // The two rows add: the bishop next to its king gets more than from one of the atoms.
+    let alone = distances.map(|pieces| term(&[&slide], pieces));
+    assert!(both[0] > alone[0] && both[0] > term(&[&leap], distances[0]), "{both:?} {alone:?}");
+    // A second atom with the same condition makes the row larger.
+    let step = Atom::leap(&ALFIL, Mode::MoveOrCapture).if_near(Kind::King, 1);
+    let one_row = term(&[&slide, &step], distances[0]);
+    assert!(one_row > alone[0], "{one_row} {alone:?}");
+}
+
+#[test]
+fn a_piece_is_not_its_own_anchor() {
+    let side = SideRules::standard()
+        .with_atom(Kind::Bishop, Atom::slide(&ORTHO, Mode::MoveOrCapture).if_near(Kind::Bishop, 1));
+    let term = |pieces| formation_term(pieces, Rules::new(side.clone(), SideRules::standard()));
+    // One bishop has no other bishop near it, also next to its king.
+    assert_eq!(term("4k3/8/8/8/8/8/8/3BK3"), 0);
+    // Each of two bishops on adjacent squares is the anchor of the other bishop.
+    let pair = term("4k3/8/8/8/8/8/8/1BB1K3");
+    assert!(pair > 0 && pair % 2 == 0, "{pair}");
+    // A third bishop that is far from the two adds nothing, and one bishop of the pair is half.
+    assert_eq!(term("4k3/8/8/8/7B/8/8/1BB1K3"), pair);
+    assert_eq!(term("4k3/8/8/8/8/8/8/1BBBK3"), 3 * pair / 2);
+}
+
+#[test]
+fn the_anchor_of_the_formation_term_is_the_kind_of_the_condition() {
+    let side =
+        SideRules::standard().with_atom(Kind::Bishop, Atom::slide(&ORTHO, Mode::MoveOrCapture).if_near(Kind::Rook, 1));
+    let term = |pieces| formation_term(pieces, Rules::new(side.clone(), SideRules::standard()));
+    // The bishop is next to its king, and the side has no rook.
+    assert_eq!(term("4k3/8/8/8/8/8/8/3BK3"), 0);
+    // The rook is far from the bishop.
+    assert_eq!(term("4k3/R7/8/8/8/8/8/3BK3"), 0);
+    // The rook is next to the bishop, and the king is far.
+    assert!(term("4k3/8/8/8/8/1BR5/8/7K") > 0);
+}
+
+#[test]
+fn one_row_of_an_atom_pays_half_of_the_value_of_its_kind_at_most() {
+    // A knight that also leaps to each square of the board while it is next to its king. A
+    // fourth of the added value is more than half of the value of this knight.
+    let everywhere: Vec<Offset> =
+        (-7..=7).flat_map(|df| (-7..=7).map(move |dr| (df, dr))).filter(|&offset| offset != (0, 0)).collect();
+    let leap = Atom::leap(&everywhere, Mode::MoveOrCapture);
+    let side = SideRules::standard().with_atom(Kind::Knight, leap.clone().if_near(Kind::King, 1));
+    let knight = value(side.clone(), Kind::Knight);
+    let added =
+        officer_value(&[Atom::leap(&KNIGHT, Mode::MoveOrCapture), leap]) - value(SideRules::standard(), Kind::Knight);
+    assert!(added / 4 > knight / 2, "{added} {knight}");
+    assert_eq!(formation_term("4k3/8/8/8/8/8/8/3NK3", Rules::new(side, SideRules::standard())), knight / 2);
 }

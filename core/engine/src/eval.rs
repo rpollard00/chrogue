@@ -39,12 +39,26 @@
 //! A hook adds its targets in the same way: each square of its leg must be empty.
 //!
 //! A new atom or hook can only add reach and coverage, thus it never makes a value lower.
+//!
+//! # The formation of a side
+//!
+//! An atom with `Condition::Near` and a `Shield` have the same shape: a piece of one kind (the
+//! dependent) gains something while another piece of its side of a second kind (the anchor) is
+//! `range` squares away or less. `Formation` has one row (`Tether`) for each such rule of a
+//! side. The evaluation pays the row for each dependent that is near an anchor, and a smaller
+//! part for a dependent that is one or two squares too far. Thus the search moves a piece
+//! toward its anchor, and it keeps the two together. An atom and a shield with the same anchor
+//! and the same dependent are two benefits, thus each has its row and the two rows pay.
+//!
+//! The size of a row comes from the rules data. For an atom, it is a share of the difference
+//! between the value of the kind with the atom always on and the value of the kind without the
+//! atom. For a shield, it is a share of the value of the protected kind.
 
 use std::sync::Arc;
 
 use crate::movegen::{piece_attacks, piece_reach, shielded};
 use crate::outcome::CLOCK_LIMIT;
-use crate::rules::{Atom, Condition, KindRules, Rules, SideRules};
+use crate::rules::{Atom, Condition, KindRules, Rules, Shield, SideRules};
 use crate::search::MATE_BOUND;
 use crate::state::State;
 use crate::tables::{Tables, offset_square};
@@ -79,6 +93,16 @@ const ROUT_MAX: i32 = 400;
 const THREAT_DIVISOR: i32 = 16;
 /// A bonus for the side that has the move.
 const TEMPO: i32 = 8;
+/// The number of rings of a `Tether`.
+const RINGS: usize = 3;
+/// Ring `j` of a `Tether` pays `gain * RING_16THS[j] / 16`. Ring 0 has the dependents for which
+/// the rule applies. Ring `j` has the dependents that are `j` squares too far from an anchor.
+const RING_16THS: [i32; RINGS] = [16, 8, 4];
+/// The gain of an atom with `Condition::Near` is this share of the value that the atom adds to
+/// its kind when its condition is always true.
+const NEAR_SHARE: f64 = 0.25;
+/// The gain of a `Shield` is this share of the value of the protected kind.
+const SHIELD_SHARE: f64 = 0.25;
 /// From this value of the clock, the score goes linearly to 0 at `CLOCK_LIMIT`.
 pub const CLOCK_FADE_START: u32 = 70;
 /// The largest score of `Evaluator::evaluate`. It is less than `MATE_BOUND`, thus a score of
@@ -298,6 +322,133 @@ fn promotion_term(best_promotion: i32, steps: Option<u32>) -> f64 {
     steps.map_or(0.0, |steps| PROMO_SHARE * best_promotion as f64 * PROMO_DECAY.powi(steps as i32))
 }
 
+/// One rule of a side that rewards a formation: a piece of kind `dependent` gains `cp[j]`
+/// centipawns when the nearest other piece of its side of kind `anchor` is in ring `j`.
+#[derive(Clone, Copy, Debug)]
+struct Tether {
+    anchor: Kind,
+    dependent: Kind,
+    /// The range of each ring: the range of the rule, and then one and two squares more.
+    ranges: [u8; RINGS],
+    /// The centipawns of each ring. They do not increase from ring 0.
+    cp: [i32; RINGS],
+}
+
+impl Tether {
+    fn new(anchor: Kind, dependent: Kind, range: u8, gain: i32) -> Tether {
+        Tether {
+            anchor,
+            dependent,
+            ranges: std::array::from_fn(|ring| range.saturating_add(ring as u8)),
+            cp: RING_16THS.map(|part| gain * part / 16),
+        }
+    }
+
+    /// The dependents of `color` in each ring. A piece is in one ring at most. A piece is not
+    /// its own anchor, because `Condition::near_zone` does not have its own square.
+    #[inline]
+    fn rings(&self, state: &State, color: Color) -> [Bitboard; RINGS] {
+        let dependents = state.pieces(color, self.dependent);
+        let mut anchors = state.pieces(color, self.anchor);
+        if dependents == 0 || anchors == 0 {
+            return [0; RINGS];
+        }
+        let mut zones = [0u64; RINGS];
+        while anchors != 0 {
+            let s = pop_square(&mut anchors);
+            for (zone, &range) in zones.iter_mut().zip(&self.ranges) {
+                *zone |= Condition::near_zone(s, range);
+            }
+        }
+        [dependents & zones[0], dependents & zones[1] & !zones[0], dependents & zones[2] & !zones[1]]
+    }
+}
+
+/// A row before its rings: the anchor, the dependent, the range, and the gain.
+type Row = (Kind, Kind, u8, i32);
+
+/// Adds the row of a shield. Two shields with the same protector and the same protected kind
+/// give one benefit, thus they become one row with the larger range.
+fn add_shield(rows: &mut Vec<Row>, anchor: Kind, dependent: Kind, range: u8, gain: i32) {
+    match rows.iter_mut().find(|row| row.0 == anchor && row.1 == dependent) {
+        Some(row) => row.2 = row.2.max(range),
+        None => rows.push((anchor, dependent, range, gain)),
+    }
+}
+
+/// The value of a kind with these rules, without a promotion term. See `SideEval::new`.
+fn rules_value(rules: &KindRules) -> f64 {
+    let profile = kind_profile(rules);
+    if rules.promotion.is_some() { reach_value(profile.reach) } else { mobility_value(profile) }
+}
+
+/// The rules of a side that reward a formation. See the module text. A side with no atom with
+/// `Condition::Near` and no shield has no row.
+#[derive(Clone, Debug, Default)]
+pub struct Formation(Vec<Tether>);
+
+impl Formation {
+    fn new(rules: &SideRules, value: &[i32; Kind::COUNT]) -> Formation {
+        // The rows of the atoms, and then the rows of the shields. Each condition of a kind has
+        // its own row, because its atoms start at its own range. The rows add.
+        let mut rows: Vec<Row> = Vec::new();
+        for kind in Kind::ALL {
+            let kind_rules = rules.kind(kind);
+            let mut seen: Vec<Condition> = Vec::new();
+            for atom in &kind_rules.atoms {
+                let Condition::Near { kind: anchor, range } = atom.condition else { continue };
+                if seen.contains(&atom.condition) {
+                    continue;
+                }
+                seen.push(atom.condition);
+                // The kind with the atoms of this condition always on, and the kind without them.
+                let (mut on, mut off) = (kind_rules.clone(), kind_rules.clone());
+                for other in on.atoms.iter_mut().filter(|other| other.condition == atom.condition) {
+                    other.condition = Condition::Always;
+                }
+                off.atoms.retain(|other| other.condition != atom.condition);
+                let added = (rules_value(&on) - rules_value(&off)) * NEAR_SHARE;
+                // One row of an atom pays half of the value of its kind at most. The limit is
+                // for each row, not for their sum.
+                let gain = (added.round() as i32).min(value[kind.index()] / 2);
+                rows.push((anchor, kind, range, gain));
+            }
+        }
+        let mut shields = Vec::new();
+        for &Shield { protector, protected, range } in &rules.shields {
+            let gain = (value[protected.index()] as f64 * SHIELD_SHARE).round() as i32;
+            add_shield(&mut shields, protector, protected, range, gain);
+        }
+        // A rule that adds no value has no row.
+        let rows = rows.into_iter().chain(shields).filter(|row| row.3 > 0);
+        Formation(rows.map(|(anchor, dependent, range, gain)| Tether::new(anchor, dependent, range, gain)).collect())
+    }
+
+    /// The centipawns of the formation of `color`.
+    #[inline]
+    fn score(&self, state: &State, color: Color) -> i32 {
+        let mut total = 0;
+        for tether in &self.0 {
+            let rings = tether.rings(state, color);
+            for (set, cp) in rings.iter().zip(&tether.cp) {
+                total += set.count_ones() as i32 * cp;
+            }
+        }
+        total
+    }
+
+    /// The pieces of `color` in ring 0 of a row: the pieces for which a rule of the formation
+    /// applies now.
+    fn formed(&self, state: &State, color: Color) -> Bitboard {
+        self.0.iter().fold(0, |set, tether| set | tether.rings(state, color)[0])
+    }
+
+    /// True if the side has no rule that rewards a formation.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 /// The evaluation data of one side.
 #[derive(Clone, Debug)]
 pub struct SideEval {
@@ -312,6 +463,8 @@ pub struct SideEval {
     /// `advance[kind][square]`: the bonus of a piece of a kind with a promotion on a square. It
     /// is 0 on the second rank, and 0 for a kind with no promotion.
     pub advance: [[i32; 64]; Kind::COUNT],
+    /// The rules of the side that reward a formation.
+    pub formation: Formation,
 }
 
 impl SideEval {
@@ -356,7 +509,8 @@ impl SideEval {
                 }
             }
         }
-        SideEval { value, reach, mobility_scale, advance }
+        let formation = Formation::new(rules, &value);
+        SideEval { value, reach, mobility_scale, advance, formation }
     }
 }
 
@@ -427,6 +581,21 @@ impl Evaluator {
         self.sides[color.index()].value[kind.index()]
     }
 
+    /// Removes the formation term. See `SearchOptions::formation`.
+    pub fn forget_formation(&mut self) {
+        for side in &mut self.sides {
+            side.formation = Formation::default();
+        }
+    }
+
+    /// The pieces of `color` for which a rule of the formation term applies now: the pieces
+    /// near their piece of a `Condition::Near`, and the pieces with a shield. A rule that adds
+    /// no value (a gain of 0) has no row. Thus for such a shield, the result does not have each
+    /// piece of `movegen::shielded`.
+    pub fn formed(&self, state: &State, color: Color) -> Bitboard {
+        self.sides[color.index()].formation.formed(state, color)
+    }
+
     /// The squares that the king of a side can reach by a leap, and its own square.
     fn king_zone(&self, state: &State, color: Color) -> Bitboard {
         match state.king_square(color) {
@@ -492,7 +661,7 @@ impl Evaluator {
             if material > 0 {
                 total -= (ROUT * 100 / material).min(ROUT_MAX);
             }
-            score[c] = total + material;
+            score[c] = total + material + eval.formation.score(state, color);
         }
 
         for color in Color::ALL {

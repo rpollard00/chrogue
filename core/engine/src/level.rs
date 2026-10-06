@@ -17,7 +17,7 @@ pub struct Level {
 
 impl Level {
     /// The options of the search that the levels of the game use.
-    pub const OPTIONS: SearchOptions = SearchOptions { null_move: false, lmr: true, threats: true };
+    pub const OPTIONS: SearchOptions = SearchOptions { null_move: false, lmr: true, threats: true, formation: true };
 
     /// A level of the search with a node limit and no flaw.
     pub const fn nodes(name: &'static str, max_nodes: u64) -> Level {

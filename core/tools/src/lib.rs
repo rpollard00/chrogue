@@ -48,8 +48,8 @@ impl Player {
     /// - Base: `levelN` (level `N` of the ladder, where `level1` is the weakest), `reference` (the
     ///   reference AI), or `nodes=N` (the search with a node limit and no flaw).
     /// - Options: `eval=derived|fixed|blind`, `noise=CP`, `overlook=N` and `careless=N` (percent),
-    ///   `depth=N`, `nodes=N`, `null=0|1`, `lmr=0|1`, `threats=0|1`. The reference AI reads only
-    ///   `noise` and `depth`.
+    ///   `depth=N`, `nodes=N`, `null=0|1`, `lmr=0|1`, `threats=0|1`, `formation=0|1`. The reference
+    ///   AI reads only `noise` and `depth`.
     ///
     /// Panics with a message if the text is not a CONFIG.
     pub fn parse(text: &str) -> Player {
@@ -88,6 +88,7 @@ impl Player {
                 "null" => level.options.null_move = number() != 0,
                 "lmr" => level.options.lmr = number() != 0,
                 "threats" => level.options.threats = number() != 0,
+                "formation" => level.options.formation = number() != 0,
                 _ => panic!("\"{name}\" is not an option of a CONFIG"),
             }
         }
@@ -165,6 +166,8 @@ mod tests {
         level.flaws.noise_cp = 7;
         level.limits.max_depth = 3;
         assert_eq!(player, Player::search(level));
+        assert!(Player::parse("level2").level.options.formation);
+        assert!(!Player::parse("level2,formation=0").level.options.formation);
         assert_eq!(Player::parse("reference"), Player::reference());
         assert_eq!(Player::parse("nodes=500").level.limits, Limits::nodes(500));
     }

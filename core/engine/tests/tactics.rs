@@ -508,7 +508,7 @@ fn the_ai_gives_no_move_when_the_battle_has_ended() {
 
 #[test]
 fn search_options_none_has_each_part_off() {
-    assert_eq!(SearchOptions::NONE, SearchOptions { null_move: false, lmr: false, threats: false });
+    assert_eq!(SearchOptions::NONE, SearchOptions { null_move: false, lmr: false, threats: false, formation: false });
 }
 
 #[test]

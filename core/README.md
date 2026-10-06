@@ -280,6 +280,7 @@ The value of the king is not a part of the material. The move order uses it.
 - Pawn advance: a bonus from the number of moves to the promotion zone of that side.
 - King safety: the part of the squares that the king can reach that the enemy attacks, and a penalty for a king with no safe square.
 - Threats: a piece that a less valuable enemy piece attacks, or that an enemy piece attacks with no defender.
+- Formation: for each atom with `Condition::Near` and each `Shield` of a side, a bonus for each piece that is near its piece of the rule. The row of an atom pays `NEAR_SHARE = 1/4` of the difference between the value of the kind with the atom always on and the value of the kind without the atom, and one row pays at most half of the value of the kind. This limit is for each row of an atom, not for the sum of the rows, and the row of a shield has no limit. Each distinct condition of a kind has its own row, and the rows add. The row of a shield pays `SHIELD_SHARE = 1/4` of the value of the protected kind. A piece that is one square too far gets 8/16 of the bonus, and a piece that is two squares too far gets 4/16 (`RING_16THS`). Thus the search moves a piece toward its formation. The mobility term pays for the squares that the atom gives now; this term pays for the formation also when the lines are not open. A side with no such rule has no row, and its score does not change.
 - Rout: a penalty that grows when the material of a side gets small. Thus the side that is ahead wants trades.
 - Clock: from 70 half moves on the clock, the score goes linearly to 0 at 100.
 
@@ -335,7 +336,7 @@ The first three levels are for a player who knows only how the pieces move. They
 
 `arena --a CONFIG --b CONFIG [--rules all|standard|modified] [--positions N] [--seed N] [--max-plies N] [--threads N]` plays two configurations against each other and prints the wins, the draws, the losses, the score, and a 95% interval.
 
-- A CONFIG is `levelN` (level `N` of the ladder, where `level1` is the weakest), `reference`, or `nodes=N`, and then options with `,` between them: `eval=derived|fixed|blind`, `noise=CP`, `overlook=N` and `careless=N` (percent), `depth=N`, `nodes=N`, `null=0|1`, `lmr=0|1`, `threats=0|1`. The reference AI reads only `noise` and `depth`.
+- A CONFIG is `levelN` (level `N` of the ladder, where `level1` is the weakest), `reference`, or `nodes=N`, and then options with `,` between them: `eval=derived|fixed|blind`, `noise=CP`, `overlook=N` and `careless=N` (percent), `depth=N`, `nodes=N`, `null=0|1`, `lmr=0|1`, `threats=0|1`, `formation=0|1`. The reference AI reads only `noise` and `depth`.
 - `eval=fixed` has the usual piece values of chess for each side. `eval=blind` has an evaluation that knows only the rules of chess.
 - The starts are the start position of chess and `--positions` armies in the style of the game: the base army of the player plus recruits against the enemy army of floor 3 to 8 with the same total value.
 - The rule sets are: ordinary chess, each flag for White only, each flag for Black only, each flag for the two sides, and eight mixed combinations.
