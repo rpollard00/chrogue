@@ -16,6 +16,8 @@ local PIECE = 0.095 * INNER
 local COORD = 0.019 * INNER
 local FLOATER = 0.05 * INNER
 local GRAY = theme.hex('#6f6f6f')
+-- The barred ring: 8 arcs of 25 degrees, with gaps of 20 degrees.
+local BAR_ARCS, BAR_SWEEP = 8, math.rad(25)
 
 local function boardPoint(col, row)
   return layout.board.x + layout.boardBorder + col * SQ, layout.board.y + layout.boardBorder + row * SQ
@@ -46,17 +48,20 @@ local function squares(self)
     if r == 0 then
       gfx.text(('abcdefgh'):sub(f + 1, f + 1), 'semibold', COORD, x, y + SQ * 0.98 - COORD * 1.2, { color = C.coord, align = 'right', width = SQ * 0.94 })
     end
-    -- The marks of the moves. A move that captures has a ring, and a move to an empty square has a dot.
+    -- The marks of the moves. A move that captures has a ring, and a move to an empty square has a dot. A capture that
+    -- a shield refuses has the same ring with gaps: a barred ring. It is not a move, thus a square has one of the two.
     local targets = self:targetsTo(s)
+    local width = math.max(px(3), 0.008 * INNER)
     if #targets > 0 then
       local capture = false
       for _, m in ipairs(targets) do capture = capture or m.capture == true end
       if capture then
-        local width = math.max(px(3), 0.008 * INNER)
         gfx.ring(x + SQ / 2, y + SQ / 2, SQ * 0.46 - width / 2, width, scouting and C.scoutCapture or C.markCapture)
       else
         gfx.circle(x + SQ / 2, y + SQ / 2, SQ * 0.14, scouting and C.scoutTarget or C.markTarget)
       end
+    elseif self:deniedTo(s) then
+      gfx.arcs(x + SQ / 2, y + SQ / 2, SQ * 0.46 - width / 2, width, BAR_ARCS, BAR_SWEEP, scouting and C.scoutCapture or C.markCapture)
     end
   end
 end

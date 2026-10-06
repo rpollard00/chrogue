@@ -165,6 +165,7 @@ The run fails if a game stops with an error, if the core refused a command that 
 - `test/input.lua`: a double click on Continue and on Buy, two presses of `Enter` after a draw, and a release on a new screen. The shop cards keep their slots after a purchase.
 - `test/battle.lua`: a battle that starts with no legal move, Give up during the pause before the enemy move, refusals of `enemy_move`, and a promotion to a knight.
 - `test/auras.lua`: the badges and the zones of the auras, at 1440 by 900. The badges agree with the view, they come and go with a move of the bishop, and the pointer on a medal or on a piece puts an aura in focus. It also shows the largest content: 32 pieces with badges, a check, a capture ring on a badge, and the last move.
+- `test/denied.lua`: the barred ring, at 1440 by 900. A selected rook attacks two pieces with a shield: the barred rings, the badges that pulse, and the lit medal. Escape, a click on a barred square, and the same for an enemy rook with Scout.
 - `test/debug.lua`: the debug menu. The chip and `F2`, two new runs with one seed, the stepper of the relic slots, Owned and Offered, a third trait and an 11th relic that the core refuses, a budget stepper, and an upgrade stepper.
 - `test/relics.lua`: the relic slots and the discard of a relic in the camp. A relic card with "Relics full", the selection of a medal, Cancel and OK of the question, and the purchase of the card after the discard.
 - `test/saves.lua`: the notices of `save_failed` (a save folder that cannot take a file) and of `save_problem`.
@@ -185,7 +186,7 @@ With `CHROGUE_EFFECTS=off`, `flow.lua` and `showcase.lua` start with the effects
 | `layout.lua` | The set layout of each screen: rectangles in stage units |
 | `title.lua`, `upgrades.lua`, `battle.lua`, `camp.lua`, `over.lua` | One module for each screen of the view |
 | `board.lua`, `plaques.lua`, `fan.lua`, `result.lua` | The areas of the battle. `fan.lua` is also in the camp |
-| `aura.lua` | The auras of the battle: the badge of a piece that has a boon, and the zone of an aura in focus |
+| `aura.lua` | The auras of the battle: the badge of a piece that has a boon, the zone of an aura in focus, and the pulse of a badge that refuses a capture |
 | `ui.lua` | The shared elements: keys, amounts, medals, cards, the paper tip, pips, tallies, and the dialog |
 | `debugmenu.lua` | The debug menu: a development tool above the layout |
 | `shaders.lua` | The background, the foil, and the post pass |

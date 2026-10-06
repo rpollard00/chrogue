@@ -22,6 +22,9 @@ local LOSS_TIME = 0.35
 local ZONE_TIME = 0.12
 local ZONE_INSET = 0.04 * SQ
 local ZONE_LINE = 0.03 * SQ
+local PULSE_TIME = 0.9
+local PULSE = 0.35
+local PULSE_END = 0.15
 
 -- A solid shape from its outline, around (0, 0), with a size of 1. Each outline is visible from its center.
 local function glyph(points)
@@ -59,8 +62,10 @@ local NONE = {}
 function aura.new()
   -- badges[id]: the piece and its boons. leaving: the badges that go away. focus: the auras of the view in focus.
   -- shapes[color]: the squares of the zones in focus of one side. lit[color][relic]: the medals that the board points to.
+  -- pulse[id]: the badge of a piece that refuses a capture of the selected piece: its boon, and the time when its
+  -- pulse started. A pulse that ends also has the time of its end and the scale that it had then.
   return {
-    badges = {}, leaving = {}, focus = {}, lit = { w = {}, b = {} },
+    badges = {}, leaving = {}, focus = {}, lit = { w = {}, b = {} }, pulse = {},
     shapes = { w = { squares = {}, alpha = 0 }, b = { squares = {}, alpha = 0 } },
   }
 end
@@ -137,14 +142,22 @@ local function aurasOf(view, piece, found)
   end
 end
 
+-- The scale of a badge that pulses: from 1 to 1 + PULSE and back. A pulse that ends goes from its last scale to 1.
+local function pulseScale(pulse, time)
+  if pulse.endAt then return 1 + (pulse.from - 1) * (1 - gfx.ease((time - pulse.endAt) / PULSE_END)) end
+  return 1 + PULSE * (0.5 - 0.5 * math.cos(2 * math.pi * (time - pulse.at) / PULSE_TIME))
+end
+
 --[[
   Finds the auras in focus and the lit medals for this frame.
   `shown` has the id of the relic of the medal that shows its card, for each color, or nil. Each aura of that relic is in focus.
   `hover` is the piece under the pointer, or nil. Its auras are in focus, and the medals of their relics are lit.
   `selected` is the selected piece, or nil. The medals of the relics of its auras are lit.
+  `denied` has the captures of the selected piece that a boon refuses (`denied` of the view). The badge of that boon on
+  each target piece pulses, and the medals of its relics are lit. A denied capture puts no zone in focus.
   The zones in focus of one side are one shape. A shape comes into view and goes out of view in a short time.
 ]]
-function aura.update(self, dt, time, view, shown, hover, selected)
+function aura.update(self, dt, time, view, shown, hover, selected, denied)
   local list = view.auras or NONE
   local focus, pointed = {}, {}
   for i, item in ipairs(list) do
@@ -155,6 +168,26 @@ function aura.update(self, dt, time, view, shown, hover, selected)
   if selected then aurasOf(view, selected, pointed) end
   self.lit = { w = {}, b = {} }
   for i in pairs(pointed) do self.lit[list[i].color][list[i].relic] = true end
+  -- A pulse continues while its piece stays in the list, thus it starts at the size of the badge. A pulse that is
+  -- not in the list goes back to that size in a short time.
+  local before = self.pulse
+  self.pulse = {}
+  for _, item in ipairs(denied) do
+    local badge = self.badges[item.target]
+    local boon = badge and badge.boons[item.boon]
+    if boon then
+      local pulse = before[item.target]
+      if not pulse or pulse.boon ~= item.boon or pulse.endAt then pulse = { boon = item.boon, at = time } end
+      self.pulse[item.target] = pulse
+      for _, id in ipairs(boon.relics) do self.lit[badge.color][id] = true end
+    end
+  end
+  for id, pulse in pairs(before) do
+    if not self.pulse[id] then
+      if not pulse.endAt then pulse.from, pulse.endAt = pulseScale(pulse, time), time end
+      if time - pulse.endAt < PULSE_END then self.pulse[id] = pulse end
+    end
+  end
 
   -- The auras in focus, in the order of the view, and the indexes of those of each side as text.
   self.focus = {}
@@ -270,6 +303,7 @@ end
 --[[
   Draws the badges of a piece, with the top left corner of the place of its sprite. Draw them after the piece.
   A new badge becomes smaller to its size, with one ring. A badge that the piece lost becomes larger and goes away.
+  The pulse of a badge that refuses a capture is not a motion of `aura.settled`.
   A badge keeps its size when its piece changes its size.
 ]]
 function aura.drawBadges(self, id, x, y, time)
@@ -283,7 +317,11 @@ function aura.drawBadges(self, id, x, y, time)
         local grow = gfx.ease(t / RING_TIME)
         gfx.ring(x + slot.x * SQ, y + slot.y * SQ, BADGE / 2 * (1 + 1.4 * grow), RIM, flair(badge.color), 1 - t / RING_TIME)
       end
-      plate(slot, badge.color, x, y, 1.8 - 0.8 * gfx.ease(t / GAIN_TIME), 1)
+      local scale = 1.8 - 0.8 * gfx.ease(t / GAIN_TIME)
+      -- The badge that refuses a capture of the selected piece becomes larger and smaller.
+      local pulse = self.pulse[id]
+      if pulse and pulse.boon == name then scale = scale * pulseScale(pulse, time) end
+      plate(slot, badge.color, x, y, scale, 1)
     end
   end
   for _, gone in ipairs(self.leaving) do
@@ -295,7 +333,7 @@ function aura.drawBadges(self, id, x, y, time)
 end
 
 -- The state of the auras, for the dump of the test script: the badges by square with the phase of each boon, the auras
--- in focus in the order of the view, and the relics of the lit medals of each side.
+-- in focus in the order of the view, the relics of the lit medals of each side, and the squares of the badges that pulse.
 function aura.state(self, time)
   local badges, at = {}, {}
   local function boons(square, id)
@@ -329,7 +367,13 @@ function aura.state(self, time)
     table.sort(list)
     return list
   end
-  return { badges = badges, focus = focus, lit = { player = ids(self.lit.w), enemy = ids(self.lit.b) } }
+  local pulse = {}
+  -- A pulse that ends is not in the list. A piece that the enemy captured in that time has no badge.
+  for id, state in pairs(self.pulse) do
+    if not state.endAt and self.badges[id] then pulse[#pulse + 1] = self.badges[id].square end
+  end
+  table.sort(pulse)
+  return { badges = badges, focus = focus, lit = { player = ids(self.lit.w), enemy = ids(self.lit.b) }, pulse = pulse }
 end
 
 return aura

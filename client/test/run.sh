@@ -38,6 +38,7 @@ run --size 1280x720 --seed 7 --debug --no-save --script "$here/test/input.lua"
 run --size 1920x1080 --seed 7 --debug --no-save --script "$here/test/input.lua"
 run --size 1280x720 --seed 7 --debug --no-save --script "$here/test/battle.lua"
 run --size 1440x900 --seed 7 --debug --no-save --script "$here/test/auras.lua"
+run --size 1440x900 --seed 7 --debug --no-save --script "$here/test/denied.lua"
 # The debug menu. The run has no --debug: the core accepts the debug commands unless the game gets --no-debug.
 run --size 1280x720 --seed 7 --no-save --script "$here/test/debug.lua"
 run --size 1280x720 --seed 7 --no-save --script "$here/test/relics.lua"

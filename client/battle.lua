@@ -204,11 +204,20 @@ local NONE = {}
 
 -- The moves of the selected piece, and the same moves by target square. The moves of an enemy piece come from
 -- enemy_moves (Scout) and are marks only. The lists change only with the view and the selection, thus they are kept.
+-- The set also has the captures of the selected piece that a shield refuses (`denied` of the view), by target square.
 function battle:targetSet()
   local cache = self.targetCache
   if cache and cache.view == self.view and cache.selected == self.selected then return cache end
-  cache = { view = self.view, selected = self.selected, list = {}, to = {} }
+  cache = { view = self.view, selected = self.selected, list = {}, to = {}, denied = {}, deniedTo = {} }
   if self.selected >= 0 then
+    -- A core from before the denied captures gives no list.
+    local denied = self:scouting() and self.view.enemy_denied or self.view.denied
+    for _, item in ipairs(denied or NONE) do
+      if item.from == self.selected then
+        cache.denied[#cache.denied + 1] = item
+        cache.deniedTo[item.to] = item
+      end
+    end
     local source = self:scouting() and (self.view.enemy_moves or NONE) or self.view.moves
     for _, m in ipairs(source) do
       if m.from == self.selected then
@@ -226,6 +235,9 @@ end
 function battle:targets() return self:targetSet().list end
 
 function battle:targetsTo(s) return self:targetSet().to[s] or NONE end
+
+-- The capture of the selected piece to a square that a shield refuses, or nil.
+function battle:deniedTo(s) return self:targetSet().deniedTo[s] end
 
 function battle:commit(move)
   self.selected, self.promotion, self.pending = -1, nil, true
@@ -304,7 +316,8 @@ function battle:update(dt, pointer)
     shown = { w = self.myFan.ids[fan.shown(self.myFan)], b = self.foeFan.ids[fan.shown(self.foeFan)] }
     square = x and not self.promotion and layout.squareOf(x, y)
   end
-  aura.update(self.auras, dt, self.time, self.view, shown, square and self.at[square], self.at[self.selected])
+  aura.update(self.auras, dt, self.time, self.view, shown, square and self.at[square], self.at[self.selected],
+    self:targetSet().denied)
   fan.light(self.myFan, self.auras.lit.w)
   fan.light(self.foeFan, self.auras.lit.b)
 end
@@ -435,13 +448,16 @@ function battle:state()
   local status, lit = self:status()
   local promo = {}
   for _, m in ipairs(self.promotion or {}) do promo[#promo + 1] = m.promo end
+  local denied = {}
+  for _, item in ipairs(self:targetSet().denied) do denied[#denied + 1] = item.to end
+  table.sort(denied)
   return {
     selected = self.selected, targets = targets, scouting = self:scouting(), promotion = promo,
     status = status, lamp = lit, pending = self.pending, waitingForEnemy = self.enemyAt ~= nil,
     shownGold = self:shownGold(), playerMedal = self.myFan.hovered or 0, enemyMedal = self.foeFan.hovered or 0,
     resultShown = result.layout(self) ~= nil, enemyMove = self.enemy, enemyRefusals = self.enemyRefusals,
     enemyFailed = self.enemyFailed, givenUp = self.givenUp, stuck = self:stuck(),
-    auras = aura.state(self.auras, self.time), startPop = self.popAt ~= nil,
+    auras = aura.state(self.auras, self.time), startPop = self.popAt ~= nil, denied = denied,
     flashed = { player = flashed(self.flashes), enemy = flashed(self.foeFlashes) },
   }
 end

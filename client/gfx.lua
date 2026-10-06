@@ -46,6 +46,16 @@ function gfx.ring(cx, cy, r, width, color, a)
   lg.circle('line', cx, cy, r, 48)
 end
 
+-- A ring of `count` arcs with gaps between them. Each arc is `sweep` radians long. The first arc has its center at the top.
+function gfx.arcs(cx, cy, r, width, count, sweep, color, a)
+  gfx.setColor(color, a)
+  lg.setLineWidth(width)
+  for i = 0, count - 1 do
+    local center = -math.pi / 2 + i * 2 * math.pi / count
+    lg.arc('line', 'open', cx, cy, r, center - sweep / 2, center + sweep / 2, 8)
+  end
+end
+
 local quad
 local function vertex(x, y, c) return { x, y, 0, 0, c[1], c[2], c[3], c[4] or 1 } end
 
