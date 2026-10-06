@@ -229,6 +229,13 @@ Each view has `screen`. The other fields depend on the screen.
 - `moves`: in the phase `player`, each legal move of the player: `id` (the piece), `from`, `to`, `promo` (only on a promotion; a promotion has one move for each kind), `capture`, and `special`. A client does the selection, the target marks, and the promotion picker with this list. In the other phases the list is empty.
 - `special`: `none`, `double_step`, `en_passant`, or `castle`.
 - `scout`: true if the player has the Scout upgrade. `enemy_moves`: with Scout in the phase `player`, the moves of each enemy piece as if the enemy had the move, with the field `preview` set to true. A client shows them as marks only.
+- `denied`: in the phase `player`, each capture of the player that only a shield refuses: a move that is not legal now, and that is legal if no enemy piece has a shield. An item is `{"boon":"shield","from":3,"id":2,"target":30002,"to":51}`. In the other phases the list is empty.
+  - `id`, `from`, `to`: the piece that cannot capture, its square, and the square of the move.
+  - `target`: the id of the piece that the move captures. For an en passant capture, this piece is not on `to`. It has a `shield` item in its `auras`.
+  - `boon`: `shield`, the boon that refuses the capture.
+  - A promotion that captures gives one item, not one for each kind. No item has the `from` and the `to` of a move of `moves`. A move that leaves the king of the player in check gives no item, thus a pinned piece has none.
+  - A client shows these squares as marks only. It cannot send such a move.
+- `enemy_denied`: with Scout in the phase `player`, the same for each enemy piece as if the enemy had the move, as `enemy_moves`. Else the list is empty. Its items have no en passant capture: a side that does not have the move cannot capture en passant.
 - `taken`: the kinds that each side captured: `{"w": [...], "b": [...]}`. `w` has the enemy pieces that the player captured.
 - `gold`: the gold of the run. `capture_gold`: the gold from captures in this battle, rounded as the game rounds it. `capture_gold_exact`: the same before rounding (Bounty gives halves).
 - `lost`: the ids of the units that the enemy captured. `rescued`: the ids of captured units that return after the battle (Second Wind).

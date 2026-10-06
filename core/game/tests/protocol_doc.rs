@@ -119,9 +119,16 @@ fn scripted_session() -> Seen {
     s.send(json!({ "cmd": "debug_ai_move", "level": 2 }));
     s.send(json!({ "cmd": "enemy_move" }));
 
-    // A battle with the aura of Blessing.
+    // A battle with the aura of Blessing on the two sides: a rook cannot capture a pawn next to
+    // the enemy bishop.
     s.send(json!({ "cmd": "debug_set_relic", "relic": "blessing", "on": true }));
-    s.army(units(&[("k", 4), ("b", 3), ("p", 11)]), pieces(&[("k", 60)]));
+    s.send(json!({ "cmd": "debug_set_army", "units": units(&[("k", 4), ("r", 3), ("b", 2), ("p", 9)]) }));
+    let enemy = pieces(&[("k", 60), ("b", 52), ("p", 51)]);
+    let reply = s.send(json!({ "cmd": "debug_set_enemy", "pieces": enemy, "traits": ["blessing"] }));
+    // The example item of `denied` in the document is the item of this view.
+    let denied = reply["view"]["denied"].as_array().unwrap();
+    assert_eq!(denied.len(), 1);
+    assert!(doc().contains(&format!("An item is `{}`.", denied[0])), "the example of `denied` is not {}", denied[0]);
     s.send(json!({ "cmd": "debug_set_relic", "relic": "blessing", "on": false }));
 
     // A won battle with Bounty and Interest, and the camp.

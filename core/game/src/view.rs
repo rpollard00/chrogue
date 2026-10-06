@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 
 use crate::battle::{Battle, BattlePhase, boons_at, is_capture};
-use crate::chess::{self, Color, Kind, Move};
+use crate::chess::{self, Boon, Color, Kind, Move};
 use crate::content::{
     self, ARMY_MAX, FLOORS, RECRUIT_KINDS, RECRUITS, RELIC_PRICE, RELIC_SLOTS, RELICS, RELICS_MAX, REROLL_COST,
     RelicId, TRAITS_MAX, UPGRADE_NAME_MAX, UPGRADE_SLOTS, UPGRADES, UpgradeId, WIN_CROWNS,
@@ -148,6 +148,26 @@ fn battle_view(run: &Run, battle: &Battle, meta: &Meta) -> Value {
     } else {
         (Vec::new(), Vec::new())
     };
+    // The captures that a shield refuses, of the player, and with Scout of the enemy.
+    let denied = |color: Color| -> Vec<Value> {
+        chess::denied_captures(&state, color)
+            .into_iter()
+            .map(|d| {
+                json!({
+                    "id": chess::piece_at(&state, d.mv.from).map(|p| p.id),
+                    "from": d.mv.from,
+                    "to": d.mv.to,
+                    "target": chess::piece_at(&state, d.target).map(|p| p.id),
+                    "boon": chess::boon_name(Boon::Shield),
+                })
+            })
+            .collect()
+    };
+    let player = phase == BattlePhase::Player;
+    let (denied, enemy_denied) = (
+        if player { denied(Color::White) } else { Vec::new() },
+        if player && scout { denied(Color::Black) } else { Vec::new() },
+    );
     let kinds = |list: &[Kind]| list.iter().map(|&k| letter(k)).collect::<Vec<_>>();
     json!({
         "screen": "battle",
@@ -161,6 +181,8 @@ fn battle_view(run: &Run, battle: &Battle, meta: &Meta) -> Value {
         "moves": moves,
         "scout": scout,
         "enemy_moves": enemy_moves,
+        "denied": denied,
+        "enemy_denied": enemy_denied,
         "taken": { "w": kinds(&battle.taken[0]), "b": kinds(&battle.taken[1]) },
         "gold": run.gold,
         "capture_gold": (battle.gold + 0.5).floor() as u64,

@@ -74,6 +74,28 @@ pub fn aura_now(state: &State, color: Color, aura: &Aura) -> AuraNow {
     }
 }
 
+/// A capture that only a shield of the other side refuses.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Denied {
+    pub mv: Move,
+    /// The square of the piece with the shield. For an en passant capture, it is not `mv.to`.
+    pub target: Square,
+}
+
+/// The captures of a side that only a shield of the other side refuses, as if the side has the
+/// move: the moves that are legal with no shield of the other side, and that are not legal now.
+/// A promotion is one capture. With no shield on the other side, the engine generates no move.
+pub fn denied_captures(state: &State, color: Color) -> Vec<Denied> {
+    let mut list = engine::MoveList::new();
+    engine::denied_captures(state, color, &mut list);
+    let en_passant = if color == state.turn() { state.en_passant() } else { None };
+    let target = |m: &Move| match (m.special, en_passant) {
+        (Special::EnPassant, Some(ep)) => ep.victim,
+        _ => m.to,
+    };
+    list.iter().map(|m| Denied { mv: *m, target: target(m) }).collect()
+}
+
 pub const fn boon_name(boon: Boon) -> &'static str {
     match boon {
         Boon::Shield => "shield",

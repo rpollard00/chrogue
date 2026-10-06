@@ -423,6 +423,156 @@ fn a_battle_with_no_proximity_relic_has_no_aura() {
     assert_eq!(with_auras, ["divineRight", "blessing"]);
 }
 
+// ---- The captures that a shield refuses ----
+
+/// No denied capture has the squares of a move of the same side, and the piece that it captures
+/// has a shield in the view.
+fn assert_denied_agree(view: &Value) {
+    for (denied, moves) in [("denied", "moves"), ("enemy_denied", "enemy_moves")] {
+        for item in view[denied].as_array().unwrap() {
+            let same = |m: &&Value| (&m["from"], &m["to"]) == (&item["from"], &item["to"]);
+            assert!(view[moves].as_array().unwrap().iter().find(same).is_none(), "{item} is a move of {moves}");
+            let pieces = view["pieces"].as_array().unwrap();
+            let target = pieces.iter().find(|p| p["id"] == item["target"]).expect("the target is on the board");
+            assert!(target["auras"].as_array().unwrap().iter().any(|a| a["boon"] == json!("shield")), "{item}");
+            assert_eq!(item["boon"], json!("shield"));
+            assert_eq!(pieces.iter().find(|p| p["id"] == item["id"]).unwrap()["square"], item["from"]);
+        }
+    }
+}
+
+fn denied_item(view: &Value, from: &str, to: &str, target: &str) -> Value {
+    json!({
+        "id": piece_on(view, from)["id"],
+        "from": sq(from),
+        "to": sq(to),
+        "target": piece_on(view, target)["id"],
+        "boon": "shield",
+    })
+}
+
+#[test]
+fn a_rook_that_attacks_a_pawn_with_a_shield_has_a_denied_capture() {
+    let army: Pieces = &[KING, (Kind::Rook, "d1")];
+    let enemy: Pieces = &[FOE, (Kind::Bishop, "e7"), (Kind::Pawn, "d7")];
+    let (_, _, view) = aura_battle(army, enemy, &[], &["blessing"]);
+    assert_eq!(view["denied"], json!([denied_item(&view, "d1", "d7", "d7")]));
+    assert_eq!(view["denied"][0], json!({ "id": 2, "from": 3, "to": 51, "target": 102, "boon": "shield" }));
+    assert_eq!(view["enemy_denied"], json!([]));
+    assert_denied_agree(&view);
+    // With no trait, the same capture is a move of the player.
+    let (_, _, plain) = aura_battle(army, enemy, &[], &[]);
+    let capture = |m: &&Value| (&m["from"], &m["to"]) == (&json!(sq("d1")), &json!(sq("d7")));
+    assert_eq!(plain["moves"].as_array().unwrap().iter().find(capture).map(|m| &m["capture"]), Some(&json!(true)));
+    assert_eq!((&plain["denied"], &plain["enemy_denied"]), (&json!([]), &json!([])));
+}
+
+#[test]
+fn a_pinned_piece_has_no_denied_capture() {
+    // The rook on e2 attacks the pawn on b2, which has a shield. The rook on e8 pins it.
+    let army: Pieces = &[KING, (Kind::Rook, "e2")];
+    let pin: Pieces = &[(Kind::King, "h8"), (Kind::Rook, "e8"), (Kind::Bishop, "a1"), (Kind::Pawn, "b2")];
+    let (_, _, view) = aura_battle(army, pin, &[], &["blessing"]);
+    assert_eq!(view["denied"], json!([]));
+    // With the enemy rook on a different file, the white rook has the denied capture.
+    let free: Pieces = &[(Kind::King, "h8"), (Kind::Rook, "a8"), (Kind::Bishop, "a1"), (Kind::Pawn, "b2")];
+    let (_, _, view) = aura_battle(army, free, &[], &["blessing"]);
+    assert_eq!(view["denied"], json!([denied_item(&view, "e2", "b2", "b2")]));
+    assert_denied_agree(&view);
+}
+
+#[test]
+fn scout_shows_the_captures_that_blessing_refuses_to_the_enemy() {
+    let army: Pieces = &[KING, (Kind::Bishop, "d2"), (Kind::Pawn, "d3")];
+    let enemy: Pieces = &[FOE, (Kind::Rook, "d8")];
+    let (run, battle, view) = aura_battle(army, enemy, &["blessing"], &[]);
+    assert_eq!(view["enemy_denied"], json!([denied_item(&view, "d8", "d3", "d3")]));
+    assert_eq!(view["denied"], json!([]));
+    assert_denied_agree(&view);
+    // With no Scout, the view does not have the moves of the enemy.
+    let screen = Screen::Battle { run, battle: Box::new(battle), settled: None };
+    let plain = chrogue_game::view::view(&screen, &Meta::default());
+    assert_eq!((&plain["enemy_denied"], &plain["enemy_moves"]), (&json!([]), &json!([])));
+}
+
+#[test]
+fn the_view_has_the_denied_captures_of_the_two_sides() {
+    // Each side has Blessing, and the player has Scout. The rook on d1 attacks the pawn on d7,
+    // and the rook on b8 attacks the pawn on b2. The two pawns have a shield.
+    let army: Pieces = &[KING, (Kind::Rook, "d1"), (Kind::Bishop, "c1"), (Kind::Pawn, "b2")];
+    let enemy: Pieces = &[FOE, (Kind::Bishop, "e7"), (Kind::Pawn, "d7"), (Kind::Rook, "b8")];
+    let (_, _, view) = aura_battle(army, enemy, &["blessing"], &["blessing"]);
+    assert_eq!(view["denied"], json!([denied_item(&view, "d1", "d7", "d7")]));
+    assert_eq!(view["enemy_denied"], json!([denied_item(&view, "b8", "b2", "b2")]));
+    assert_denied_agree(&view);
+    // An enemy with the trait and no bishop gives no shield, thus no denied capture.
+    let no_bishop: Pieces = &[FOE, (Kind::Knight, "e7"), (Kind::Pawn, "d7"), (Kind::Rook, "b8")];
+    let (_, _, view) = aura_battle(army, no_bishop, &["blessing"], &["blessing"]);
+    assert_eq!(view["denied"], json!([]));
+    assert_eq!(view["enemy_denied"].as_array().map(Vec::len), Some(1));
+}
+
+#[test]
+fn the_denied_captures_are_only_in_the_phase_of_the_player() {
+    // The rook on g1 attacks the pawn on g7, which has a shield. Rd1-d8 is checkmate.
+    let army: Pieces = &[KING, (Kind::Rook, "d1"), (Kind::Rook, "g1")];
+    let enemy: Pieces = &[(Kind::King, "h8"), (Kind::Bishop, "h6"), (Kind::Pawn, "g7"), (Kind::Pawn, "h7")];
+    let (run, battle, view) = aura_battle(army, enemy, &["blessing"], &["blessing"]);
+    assert_eq!((&view["phase"], &view["denied"]), (&json!("player"), &json!([denied_item(&view, "g1", "g7", "g7")])));
+    let mut waiting = battle.clone();
+    play(&mut waiting, &run, "d1", "d2");
+    let view = battle_view(&run, &waiting);
+    assert_eq!((&view["phase"], &view["denied"], &view["enemy_denied"]), (&json!("enemy"), &json!([]), &json!([])));
+    let mut over = battle.clone();
+    play(&mut over, &run, "d1", "d8");
+    let view = battle_view(&run, &over);
+    assert_eq!((&view["phase"], &view["denied"], &view["enemy_denied"]), (&json!("over"), &json!([]), &json!([])));
+}
+
+#[test]
+fn a_promotion_that_a_shield_refuses_is_one_denied_capture() {
+    // The pawn on b7 promotes with a capture on a8, in four ways. The rook there has a shield.
+    let army: Pieces = &[KING, (Kind::Pawn, "b7")];
+    let enemy: Pieces = &[(Kind::King, "h8"), (Kind::Bishop, "b8"), (Kind::Rook, "a8")];
+    let (_, _, view) = aura_battle(army, enemy, &[], &["blessing"]);
+    assert_eq!(view["denied"], json!([denied_item(&view, "b7", "a8", "a8")]));
+    assert_denied_agree(&view);
+    let (_, _, plain) = aura_battle(army, enemy, &[], &[]);
+    let promotions = plain["moves"].as_array().unwrap().iter().filter(|m| m["to"] == json!(sq("a8"))).count();
+    assert_eq!(promotions, 4);
+}
+
+#[test]
+fn an_en_passant_capture_that_a_shield_refuses_has_the_pawn_as_its_target() {
+    // After d7-d5, the pawn on d5 is next to the bishop on c6. The pawn on e5 cannot capture it
+    // en passant on d6.
+    let army: Pieces = &[KING, (Kind::Pawn, "e5"), (Kind::Pawn, "h2")];
+    let enemy: Pieces = &[(Kind::King, "h8"), (Kind::Pawn, "d7"), (Kind::Bishop, "c6")];
+    let after = |keys: &[&str], traits: &[&str]| {
+        let (run, mut battle, _) = aura_battle(army, enemy, keys, traits);
+        play(&mut battle, &run, "h2", "h3");
+        play(&mut battle, &run, "d7", "d5");
+        battle_view(&run, &battle)
+    };
+    let to_d6 = |view: &Value| {
+        let moves = view["moves"].as_array().unwrap().clone();
+        moves.into_iter().find(|m| (&m["from"], &m["to"]) == (&json!(sq("e5")), &json!(sq("d6"))))
+    };
+    let view = after(&[], &["blessing"]);
+    assert_eq!(view["denied"], json!([denied_item(&view, "e5", "d6", "d5")]));
+    assert!(to_d6(&view).is_none());
+    assert_denied_agree(&view);
+    // With no trait, the capture is a move.
+    let plain = after(&[], &[]);
+    assert_eq!(to_d6(&plain).map(|m| m["special"].clone()), Some(json!("en_passant")));
+    assert_eq!(plain["denied"], json!([]));
+    // With Echelon, the pawn can go to d6 with no capture. The move is legal, thus it is not denied.
+    let echelon = after(&["echelon"], &["blessing"]);
+    assert_eq!(to_d6(&echelon).map(|m| m["capture"].clone()), Some(json!(false)));
+    assert_eq!(echelon["denied"], json!([]));
+    assert_denied_agree(&echelon);
+}
+
 #[test]
 fn a_boss_can_have_each_rule_relic_and_no_effect_relic() {
     let pool = trait_pool(&Tuning::default());
