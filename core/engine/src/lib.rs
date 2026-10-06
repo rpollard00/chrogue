@@ -22,11 +22,12 @@ pub mod zobrist;
 
 pub use eval::{EvalTables, EvalVariant, Evaluator};
 pub use level::{Level, choose_move};
-pub use movegen::{in_check, is_attacked, is_legal, legal_moves, moves_from, pseudo_moves};
+pub use movegen::{aura_holders, aura_zone, in_check, is_attacked, is_legal, legal_moves, moves_from, pseudo_moves};
 pub use outcome::{CLOCK_LIMIT, Outcome, has_legal_move, material_outcome, outcome, wins_in};
 pub use perft::perft;
 pub use rules::{
-    Atom, Castle, Condition, Hook, KindRules, Mode, Offset, Promotion, Promotions, Rules, RulesError, Shield, SideRules,
+    Atom, Aura, Boon, Castle, Condition, Hook, KindRules, Mode, Offset, Promotion, Promotions, Rules, RulesError,
+    Shield, SideRules,
 };
 pub use search::{Flaws, Limits, MATE, MATE_BOUND, SearchOptions, SearchResult, search};
 pub use state::{EnPassant, NullUndo, State, StateError, Undo};

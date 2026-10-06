@@ -7,16 +7,18 @@
 //! moves (of the pawns too), the castles, and the attacked squares of the two colors, also after
 //! each move that makes en passant squares. A second test walks the move tree, compares each
 //! `make` with a naive `make`, and makes sure that `unmake` gives back the full state and the
-//! key. The seeds are fixed, thus each run is the same.
+//! key. A third test compares the auras of a side with `shielded` and `condition_holds`. The
+//! seeds are fixed, thus each run is the same.
 
 use std::collections::BTreeSet;
 
-use chrogue_engine::movegen::{evasion_moves, evasion_squares, may_give_check};
+use chrogue_engine::movegen::{condition_holds, evasion_moves, evasion_squares, may_give_check, shielded};
 use chrogue_engine::rng::Rng;
 use chrogue_engine::zobrist::key_from_scratch;
 use chrogue_engine::{
-    Atom, Bitboard, Castle, Color, Condition, Hook, Kind, Mode, Move, MoveList, Offset, Piece, Placement, Promotion,
-    Promotions, Rules, Shield, SideRules, Special, Square, State, in_check, is_attacked, legal_moves, pseudo_moves,
+    Atom, Bitboard, Boon, Castle, Color, Condition, Hook, Kind, Mode, Move, MoveList, Offset, Piece, Placement,
+    Promotion, Promotions, Rules, Shield, SideRules, Special, Square, State, aura_holders, in_check, is_attacked,
+    legal_moves, pseudo_moves,
 };
 
 /// The number of rule sets of the comparison with the naive generator.
@@ -751,4 +753,52 @@ fn make_and_unmake_give_back_the_state_for_random_rules() {
     let [plain, double, en_passant, castle, wide, checks] = counts;
     assert!(plain > 500_000 && double > 5000 && en_passant > 300 && castle > 1000 && wide > 1000, "{counts:?}");
     assert!(checks > 10_000, "{counts:?}");
+}
+
+/// The auras of a side agree with the move generation: the pieces of the shield auras are the
+/// pieces of `shielded`, and a moves aura holds a piece exactly when the condition of the aura is
+/// a condition of its kind and `condition_holds` is true for it.
+#[test]
+fn the_auras_agree_with_the_shields_and_the_conditions() {
+    let mut rng = Rng::new(0x5EED_0003);
+    // The pieces that a shield aura holds, the pieces that a moves aura holds, and the pieces
+    // with a condition that is not true.
+    let mut seen = [0usize; 3];
+    for round in 0..RULE_SETS {
+        let rules = Rules::new(random_side(&mut rng), random_side(&mut rng));
+        let placements = random_placements(&mut rng, &rules);
+        let state = State::new(&placements, rules).unwrap();
+        for color in Color::ALL {
+            let side = state.rules().side(color);
+            let auras = side.auras();
+            let held = |boon: Boon| {
+                let of_boon = auras.iter().filter(|aura| aura.boon == boon);
+                of_boon.fold(0, |set: Bitboard, aura| set | aura_holders(&state, color, aura))
+            };
+            assert_eq!(held(Boon::Shield), shielded(&state, color), "round {round}: the shields of {color:?}");
+            seen[0] += held(Boon::Shield).count_ones() as usize;
+            for s in (0..64).filter(|&s| state.piece_at(s).is_some_and(|piece| piece.color == color)) {
+                let kind = state.piece_at(s).unwrap().kind;
+                // The conditions of the kind that are true for the piece, and the conditions of
+                // the moves auras that hold the piece.
+                let conditions = side.atoms(kind).iter().map(|atom| atom.condition);
+                let mut near: Vec<Condition> = conditions.filter(|c| matches!(c, Condition::Near { .. })).collect();
+                seen[2] += near.iter().filter(|&&c| !condition_holds(&state, c, color, s)).count();
+                near.retain(|&c| condition_holds(&state, c, color, s));
+                let moves = auras.iter().filter(|aura| aura.boon == Boon::Moves);
+                let from_auras: Vec<Condition> = moves
+                    .filter(|aura| aura_holders(&state, color, aura) & (1 << s) != 0)
+                    .map(|aura| Condition::Near { kind: aura.source, range: aura.range })
+                    .collect();
+                assert!(near.iter().all(|c| from_auras.contains(c)), "round {round}: no aura for {near:?} on {s}");
+                assert!(from_auras.iter().all(|c| near.contains(c)), "round {round}: {from_auras:?} on {s}");
+                seen[1] += from_auras.len();
+            }
+            // Two auras never have the same boon, source, and range.
+            let keys: BTreeSet<_> = auras.iter().map(|aura| (aura.boon, aura.source as u8, aura.range)).collect();
+            assert_eq!(keys.len(), auras.len(), "round {round}: two auras are the same");
+        }
+    }
+    println!("pieces of shield auras, pieces of moves auras, and conditions that are not true: {seen:?}");
+    assert!(seen.iter().all(|&count| count > 500), "{seen:?}");
 }

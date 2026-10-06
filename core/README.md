@@ -99,6 +99,12 @@ A side can have shields (`SideRules::shields`). A `Shield` has a `protector` kin
 - A shield does not change the attacked squares. `is_attacked` is true for the square of a piece with a shield that an enemy piece could capture with no shield. Thus a piece gives check through a piece with a shield, and a king cannot go next to such a piece on a square that the piece attacks.
 - `movegen::shielded` gives the pieces of a side that have a shield. The threat term of the evaluation does not count such a piece.
 
+### Auras
+
+A shield and an atom with `Condition::Near` have the same shape: a piece gets something while another piece of its side is near it. `SideRules::auras` gives the two as one list, for a client that shows which pieces have such a rule now. An `Aura` has a `boon` (`Boon::Shield`, or `Boon::Moves` for the atoms), a `source` kind, the target kinds, and a `range`. Rules with the same boon, source, and range are one aura.
+
+`movegen::aura_holders` gives the pieces of a side that have the boon of an aura now. `movegen::aura_zone` gives the squares in the range of a source piece. The move generation and the evaluation do not read the auras. A property test makes sure that the auras agree with `shielded` and `condition_holds`.
+
 ### Promotion
 
 `KindRules::promotion` is `None` or a `Promotion`: the distance of the zone from the last rank (0 is ordinary chess, at most 6; with 6 the zone starts on the second rank, thus a piece promotes on its first move forward) and the `Promotions` (one to four different kinds, not the pawn or the king). A move that ends in the zone gives one move for each promotion kind, in the order of the list. A move that goes backward never promotes. A move that promotes makes no en passant squares.

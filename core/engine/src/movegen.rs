@@ -11,7 +11,7 @@
 //!
 //! The castles come from the rows of `SideRules::castles`.
 
-use crate::rules::{Condition, Promotions};
+use crate::rules::{Aura, Condition, Promotions};
 use crate::state::{State, Undo};
 use crate::tables::{Group, HookAttackLine, HookSlide, KindTables, LeapSet, SideTables, Slide, Steps};
 use crate::types::{Bitboard, Color, Kind, Move, MoveList, Special, Square, bit, pop_square};
@@ -92,6 +92,26 @@ pub fn shielded(state: &State, color: Color) -> Bitboard {
         set |= zone & state.pieces(color, shield.protected);
     }
     set
+}
+
+/// The squares where an aura of `color` is now: the squares in the range of a piece of the
+/// source kind. The square of a source is in the set only if another source is near it.
+pub fn aura_zone(state: &State, color: Color, aura: &Aura) -> Bitboard {
+    let mut sources = state.pieces(color, aura.source);
+    let mut zone = 0;
+    while sources != 0 {
+        zone |= Condition::near_zone(pop_square(&mut sources), aura.range);
+    }
+    zone
+}
+
+/// The pieces of `color` that have the boon of an aura now: the pieces of a target kind in the
+/// zone of the aura. For the auras of the side (`SideRules::auras`), these are the pieces of
+/// `shielded` and the pieces for which `condition_holds` is true. The move generation does not
+/// call this function.
+pub fn aura_holders(state: &State, color: Color, aura: &Aura) -> Bitboard {
+    let targets = Kind::ALL.into_iter().filter(|&kind| aura.has_target(kind));
+    aura_zone(state, color, aura) & targets.fold(0, |set, kind| set | state.pieces(color, kind))
 }
 
 /// The pieces that a piece of `color` can capture: the pieces of the other side with no shield.

@@ -7,7 +7,9 @@
 //! atom with one step, and a slide is an atom with `Atom::MAX_STEPS`. A kind can also have a
 //! promotion. A kind can also have hooks: slides that end with one step in another direction.
 //! The castles of a side are rows of `Castle`. A side can also have shields: pieces that the
-//! enemy cannot capture while they are near another piece of their side.
+//! enemy cannot capture while they are near another piece of their side. `SideRules::auras`
+//! gives the shields and the atoms with `Condition::Near` in one shape, for a client that shows
+//! which pieces have them.
 
 use crate::types::{Bitboard, Color, Kind, Square, bit};
 
@@ -351,6 +353,34 @@ pub struct Shield {
     pub range: u8,
 }
 
+/// What a piece gets from an aura.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub enum Boon {
+    /// The enemy cannot capture the piece (`Shield`).
+    Shield,
+    /// The piece has more moves: the atoms of its kind with a `Condition::Near`.
+    Moves,
+}
+
+/// A rule of a side as a client shows it: a piece of a target kind has the boon while another
+/// piece of its side of kind `source` is `range` squares away or less. The move generation does
+/// not read an aura. `SideRules::auras` makes the auras from the shields and the conditions.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct Aura {
+    pub boon: Boon,
+    pub source: Kind,
+    /// Bit `Kind::index()`: a piece of this kind can have the boon.
+    pub targets: u8,
+    pub range: u8,
+}
+
+impl Aura {
+    /// True if a piece of the kind can have the boon.
+    pub const fn has_target(&self, kind: Kind) -> bool {
+        self.targets & (1 << kind.index()) != 0
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub struct SideRules {
     /// The movement of each kind, by `Kind::index()`: pawn, knight, bishop, rook, queen, king.
@@ -567,6 +597,31 @@ impl SideRules {
     /// Ordinary chess with the given rule flags.
     pub fn from_flags<'a>(names: impl IntoIterator<Item = &'a str>) -> Result<SideRules, RulesError> {
         names.into_iter().try_fold(SideRules::standard(), SideRules::with_flag)
+    }
+
+    /// The auras of the side: one for each shield, and one for each `Condition::Near` of an atom.
+    /// Rules with the same boon, source, and range are one aura with each of their target kinds.
+    /// The shields are first.
+    pub fn auras(&self) -> Vec<Aura> {
+        let mut auras: Vec<Aura> = Vec::new();
+        let mut add = |boon: Boon, source: Kind, target: Kind, range: u8| {
+            let targets = 1 << target.index();
+            match auras.iter_mut().find(|aura| (aura.boon, aura.source, aura.range) == (boon, source, range)) {
+                Some(aura) => aura.targets |= targets,
+                None => auras.push(Aura { boon, source, targets, range }),
+            }
+        };
+        for shield in &self.shields {
+            add(Boon::Shield, shield.protector, shield.protected, shield.range);
+        }
+        for target in Kind::ALL {
+            for atom in self.atoms(target) {
+                if let Condition::Near { kind, range } = atom.condition {
+                    add(Boon::Moves, kind, target, range);
+                }
+            }
+        }
+        auras
     }
 
     /// The castle of a color whose king goes from `from` to `to`, with the squares of that color.
