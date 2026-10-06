@@ -200,8 +200,8 @@ pub struct Probe {
     pub promo: bool,
     /// The moves have no promotion and no special property.
     pub plain: bool,
-    /// The probe is only for a piece that has not moved (`Condition::Unmoved`).
-    pub unmoved: bool,
+    /// The probe is only for a piece for which this condition is true.
+    pub condition: Condition,
     pub quiet_special: Special,
     pub capture_special: Special,
 }
@@ -230,13 +230,16 @@ pub struct KindTables {
     /// `en_passant_reach[from]`: the squares where the atoms that capture en passant can go
     /// on an empty board.
     pub en_passant_reach: [Bitboard; 64],
-    /// The atoms with `Condition::Unmoved`, of all groups.
-    pub unmoved: Steps,
+    /// The atoms with each condition that is not `Condition::Always`, of all groups.
+    pub conditional: Vec<(Condition, Steps)>,
     /// True if the kind has one group with no condition and no en passant property, and no
     /// promotion. The move generation of such a kind needs only
     /// `SideTables::always`, and the kind has no probes.
     pub simple: bool,
-    pub has_unmoved: bool,
+    /// True if the kind has an atom with a condition.
+    pub has_condition: bool,
+    /// True if the kind has an atom with `Condition::Unmoved`.
+    pub reads_moved: bool,
     /// A group of the kind can capture en passant.
     pub captures_en_passant: bool,
     pub promotions: Option<Promotions>,
@@ -267,8 +270,8 @@ pub struct AttackLine {
 #[derive(Clone, Debug)]
 pub struct SlideAttackGroup {
     pub kinds: Vec<Kind>,
-    /// The attackers must not have moved: the atoms have `Condition::Unmoved`.
-    pub unmoved_only: bool,
+    /// The condition of the atoms: it must be true for the attacker.
+    pub condition: Condition,
     /// For each attacked square, all the squares of the lines of this group.
     pub reach: [Bitboard; 64],
     pub lines: Vec<AttackLine>,
@@ -289,6 +292,15 @@ pub struct HookAttackLine {
     pub ascending: bool,
 }
 
+/// The leaps of one kind with one condition, from the attacked square toward the attacker.
+#[derive(Clone, Debug)]
+pub struct ConditionalLeaps {
+    pub kind: Kind,
+    pub condition: Condition,
+    /// `from[target]`: the squares from which a leap can capture on the target.
+    pub from: [Bitboard; 64],
+}
+
 /// The tables of one side.
 #[derive(Clone, Debug)]
 pub struct SideTables {
@@ -303,9 +315,8 @@ pub struct SideTables {
     pub leap_attackers: [[Bitboard; 64]; Kind::COUNT],
     /// The kinds that have a leap with no condition that can capture.
     pub leap_attacker_kinds: Vec<Kind>,
-    /// The same as `leap_attackers` for the leaps with `Condition::Unmoved`.
-    pub unmoved_leap_attackers: [[Bitboard; 64]; Kind::COUNT],
-    pub unmoved_leap_attacker_kinds: Vec<Kind>,
+    /// The same as `leap_attackers` for the leaps with each other condition.
+    pub conditional_leap_attackers: Vec<ConditionalLeaps>,
     pub slide_attackers: Vec<SlideAttackGroup>,
     pub hook_attackers: Vec<HookAttackLine>,
     /// `attack_zone[kind][target]`: the squares from which a piece of the kind can attack the
@@ -322,6 +333,9 @@ pub struct SideTables {
     pub king_move_to_castle_square: bool,
     /// Bit `kind`: an atom or a castle reads the `moved` flag of the kind. See `zobrist`.
     pub moved_keyed: u8,
+    /// Bit `kind`: an atom of the side has `Condition::Near` with this kind. A move of such a
+    /// piece can give another piece an attack.
+    pub anchors: u8,
 }
 
 impl SideTables {
@@ -337,6 +351,7 @@ impl SideTables {
     pub fn trail_squares(&self, kind: Kind, moved: bool, from: Square, to: Square, occupied: Bitboard) -> Bitboard {
         let mut squares = 0;
         for trail in &self.kinds[kind.index()].trails {
+            // An atom with `Condition::Near` makes no en passant squares (`RulesError::BadCondition`).
             if trail.condition == Condition::Unmoved && moved {
                 continue;
             }
@@ -450,7 +465,7 @@ fn kind_tables(kind: Kind, rules: &SideRules, color: Color) -> (KindTables, Step
     let mut built: Vec<(Atom, Group, Steps)> = Vec::new();
     let mut group_of = Vec::new();
     let mut always = Steps::new();
-    let mut unmoved = Steps::new();
+    let mut conditional: Vec<(Condition, Steps)> = Vec::new();
     let mut trails = Vec::new();
     for atom in atoms {
         let index = match built.iter().position(|(first, ..)| first.same_group(atom)) {
@@ -472,7 +487,13 @@ fn kind_tables(kind: Kind, rules: &SideRules, color: Color) -> (KindTables, Step
         group.captures_en_passant |= atom.captures_en_passant && atom.mode.can_capture();
         match atom.condition {
             Condition::Always => always.add(atom, forward),
-            Condition::Unmoved => unmoved.add(atom, forward),
+            condition => {
+                let index = conditional.iter().position(|(other, _)| *other == condition).unwrap_or_else(|| {
+                    conditional.push((condition, Steps::new()));
+                    conditional.len() - 1
+                });
+                conditional[index].1.add(atom, forward);
+            }
         }
         if atom.makes_en_passant && atom.max_steps > 1 {
             for &(df, dr) in &atom.offsets {
@@ -485,7 +506,9 @@ fn kind_tables(kind: Kind, rules: &SideRules, color: Color) -> (KindTables, Step
         always.add_hook(hook, forward);
     }
     always.normalize();
-    unmoved.normalize();
+    for (_, steps) in &mut conditional {
+        steps.normalize();
+    }
     let mut groups = Vec::new();
     let mut group_slides = Vec::new();
     let mut group_leaps = vec![LeapSet::default(); 64 * built.len()];
@@ -519,7 +542,7 @@ fn kind_tables(kind: Kind, rules: &SideRules, color: Color) -> (KindTables, Step
         let set = &always.leaps[from];
         set.both | set.quiet | set.capture
     });
-    let leap_attacks_only = !unmoved.can_capture()
+    let leap_attacks_only = conditional.iter().all(|(_, steps)| !steps.can_capture())
         && always.slides.iter().all(|slide| !slide.capture)
         && always.hooks.iter().all(|hook| !hook.leg.capture);
     let simple = groups.len() <= 1
@@ -534,7 +557,8 @@ fn kind_tables(kind: Kind, rules: &SideRules, color: Color) -> (KindTables, Step
         build_probes(atoms, &group_of, &groups, forward, &promo_targets)
     };
     let tables = KindTables {
-        has_unmoved: groups.iter().any(|group| group.condition == Condition::Unmoved),
+        has_condition: !conditional.is_empty(),
+        reads_moved: conditional.iter().any(|(condition, _)| *condition == Condition::Unmoved),
         captures_en_passant: groups.iter().any(|group| group.captures_en_passant),
         groups,
         group_leaps,
@@ -542,7 +566,7 @@ fn kind_tables(kind: Kind, rules: &SideRules, color: Color) -> (KindTables, Step
         probes,
         probe_ranges,
         en_passant_reach,
-        unmoved,
+        conditional,
         simple,
         promotions,
         promo_zone,
@@ -576,7 +600,7 @@ fn build_probes(
     for from in 0..64u8 {
         let start = probes.len();
         for (index, group) in groups.iter().enumerate() {
-            let unmoved = group.condition == Condition::Unmoved;
+            let condition = group.condition;
             // (probe, passes squares)
             let mut list: Vec<(RawProbe, bool)> = Vec::new();
             for (atom, _) in atoms.iter().zip(group_of).filter(|(_, g)| **g == index) {
@@ -616,7 +640,7 @@ fn build_probes(
                         && earlier.path & !raw.path == 0
                         && (earlier.quiet_targets & target != 0 || !raw.quiet)
                         && (earlier.capture_targets & target != 0 || !raw.capture)
-                        && (!earlier.unmoved || unmoved)
+                        && (earlier.condition == Condition::Always || earlier.condition == condition)
                 });
                 if covered {
                     continue;
@@ -627,7 +651,7 @@ fn build_probes(
                     capture_targets: if raw.capture { target } else { 0 },
                     promo: raw.promo,
                     plain: !raw.promo && quiet_special == Special::None && capture_special == Special::None,
-                    unmoved,
+                    condition,
                     quiet_special,
                     capture_special,
                 };
@@ -667,7 +691,7 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
     let castles: Vec<Castle> = rules.castles.iter().map(|castle| castle.for_color(color)).collect();
 
     let mut leap_attackers = [[0; 64]; Kind::COUNT];
-    let mut unmoved_leap_attackers = [[0; 64]; Kind::COUNT];
+    let mut conditional_leap_attackers: Vec<ConditionalLeaps> = Vec::new();
     for kind in Kind::ALL {
         let k = kind.index();
         for from in 0..64u8 {
@@ -677,11 +701,19 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
                 let to = crate::types::pop_square(&mut targets);
                 leap_attackers[k][to as usize] |= bit(from);
             }
-            let unmoved = &kinds[k].unmoved.leaps[from as usize];
-            let mut targets = unmoved.both | unmoved.capture;
-            while targets != 0 {
-                let to = crate::types::pop_square(&mut targets);
-                unmoved_leap_attackers[k][to as usize] |= bit(from);
+        }
+        for (condition, steps) in &kinds[k].conditional {
+            let mut leaps = ConditionalLeaps { kind, condition: *condition, from: [0; 64] };
+            for from in 0..64u8 {
+                let set = &steps.leaps[from as usize];
+                let mut targets = set.both | set.capture;
+                while targets != 0 {
+                    let to = crate::types::pop_square(&mut targets);
+                    leaps.from[to as usize] |= bit(from);
+                }
+            }
+            if leaps.from.iter().any(|&set| set != 0) {
+                conditional_leap_attackers.push(leaps);
             }
         }
     }
@@ -694,7 +726,8 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
     let mut attack_lines: Vec<(Offset, u8, Condition, Vec<Kind>)> = Vec::new();
     for kind in Kind::ALL {
         let k = kind.index();
-        for (condition, steps) in [(Condition::Always, &always[k]), (Condition::Unmoved, &kinds[k].unmoved)] {
+        let conditional = kinds[k].conditional.iter().map(|(condition, steps)| (*condition, steps));
+        for (condition, steps) in std::iter::once((Condition::Always, &always[k])).chain(conditional) {
             for slide in steps.slides.iter().filter(|slide| slide.capture) {
                 let toward_attacker = (-slide.dir.0, -slide.dir.1);
                 let key = (toward_attacker, slide.steps, condition);
@@ -708,11 +741,10 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
     let mut slide_attackers: Vec<SlideAttackGroup> = Vec::new();
     for (dir, steps, condition, kinds) in attack_lines {
         let line = AttackLine { rays: rays(dir, steps), ascending: ascending(dir) };
-        let unmoved_only = condition == Condition::Unmoved;
-        let index = match slide_attackers.iter().position(|g| g.kinds == kinds && g.unmoved_only == unmoved_only) {
+        let index = match slide_attackers.iter().position(|g| g.kinds == kinds && g.condition == condition) {
             Some(index) => index,
             None => {
-                slide_attackers.push(SlideAttackGroup { kinds, unmoved_only, reach: [0; 64], lines: Vec::new() });
+                slide_attackers.push(SlideAttackGroup { kinds, condition, reach: [0; 64], lines: Vec::new() });
                 slide_attackers.len() - 1
             }
         };
@@ -752,12 +784,13 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
     let king = &kinds[Kind::King.index()];
     let king_move_to_castle_square = castles.iter().any(|castle| {
         let from = castle.king_from;
-        (always[Kind::King.index()].reach(from) | king.unmoved.reach(from)) & bit(castle.king_to) != 0
+        let conditional = king.conditional.iter().fold(0, |set, (_, steps)| set | steps.reach(from));
+        (always[Kind::King.index()].reach(from) | conditional) & bit(castle.king_to) != 0
     });
 
     let mut moved_keyed = 0u8;
     for kind in Kind::ALL {
-        if kinds[kind.index()].has_unmoved {
+        if kinds[kind.index()].reads_moved {
             moved_keyed |= 1 << kind.index();
         }
     }
@@ -765,9 +798,21 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
         moved_keyed |= 1 << Kind::King.index() | 1 << castle.partner.index();
     }
 
+    let mut anchors = 0u8;
+    for tables in &kinds {
+        for (condition, _) in &tables.conditional {
+            if let Condition::Near { kind, .. } = condition {
+                anchors |= 1 << kind.index();
+            }
+        }
+    }
+
     let attack_zone: [[Bitboard; 64]; Kind::COUNT] = std::array::from_fn(|k| {
         std::array::from_fn(|target| {
-            let leaps = leap_attackers[k][target] | unmoved_leap_attackers[k][target];
+            let leaps = conditional_leap_attackers
+                .iter()
+                .filter(|leaps| leaps.kind == Kind::ALL[k])
+                .fold(leap_attackers[k][target], |zone, leaps| zone | leaps.from[target]);
             let slides = slide_attackers
                 .iter()
                 .filter(|group| group.kinds.contains(&Kind::ALL[k]))
@@ -794,14 +839,14 @@ fn side_tables(rules: &SideRules, color: Color) -> SideTables {
         attack_zone,
         slide_zone,
         leap_attacker_kinds: attacker_kinds(&leap_attackers),
-        unmoved_leap_attacker_kinds: attacker_kinds(&unmoved_leap_attackers),
+        conditional_leap_attackers,
         leap_attackers,
-        unmoved_leap_attackers,
         slide_attackers,
         hook_attackers,
         kinds,
         castles,
         king_move_to_castle_square,
         moved_keyed,
+        anchors,
     }
 }

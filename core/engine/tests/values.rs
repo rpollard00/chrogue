@@ -82,6 +82,19 @@ fn a_hook_makes_the_value_of_its_kind_higher() {
 }
 
 #[test]
+fn an_atom_for_a_piece_near_another_piece_counts_for_a_part_of_its_reach() {
+    let bishop = |atom: Option<Atom>| {
+        values(atom.into_iter().fold(SideRules::standard(), |side, atom| side.with_atom(Kind::Bishop, atom)))
+            [Kind::Bishop.index()]
+    };
+    let slide = || Atom::slide(&ORTHO, Mode::MoveOrCapture);
+    let (plain, near, always) = (bishop(None), bishop(Some(slide().if_near(Kind::King, 1))), bishop(Some(slide())));
+    assert!(plain < near && near < always, "{plain} {near} {always}");
+    // The bishop with the condition is nearer to the bishop of chess than to the queen.
+    assert!(near - plain < always - near, "{plain} {near} {always}");
+}
+
+#[test]
 fn each_relic_atom_makes_the_value_of_its_kind_higher() {
     let standard = values(SideRules::standard());
     let with_atoms = |kind, atoms: &[Atom]| {

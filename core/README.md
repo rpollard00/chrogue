@@ -59,11 +59,14 @@ Each kind, the pawn too, moves by a list of atoms. An `Atom` has these fields:
 - `offsets`: Steps of (file, rank) from the view of White. For Black, the engine mirrors the rank step. Thus (0, 1) is one square forward for each side.
 - `max_steps`: The piece goes 1 to `max_steps` steps along an offset. Each step must end on an empty square, except the last step, which can capture. 1 is a leap: pieces inside one step do not block it. `Atom::MAX_STEPS` (7) is a slide that stops only at a piece or at the edge. A number between them is a slide with a range.
 - `mode`: What the atom can do on its target square. `Mode::MoveOrCapture`, `Mode::MoveOnly` (the atom attacks no square, thus it does not give check), or `Mode::CaptureOnly` (the atom attacks its squares, thus it gives check).
-- `condition`: `Condition::Always`, or `Condition::Unmoved`: only while the piece has not moved. Such an atom also attacks only while the piece has not moved.
+- `condition`: When the piece can use the atom. An atom also attacks only while its condition is true.
+  - `Condition::Always`.
+  - `Condition::Unmoved`: only while the piece has not moved.
+  - `Condition::Near { kind, range }`: only while another piece of the same side and of this kind is `range` squares away or less, as a king counts squares. The range is from 1 to 7. Such an atom has no en passant property (`RulesError::BadCondition`). A move of the other piece can give or end a check.
 - `makes_en_passant`: The squares that a move of the atom passes become the en passant squares of the next half move, and the piece that moved is the victim of an en passant capture there. A move of one step passes no square. An atom of the king cannot have it (`RulesError::KingMakesEnPassant`): an en passant capture never removes a king.
 - `captures_en_passant`: The atom can go to an en passant square as if the square has the victim, and the victim is captured. The atom must be able to capture.
 
-`Atom::leap(offsets, mode)` and `Atom::slide(dirs, mode)` make an atom with no condition and no property. The methods `max_steps(n)`, `if_unmoved()`, `makes_en_passant()`, and `captures_en_passant()` add the others.
+`Atom::leap(offsets, mode)` and `Atom::slide(dirs, mode)` make an atom with no condition and no property. The methods `max_steps(n)`, `if_unmoved()`, `if_near(kind, range)`, `makes_en_passant()`, and `captures_en_passant()` add the others.
 
 ### The moves of a piece
 

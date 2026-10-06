@@ -5,11 +5,12 @@
 mod common;
 
 use chrogue_engine::fen::square;
+use chrogue_engine::movegen::may_give_check;
 use chrogue_engine::rules::{CAMEL, FORWARD, FORWARD_DIAG, KING, ORTHO};
 use chrogue_engine::zobrist::key_from_scratch;
 use chrogue_engine::{
-    Atom, Castle, Color, Kind, Mode, Move, Piece, Placement, Promotion, Promotions, Rules, SideRules, Special, Square,
-    State, in_check, is_attacked, perft,
+    Atom, Castle, Color, Kind, Mode, Move, Piece, Placement, Promotion, Promotions, Rules, RulesError, SideRules,
+    Special, Square, State, in_check, is_attacked, perft,
 };
 use common::{from_fen, legal, squares, targets};
 
@@ -296,6 +297,46 @@ fn a_knight_leap_for_the_first_move_only() {
     assert_ne!(check.key(), with_moved(&check, square("d5"), rules()).key());
     let standard = from_fen("4k3/8/8/3N4/8/8/8/4K3", Color::Black, Rules::standard());
     assert_eq!(standard.key(), with_moved(&standard, square("d5"), Rules::standard()).key());
+}
+
+#[test]
+fn a_bishop_that_moves_as_a_rook_next_to_its_king() {
+    let near_king = Atom::slide(&ORTHO, Mode::MoveOrCapture).if_near(Kind::King, 1);
+    let rules = || white(SideRules::standard().with_atom(Kind::Bishop, near_king.clone()));
+
+    // The bishop on d1 is next to the king on e1: it also has the rank and the file.
+    let mut state = from_fen("4k3/8/8/8/8/8/8/3BK3", Color::White, rules());
+    let near = targets(&mut state, "d1");
+    assert!(["a1", "d2", "d8", "a4", "h5"].iter().all(|s| near.contains(&square(s))));
+    // The bishop on c1 is two squares from the king: it has only its diagonals.
+    let mut state = from_fen("4k3/8/8/8/8/8/8/2B1K3", Color::White, rules());
+    assert_eq!(targets(&mut state, "c1"), squares(&["b2", "a3", "d2", "e3", "f4", "g5", "h6"]));
+
+    // The bishop gives check on the file only while it is next to its king.
+    assert!(in_check(&from_fen("3k4/8/8/8/8/8/8/3BK3", Color::Black, rules()), Color::Black));
+    assert!(!in_check(&from_fen("3k4/8/8/8/8/8/8/3B1K2", Color::Black, rules()), Color::Black));
+    assert!(!in_check(&from_fen("3k4/8/8/8/8/8/8/3BK3", Color::Black, Rules::standard()), Color::Black));
+    // A move of the king to a square next to the bishop gives the check.
+    let mut state = from_fen("3k4/8/8/8/8/8/8/3B1K2", Color::White, rules());
+    let step = find(&mut state, "f1", "e1");
+    let undo = state.make(step);
+    assert!(in_check(&state, Color::Black) && may_give_check(&state, step, &undo));
+    // A bishop is not near itself: the other piece must be another piece of the kind.
+    let own_kind = Atom::slide(&ORTHO, Mode::MoveOrCapture).if_near(Kind::Bishop, 1);
+    let alone = || white(SideRules::standard().with_atom(Kind::Bishop, own_kind.clone()));
+    let mut state = from_fen("4k3/8/8/8/8/8/8/2B1K3", Color::White, alone());
+    assert!(!targets(&mut state, "c1").contains(&square("c2")));
+    let mut state = from_fen("4k3/8/8/8/8/8/8/2BBK3", Color::White, alone());
+    assert!(targets(&mut state, "c1").contains(&square("c2")));
+
+    // The range is from 1 to 7, and the atom has no en passant property.
+    let bishop = |atom: Atom| SideRules::standard().with_atom(Kind::Bishop, atom).validate();
+    let slide = || Atom::slide(&ORTHO, Mode::MoveOrCapture);
+    for range in [0, 8] {
+        assert_eq!(bishop(slide().if_near(Kind::King, range)), Err(RulesError::BadCondition(Kind::Bishop)));
+    }
+    assert_eq!(bishop(slide().if_near(Kind::King, 1).makes_en_passant()), Err(RulesError::BadCondition(Kind::Bishop)));
+    assert_eq!(bishop(slide().if_near(Kind::King, 7)), Ok(()));
 }
 
 #[test]

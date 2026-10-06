@@ -59,6 +59,26 @@ fn has_moved(state: &State, s: Square) -> bool {
     state.piece_at(s).is_some_and(|piece| piece.moved)
 }
 
+/// True if a condition is true for the piece of `color` on `s`.
+#[inline(always)]
+pub fn condition_holds(state: &State, condition: Condition, color: Color, s: Square) -> bool {
+    match condition {
+        Condition::Always => true,
+        Condition::Unmoved => !has_moved(state, s),
+        Condition::Near { kind, range } => state.pieces(color, kind) & Condition::near_zone(s, range) != 0,
+    }
+}
+
+/// The pieces that make a condition true for the piece of `color` on `s`. An attack by an atom
+/// with the condition ends when no such piece is left.
+#[inline(always)]
+fn condition_anchors(state: &State, condition: Condition, color: Color, s: Square) -> Bitboard {
+    match condition {
+        Condition::Near { kind, range } => state.pieces(color, kind) & Condition::near_zone(s, range),
+        _ => 0,
+    }
+}
+
 /// True if a piece of side `by` attacks the square. An attack is a move that can capture there.
 pub fn is_attacked(state: &State, s: Square, by: Color) -> bool {
     let side = state.tables().side(by);
@@ -69,10 +89,10 @@ pub fn is_attacked(state: &State, s: Square, by: Color) -> bool {
             return true;
         }
     }
-    for &kind in &side.unmoved_leap_attacker_kinds {
-        let mut attackers = side.unmoved_leap_attackers[kind.index()][target] & state.kind_set(kind) & theirs;
+    for leaps in &side.conditional_leap_attackers {
+        let mut attackers = leaps.from[target] & state.kind_set(leaps.kind) & theirs;
         while attackers != 0 {
-            if !has_moved(state, pop_square(&mut attackers)) {
+            if condition_holds(state, leaps.condition, by, pop_square(&mut attackers)) {
                 return true;
             }
         }
@@ -90,7 +110,7 @@ pub fn is_attacked(state: &State, s: Square, by: Color) -> bool {
             }
             if let Some(blocker) = first_blocker(ray & occupied, line.ascending)
                 && sliders & bit(blocker) != 0
-                && !(group.unmoved_only && has_moved(state, blocker))
+                && condition_holds(state, group.condition, by, blocker)
             {
                 return true;
             }
@@ -138,7 +158,8 @@ pub fn in_check(state: &State, color: Color) -> bool {
 /// The squares where a move of a piece that is not a king can end the check of the king of
 /// `color` (the king on the lowest square). For each enemy piece that attacks the king: the
 /// square of the piece, and for a slide or a hook the squares that the piece passes. A move
-/// must capture each such piece or block each such slide or hook. A leap cannot be blocked. All the
+/// must capture each such piece or block each such slide or hook. A leap cannot be blocked. A
+/// capture of a piece that makes the condition of the attack true can also end the check. All the
 /// squares if the king is not in check or the side has no king.
 ///
 /// The attackers are those of `is_attacked`, thus a move of a piece that is not a king to
@@ -157,12 +178,12 @@ pub fn evasion_squares(state: &State, color: Color) -> Bitboard {
             squares &= bit(pop_square(&mut attackers));
         }
     }
-    for &kind in &side.unmoved_leap_attacker_kinds {
-        let mut attackers = side.unmoved_leap_attackers[kind.index()][target] & state.kind_set(kind) & theirs;
+    for leaps in &side.conditional_leap_attackers {
+        let mut attackers = leaps.from[target] & state.kind_set(leaps.kind) & theirs;
         while attackers != 0 {
             let from = pop_square(&mut attackers);
-            if !has_moved(state, from) {
-                squares &= bit(from);
+            if condition_holds(state, leaps.condition, by, from) {
+                squares &= bit(from) | condition_anchors(state, leaps.condition, by, from);
             }
         }
     }
@@ -179,10 +200,10 @@ pub fn evasion_squares(state: &State, color: Color) -> Bitboard {
             }
             if let Some(blocker) = first_blocker(ray & occupied, line.ascending)
                 && sliders & bit(blocker) != 0
-                && !(group.unmoved_only && has_moved(state, blocker))
+                && condition_holds(state, group.condition, by, blocker)
             {
                 // The squares of the line from the king to the attacker, with the attacker.
-                squares &= ray & !line.rays[blocker as usize];
+                squares &= ray & !line.rays[blocker as usize] | condition_anchors(state, group.condition, by, blocker);
             }
         }
     }
@@ -212,6 +233,10 @@ pub fn may_give_check(state: &State, m: Move, undo: &Undo) -> bool {
     let Some(king) = state.king_square(state.turn()) else { return false };
     let Some(piece) = state.piece_at(m.to) else { return true };
     let side = state.tables().side(piece.color);
+    // A piece that makes a condition true can give another piece an attack.
+    if side.anchors & (1 << piece.kind.index()) != 0 {
+        return true;
+    }
     let left = if m.special == Special::EnPassant { bit(m.from) | bit(undo.captured_square) } else { bit(m.from) };
     bit(m.to) & side.attack_zone[piece.kind.index()][king as usize] != 0 || left & side.slide_zone[king as usize] != 0
 }
@@ -299,42 +324,45 @@ fn step_reach(steps: &Steps, from: Square, occupied: Bitboard) -> (Bitboard, Bit
     (quiets, attacks)
 }
 
-/// The reach of a piece on `from`: the empty squares where it can move, and the squares that
-/// it attacks. `moved` is the flag of the piece; it selects the atoms with a condition.
+/// The reach of the piece of `color` on `from`: the empty squares where it can move, and the
+/// squares that it attacks. The atoms with a condition count if the condition is true.
 #[inline]
 pub fn piece_reach(
+    state: &State,
     side: &SideTables,
+    color: Color,
     kind: Kind,
     from: Square,
     occupied: Bitboard,
-    moved: bool,
 ) -> (Bitboard, Bitboard) {
     let tables = &side.kinds[kind.index()];
     let (mut quiets, mut attacks) = step_reach(&side.always[kind.index()], from, occupied);
-    if tables.has_unmoved && !moved {
-        let (more_quiets, more_attacks) = step_reach(&tables.unmoved, from, occupied);
-        quiets |= more_quiets;
-        attacks |= more_attacks;
+    for (condition, steps) in &tables.conditional {
+        if condition_holds(state, *condition, color, from) {
+            let (more_quiets, more_attacks) = step_reach(steps, from, occupied);
+            quiets |= more_quiets;
+            attacks |= more_attacks;
+        }
     }
     (quiets, attacks)
 }
 
-/// The squares that a piece on `from` attacks. `moved` gives the flag of the piece; it is
-/// called only for a kind with an atom with a condition.
+/// The squares that the piece of `color` on `from` attacks.
 #[inline(always)]
 pub fn piece_attacks(
+    state: &State,
     side: &SideTables,
+    color: Color,
     kind: Kind,
     from: Square,
     occupied: Bitboard,
-    moved: impl FnOnce() -> bool,
 ) -> Bitboard {
     let tables = &side.kinds[kind.index()];
     if tables.leap_attacks_only {
         let leaps = &side.always[kind.index()].leaps[from as usize];
         leaps.both | leaps.capture
     } else {
-        piece_reach(side, kind, from, occupied, tables.has_unmoved && moved()).1
+        piece_reach(state, side, color, kind, from, occupied).1
     }
 }
 
@@ -407,8 +435,8 @@ fn capture_reach(tables: &KindTables, group: &Group, leaps: &LeapSet, from: Squa
 fn add_group_moves(
     state: &State,
     tables: &KindTables,
+    color: Color,
     from: Square,
-    moved: bool,
     occupied: Bitboard,
     foes: Bitboard,
     captures_only: bool,
@@ -421,7 +449,7 @@ fn add_group_moves(
     let ep = state.ep_squares();
     if ep != 0 && tables.captures_en_passant && foes & bit(state.ep_victim()) != 0 {
         for (group, leaps) in tables.groups.iter().zip(leaps) {
-            if group.captures_en_passant && (group.condition == Condition::Always || !moved) {
+            if group.captures_en_passant && condition_holds(state, group.condition, color, from) {
                 en_passant |= capture_reach(tables, group, leaps, from, occupied) & ep;
             }
         }
@@ -429,7 +457,7 @@ fn add_group_moves(
     let mut en_passant_left = en_passant;
     let mut given = 0;
     for (group, leaps) in tables.groups.iter().zip(leaps) {
-        if moved && group.condition == Condition::Unmoved {
+        if !condition_holds(state, group.condition, color, from) {
             continue;
         }
         let (quiets, captures, trail) = group_targets(tables, group, leaps, from, occupied, foes);
@@ -510,16 +538,20 @@ fn add_group_kind_moves(
     while pieces != 0 {
         let from = pop_square(&mut pieces);
         if en_passant && tables.en_passant_reach[from as usize] & ep != 0 {
-            let moved = tables.has_unmoved && has_moved(state, from);
-            add_group_moves(state, tables, from, moved, occupied, foes, captures_only, list);
+            add_group_moves(state, tables, color, from, occupied, foes, captures_only, list);
             continue;
         }
         let (start, end) = tables.probe_ranges[from as usize][captures_only as usize];
         let mut given = 0;
-        // The flag of the piece is read only for a probe with `Condition::Unmoved`.
+        // The condition of a probe with no moved piece (`Condition::Unmoved`) is read one time.
         let mut moved = None;
         for probe in &tables.probes[start as usize..end as usize] {
-            if occupied & probe.path != 0 || (probe.unmoved && *moved.get_or_insert_with(|| has_moved(state, from))) {
+            let holds = match probe.condition {
+                Condition::Always => true,
+                Condition::Unmoved => !*moved.get_or_insert_with(|| has_moved(state, from)),
+                condition => condition_holds(state, condition, color, from),
+            };
+            if occupied & probe.path != 0 || !holds {
                 continue;
             }
             let quiets = probe.quiet_targets & !occupied;

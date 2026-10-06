@@ -2,7 +2,7 @@
 //!
 //! The naive generator in this file reads the rules data directly. It walks the offsets square
 //! by square and uses no table of the engine. It follows the rules of `core/README.md`: the
-//! groups of atoms, the steps of an atom, the conditions, en passant, the promotion, the clock,
+//! groups of atoms, the steps of an atom, the two kinds of condition, en passant, the promotion, the clock,
 //! the hooks, and the castle rows. For each random rule set and position, the test compares all the pseudo
 //! moves (of the pawns too), the castles, and the attacked squares of the two colors, also after
 //! each move that makes en passant squares. A second test walks the move tree, compares each
@@ -63,6 +63,10 @@ fn random_atom(rng: &mut Rng) -> Atom {
     if rng.below(4) == 0 {
         atom = atom.captures_en_passant();
     }
+    // An atom with `Condition::Near` has no en passant property (`RulesError::BadCondition`).
+    if !atom.makes_en_passant && !atom.captures_en_passant && rng.below(4) == 0 {
+        atom = atom.if_near(Kind::ALL[rng.below(6) as usize], 1 + rng.below(3) as u8);
+    }
     atom
 }
 
@@ -85,6 +89,10 @@ fn random_pawn_atom(rng: &mut Rng) -> Atom {
     }
     if rng.below(2) == 0 {
         atom = atom.captures_en_passant();
+    }
+    // An atom with `Condition::Near` has no en passant property (`RulesError::BadCondition`).
+    if !atom.makes_en_passant && !atom.captures_en_passant && rng.below(4) == 0 {
+        atom = atom.if_near(Kind::ALL[rng.below(6) as usize], 1 + rng.below(3) as u8);
     }
     atom
 }
@@ -277,8 +285,16 @@ fn hook_targets(state: &State, from: Square, hook: &Hook, forward: i8) -> Vec<Sq
     targets
 }
 
-fn usable(atom: &Atom, piece: Piece) -> bool {
-    atom.condition == Condition::Always || !piece.moved
+/// True if the condition of the atom is true for the piece on `from`.
+fn usable(state: &State, from: Square, atom: &Atom, piece: Piece) -> bool {
+    match atom.condition {
+        Condition::Always => true,
+        Condition::Unmoved => !piece.moved,
+        Condition::Near { kind, range } => (0..64).any(|s: Square| {
+            let near = (s % 8).abs_diff(from % 8) <= range && (s / 8).abs_diff(from / 8) <= range;
+            s != from && near && state.piece_at(s).is_some_and(|other| other.color == piece.color && other.kind == kind)
+        }),
+    }
 }
 
 /// The rank of a square from the view of a color.
@@ -292,7 +308,9 @@ fn naive_attacks(state: &State, color: Color) -> Bitboard {
     let mut attacked = 0;
     for from in 0..64 {
         let Some(piece) = state.piece_at(from).filter(|piece| piece.color == color) else { continue };
-        for atom in rules.atoms(piece.kind).iter().filter(|atom| atom.mode.can_capture() && usable(atom, piece)) {
+        for atom in
+            rules.atoms(piece.kind).iter().filter(|atom| atom.mode.can_capture() && usable(state, from, atom, piece))
+        {
             for reached in walk(state, from, atom, color.forward()) {
                 attacked |= 1 << reached.to;
             }
@@ -341,7 +359,7 @@ fn naive_piece_moves(state: &State, from: Square, piece: Piece, captures_only: b
             None => groups.push((group_key(atom), vec![atom])),
         }
     }
-    groups.retain(|(_, atoms)| usable(atoms[0], piece));
+    groups.retain(|(_, atoms)| usable(state, from, atoms[0], piece));
 
     // The en passant squares where a group can capture.
     let ep = state.ep_squares();
@@ -473,7 +491,7 @@ fn naive_trail(state: &State, m: Move) -> Bitboard {
     let forward = piece.color.forward();
     let mut squares = 0;
     for atom in state.rules().side(piece.color).atoms(piece.kind) {
-        if !atom.makes_en_passant || !usable(atom, piece) {
+        if !atom.makes_en_passant || !usable(state, m.from, atom, piece) {
             continue;
         }
         for &(df, dr) in &atom.offsets {

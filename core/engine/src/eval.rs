@@ -19,7 +19,8 @@
 //! ```
 //!
 //! A square of a slide counts only if the squares before it are empty. An atom with
-//! `Condition::Unmoved` counts only on the first two ranks, where the pieces start. `reach` is
+//! `Condition::Unmoved` counts only on the first two ranks, where the pieces start. An atom with
+//! `Condition::Near` counts with the probability `P_NEAR` on each square. `reach` is
 //! the mean over the squares of the kind. `coverage` is the part of the board that the piece
 //! can get to in any number of moves on an empty board, as a mean over the same squares. Then:
 //!
@@ -162,10 +163,23 @@ const HOME_RANKS: Bitboard = 0xFFFF;
 /// The second rank: the start of the pawns.
 const SECOND_RANK: Bitboard = 0xFF00;
 
-/// The squares that an atom can use from `from`: the atom has no condition, or `from` is on a
-/// home rank.
+/// The part of the time that a piece is near the piece of its `Condition::Near`.
+const P_NEAR: f64 = 0.25;
+
+/// The weight of an atom from `from`: 1 with no condition, 1 on a home rank and 0 on each other
+/// square for `Condition::Unmoved`, and `P_NEAR` for `Condition::Near`.
+fn atom_weight(atom: &Atom, from: Square) -> f64 {
+    match atom.condition {
+        Condition::Always => 1.0,
+        Condition::Unmoved if HOME_RANKS & bit(from) != 0 => 1.0,
+        Condition::Unmoved => 0.0,
+        Condition::Near { .. } => P_NEAR,
+    }
+}
+
+/// True if the piece can use the atom from `from` with no other piece: see `atom_weight`.
 fn atom_counts(atom: &Atom, from: Square) -> bool {
-    atom.condition == Condition::Always || HOME_RANKS & bit(from) != 0
+    atom_weight(atom, from) == 1.0
 }
 
 /// The promotion zone of White, or no square.
@@ -183,9 +197,9 @@ pub fn kind_profile(rules: &KindRules) -> Profile {
         if zone & bit(from) != 0 {
             return reach;
         }
-        for atom in rules.atoms.iter().filter(|atom| atom_counts(atom, from)) {
+        for atom in rules.atoms.iter().filter(|atom| atom_weight(atom, from) > 0.0) {
             for &offset in &atom.offsets {
-                let mut clear = 1.0;
+                let mut clear = atom_weight(atom, from);
                 let mut s = from;
                 for _ in 0..atom.max_steps {
                     let Some(to) = offset_square(s, offset) else { break };
@@ -440,18 +454,13 @@ impl Evaluator {
             let own = state.color_set(color);
             let enemy_zone = zones[1 - c];
 
-            // The flag `moved` of a piece matters only for a kind with an atom with a condition.
-            let moved = |kind: Kind, s: Square| {
-                side.kinds[kind.index()].has_unmoved && state.piece_at(s).is_some_and(|piece| piece.moved)
-            };
             let mut pawns = state.pieces(color, Kind::Pawn);
             let mut material = pawns.count_ones() as i32 * eval.value[Kind::Pawn.index()];
             let mut total = 0;
             while pawns != 0 {
                 let s = pop_square(&mut pawns);
                 total += eval.advance[Kind::Pawn.index()][s as usize];
-                attacks_by[c][Kind::Pawn.index()] |=
-                    piece_attacks(side, Kind::Pawn, s, occupied, || moved(Kind::Pawn, s));
+                attacks_by[c][Kind::Pawn.index()] |= piece_attacks(state, side, color, Kind::Pawn, s, occupied);
             }
             attacks[c] |= attacks_by[c][Kind::Pawn.index()];
             for kind in [Kind::Knight, Kind::Bishop, Kind::Rook, Kind::Queen] {
@@ -464,7 +473,7 @@ impl Evaluator {
                     if promotes {
                         total += eval.advance[k][s as usize];
                     }
-                    let (quiets, attack) = piece_reach(side, kind, s, occupied, moved(kind, s));
+                    let (quiets, attack) = piece_reach(state, side, color, kind, s, occupied);
                     let reach = W_MOVE * quiets.count_ones() as i32 + W_ATTACK * (attack & !own).count_ones() as i32;
                     total += ((reach * eval.mobility_scale[k]) >> 10) - MOBILITY;
                     attacks[c] |= attack;
@@ -475,7 +484,7 @@ impl Evaluator {
             let mut kings = state.pieces(color, Kind::King);
             while kings != 0 {
                 let s = pop_square(&mut kings);
-                let (quiets, attack) = piece_reach(side, Kind::King, s, occupied, moved(Kind::King, s));
+                let (quiets, attack) = piece_reach(state, side, color, Kind::King, s, occupied);
                 attacks[c] |= attack;
                 king_moves[c] |= (quiets | attack) & !own;
             }

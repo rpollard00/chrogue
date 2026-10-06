@@ -57,6 +57,44 @@ pub enum Condition {
     /// Only while the piece has not moved (`Piece::moved` is false). An atom with this condition
     /// also attacks only while the piece has not moved.
     Unmoved,
+    /// Only while another piece of the same side and of this kind is `range` squares away or
+    /// less, as a king counts squares. An atom with this condition also attacks only then. The
+    /// atom cannot have an en passant property (`RulesError::BadCondition`).
+    Near {
+        kind: Kind,
+        range: u8,
+    },
+}
+
+/// `NEAR[range][s]`: the squares that are `range` squares away from `s` or less, without `s`.
+static NEAR: [[Bitboard; 64]; 8] = {
+    let mut zones = [[0; 64]; 8];
+    let mut range = 0;
+    while range < 8 {
+        let mut s = 0usize;
+        while s < 64 {
+            let mut other = 0usize;
+            while other < 64 {
+                let files = (s % 8) as i32 - (other % 8) as i32;
+                let ranks = (s / 8) as i32 - (other / 8) as i32;
+                if other != s && files.abs() <= range as i32 && ranks.abs() <= range as i32 {
+                    zones[range][s] |= 1 << other;
+                }
+                other += 1;
+            }
+            s += 1;
+        }
+        range += 1;
+    }
+    zones
+};
+
+impl Condition {
+    /// The squares where a piece of `Condition::Near` with this range lets a piece on `s` move.
+    #[inline(always)]
+    pub fn near_zone(s: Square, range: u8) -> Bitboard {
+        NEAR[range.min(7) as usize][s as usize]
+    }
 }
 
 /// One part of the movement of a kind: steps along each offset.
@@ -111,6 +149,13 @@ impl Atom {
     /// The same atom, only for a piece that has not moved.
     pub fn if_unmoved(mut self) -> Atom {
         self.condition = Condition::Unmoved;
+        self
+    }
+
+    /// The same atom, only while another piece of the side of this kind is `range` squares away
+    /// or less.
+    pub fn if_near(mut self, kind: Kind, range: u8) -> Atom {
+        self.condition = Condition::Near { kind, range };
         self
     }
 
@@ -325,6 +370,9 @@ pub enum RulesError {
     /// of leg squares that is not from 1 to `Atom::MAX_STEPS`. Or the kind has a promotion, or an
     /// atom with a condition or an en passant property.
     BadHook(Kind),
+    /// An atom of the kind has `Condition::Near` with a range that is not from 1 to 7, or with an
+    /// en passant property.
+    BadCondition(Kind),
 }
 
 impl std::fmt::Display for RulesError {
@@ -345,6 +393,9 @@ impl std::fmt::Display for RulesError {
             RulesError::KingMakesEnPassant => write!(f, "An atom of the king makes en passant squares"),
             RulesError::BadCastle(index) => write!(f, "The castle at index {index} is not valid"),
             RulesError::BadHook(kind) => write!(f, "A hook of kind {} is not valid", kind.letter()),
+            RulesError::BadCondition(kind) => {
+                write!(f, "An atom of kind {} has a condition that is not valid", kind.letter())
+            }
         }
     }
 }
@@ -515,6 +566,11 @@ impl SideRules {
                 }
                 if atom.makes_en_passant && kind == Kind::King {
                     return Err(RulesError::KingMakesEnPassant);
+                }
+                if let Condition::Near { range, .. } = atom.condition
+                    && (!(1..=7).contains(&range) || atom.makes_en_passant || atom.captures_en_passant)
+                {
+                    return Err(RulesError::BadCondition(kind));
                 }
             }
             let plain = rules.promotion.is_none()
