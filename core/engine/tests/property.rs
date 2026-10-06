@@ -7,8 +7,9 @@
 //! moves (of the pawns too), the castles, and the attacked squares of the two colors, also after
 //! each move that makes en passant squares. A second test walks the move tree, compares each
 //! `make` with a naive `make`, and makes sure that `unmake` gives back the full state and the
-//! key. A third test compares the auras of a side with `shielded` and `condition_holds`. The
-//! seeds are fixed, thus each run is the same.
+//! key. A third test compares the auras of a side with `shielded` and `condition_holds`, and a
+//! fourth test compares `denied_captures` with the legal moves of the same position under rules
+//! with no shield. The seeds are fixed, thus each run is the same.
 
 use std::collections::BTreeSet;
 
@@ -17,12 +18,15 @@ use chrogue_engine::rng::Rng;
 use chrogue_engine::zobrist::key_from_scratch;
 use chrogue_engine::{
     Atom, Bitboard, Boon, Castle, Color, Condition, Hook, Kind, Mode, Move, MoveList, Offset, Piece, Placement,
-    Promotion, Promotions, Rules, Shield, SideRules, Special, Square, State, aura_holders, in_check, is_attacked,
-    legal_moves, pseudo_moves,
+    Promotion, Promotions, Rules, Shield, SideRules, Special, Square, State, aura_holders, denied_captures, in_check,
+    is_attacked, is_legal, legal_moves, pseudo_moves,
 };
 
 /// The number of rule sets of the comparison with the naive generator.
 const RULE_SETS: usize = 6000;
+/// The number of rule sets of the denied captures with no en passant square. Each one makes the
+/// tables of four rule sets.
+const DENIED_SETS: usize = 2500;
 /// The number of rule sets of the make and unmake walk.
 const WALKS: usize = 1500;
 
@@ -801,4 +805,119 @@ fn the_auras_agree_with_the_shields_and_the_conditions() {
     }
     println!("pieces of shield auras, pieces of moves auras, and conditions that are not true: {seen:?}");
     assert!(seen.iter().all(|&count| count > 500), "{seen:?}");
+}
+
+/// A side with a shield of each kind near each kind: the largest effect of the shields.
+fn with_many_shields(mut side: SideRules, rng: &mut Rng) -> SideRules {
+    for _ in 0..2 + rng.below(3) {
+        side = side.with_shield(Shield {
+            protector: Kind::ALL[rng.below(6) as usize],
+            protected: Kind::ALL[rng.below(5) as usize],
+            range: 1 + rng.below(2) as u8,
+        });
+    }
+    side
+}
+
+/// The denied captures of a side are the legal moves of the same position under rules where the
+/// other side has no shield, without the moves that are legal now. A move counts by its two
+/// squares. Each denied capture removes a piece with a shield, and it does not leave the king of
+/// the mover in check.
+#[test]
+fn the_denied_captures_are_the_legal_moves_that_the_shields_remove() {
+    let mut rng = Rng::new(0x5EED_0004);
+    // The denied captures, the denied captures en passant, the states with one or more, and the
+    // states of a side with a shield and no denied capture.
+    let mut seen = [0usize; 4];
+    let squares = |moves: &MoveList| moves.iter().map(|m| (m.from, m.to)).collect::<BTreeSet<_>>();
+    let mut check = |state: &State, color: Color, label: &str| {
+        let them = color.other();
+        let mut denied = MoveList::new();
+        denied_captures(state, color, &mut denied);
+        let mut now = if color == state.turn() { state.clone() } else { state.clone().with_turn(color) };
+        let mut legal = MoveList::new();
+        legal_moves(&mut now, &mut legal);
+        if state.rules().side(them).shields.is_empty() {
+            assert!(denied.is_empty(), "{label}: a denied capture with no shield");
+            return;
+        }
+        // The same position under the rules with no shield of the other side, from its parts.
+        let mut rules = state.rules().clone();
+        rules.sides[them.index()].shields.clear();
+        let placements: Vec<Placement> =
+            (0..64).filter_map(|s| state.piece_at(s).map(|piece| Placement { piece, square: s })).collect();
+        let mut open = State::new(&placements, rules).unwrap().with_turn(color);
+        // `State::on_tables` gives the same state and the same key as a state from its parts.
+        let moved = now.on_tables(open.shared_tables());
+        assert!(moved == open && moved.key() == open.key(), "{label}: the state on other tables");
+        assert_eq!(moved.key(), key_from_scratch(&moved), "{label}: the key on other tables");
+        let mut legal_open = MoveList::new();
+        legal_moves(&mut open, &mut legal_open);
+        let expected: BTreeSet<_> = squares(&legal_open).difference(&squares(&legal)).copied().collect();
+        assert_eq!(squares(&denied), expected, "{label}: the denied captures of {color:?}");
+        assert_eq!(denied.len(), expected.len(), "{label}: two denied captures with the same squares");
+        let shields = shielded(state, them);
+        for &m in &denied {
+            let victim = if m.special == Special::EnPassant { now.ep_victim() } else { m.to };
+            assert!(shields & (1 << victim) != 0, "{label}: {m:?} does not capture a piece with a shield");
+            assert!(is_legal(&mut now, m, color), "{label}: {m:?} leaves the king in check");
+        }
+        seen[0] += denied.len();
+        seen[if denied.is_empty() { 3 } else { 2 }] += 1;
+    };
+    for round in 0..DENIED_SETS {
+        let (white, black) = (random_side(&mut rng), random_side(&mut rng));
+        let rules = if round % 2 == 0 {
+            Rules::new(with_many_shields(white, &mut rng), with_many_shields(black, &mut rng))
+        } else {
+            Rules::new(white, black)
+        };
+        let placements = random_placements(&mut rng, &rules);
+        let state = State::new(&placements, rules).unwrap().with_turn(Color::ALL[rng.below(2) as usize]);
+        for color in Color::ALL {
+            check(&state, color, &format!("round {round}"));
+        }
+    }
+
+    // The states after a move that makes en passant squares. The other state plays the same move
+    // under the rules with no shield of the side that moved.
+    let mut rng = Rng::new(0x5EED_0005);
+    for round in 0..RULE_SETS {
+        let rules = Rules::new(
+            with_many_shields(random_side(&mut rng), &mut rng),
+            with_many_shields(random_side(&mut rng), &mut rng),
+        );
+        let placements = random_placements(&mut rng, &rules);
+        let mut state = State::new(&placements, rules).unwrap().with_turn(Color::ALL[rng.below(2) as usize]);
+        let mover = state.turn();
+        let mut bare = state.rules().clone();
+        bare.sides[mover.index()].shields.clear();
+        let mut open = State::new(&placements, bare).unwrap().with_turn(mover);
+        let mut list = MoveList::new();
+        legal_moves(&mut state, &mut list);
+        for &m in list.iter().filter(|m| m.special == Special::DoubleStep).take(3) {
+            let (undo, undo_open) = (state.make(m), open.make(m));
+            let color = state.turn();
+            // With en passant squares too, the state on other tables is the other state.
+            let moved = state.on_tables(open.shared_tables());
+            assert!(moved == open && moved.key() == open.key(), "round {round} after {m:?}: the state on other tables");
+            let (mut denied, mut legal, mut legal_open) = (MoveList::new(), MoveList::new(), MoveList::new());
+            denied_captures(&state, color, &mut denied);
+            legal_moves(&mut state, &mut legal);
+            legal_moves(&mut open, &mut legal_open);
+            let expected: BTreeSet<_> = squares(&legal_open).difference(&squares(&legal)).copied().collect();
+            assert_eq!(squares(&denied), expected, "round {round} after {m:?}: the denied captures of {color:?}");
+            let shields = shielded(&state, mover);
+            for &d in &denied {
+                let victim = if d.special == Special::EnPassant { state.ep_victim() } else { d.to };
+                assert!(shields & (1 << victim) != 0, "round {round}: {d:?} does not capture a piece with a shield");
+                assert!(is_legal(&mut state, d, color), "round {round}: {d:?} leaves the king in check");
+                seen[1] += (d.special == Special::EnPassant) as usize;
+            }
+            open.unmake(m, undo_open);
+            state.unmake(m, undo);
+        }
+    }
+    println!("denied captures, of them en passant, states with one or more, and states with none: {seen:?}");
+    assert!(seen[0] > 400 && seen[1] > 20 && seen[2] > 250 && seen[3] > 1200, "{seen:?}");
 }

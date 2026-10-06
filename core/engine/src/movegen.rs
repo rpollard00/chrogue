@@ -12,8 +12,10 @@
 //! The castles come from the rows of `SideRules::castles`.
 
 use crate::rules::{Aura, Condition, Promotions};
+use std::sync::Arc;
+
 use crate::state::{State, Undo};
-use crate::tables::{Group, HookAttackLine, HookSlide, KindTables, LeapSet, SideTables, Slide, Steps};
+use crate::tables::{Group, HookAttackLine, HookSlide, KindTables, LeapSet, SideTables, Slide, Steps, Tables};
 use crate::types::{Bitboard, Color, Kind, Move, MoveList, Special, Square, bit, pop_square};
 
 /// The first piece on a line, or None if the line has no piece.
@@ -745,6 +747,45 @@ pub fn moves_from(state: &State, from: Square, list: &mut MoveList) {
     let start = list.len();
     add_piece_moves(&state, from, false, list);
     retain_from(list, start, |m| is_legal(&mut state, m, piece.color));
+}
+
+/// Adds the captures of `color` that only a shield of the other side refuses: the moves that
+/// are legal if the other side has no shield, and that are not legal now. Each such move
+/// captures a piece of `shielded`, because a shield only removes captures. As for `moves_from`,
+/// a side that does not have the move cannot capture en passant.
+///
+/// A move counts by its two squares. Thus a promotion gives one move (the first kind of the
+/// list), and a move that is legal now with no capture gives none: with some rules, a piece can
+/// go to an en passant square that it cannot capture on.
+///
+/// If no piece of the other side has a shield now, the function generates no move. Else it makes
+/// the tables of the rules with no shield, thus it is not for the search. A client uses it to
+/// show the captures that a shield refuses.
+pub fn denied_captures(state: &State, color: Color, list: &mut MoveList) {
+    let them = color.other();
+    // Each denied capture removes a piece with a shield, thus no such piece gives no capture.
+    if state.rules().side(them).shields.is_empty() || shielded(state, them) == 0 {
+        return;
+    }
+    let mut rules = state.rules().clone();
+    rules.sides[them.index()].shields.clear();
+    // Rules that are valid stay valid with no shield.
+    let Ok(tables) = Tables::new(rules) else { return };
+    let mut now = state.clone();
+    if color != now.turn() {
+        now = now.with_turn(color);
+    }
+    let mut open = now.on_tables(Arc::new(tables));
+    let (mut legal, mut legal_open) = (MoveList::new(), MoveList::new());
+    legal_moves(&mut now, &mut legal);
+    legal_moves(&mut open, &mut legal_open);
+    let start = list.len();
+    for &m in &legal_open {
+        let same = |other: &Move| (other.from, other.to) == (m.from, m.to);
+        if !legal.iter().any(same) && !list.as_slice()[start..].iter().any(same) {
+            list.push(m);
+        }
+    }
 }
 
 /// Keeps the moves at and after `start` for which `keep` returns true.

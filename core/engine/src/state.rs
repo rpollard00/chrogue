@@ -124,6 +124,27 @@ impl State {
         Ok(state)
     }
 
+    /// The same state with other tables: the pieces, the side to move, the en passant squares,
+    /// and the clock stay. `movegen::denied_captures` uses it to ask what the moves are with
+    /// other rules.
+    pub fn on_tables(&self, tables: Arc<Tables>) -> State {
+        let mut state = State {
+            board: [None; 64],
+            by_color: [0; 2],
+            by_kind: [0; Kind::COUNT],
+            piece_key: 0,
+            piece_keys: zobrist::piece_keys(tables.all_moved_keyed()),
+            tables,
+            ..*self
+        };
+        for (s, piece) in self.board.iter().enumerate() {
+            if let Some(piece) = piece {
+                state.put(s as Square, *piece);
+            }
+        }
+        state
+    }
+
     /// The same state with another side to move and no en passant square.
     pub fn with_turn(mut self, turn: Color) -> State {
         self.turn = turn;

@@ -98,6 +98,7 @@ A side can have shields (`SideRules::shields`). A `Shield` has a `protector` kin
 - The king cannot be the protected kind (`RulesError::BadShield`).
 - A shield does not change the attacked squares. `is_attacked` is true for the square of a piece with a shield that an enemy piece could capture with no shield. Thus a piece gives check through a piece with a shield, and a king cannot go next to such a piece on a square that the piece attacks.
 - `movegen::shielded` gives the pieces of a side that have a shield. The threat term of the evaluation does not count such a piece.
+- `movegen::denied_captures` gives the captures of a side that only a shield of the other side refuses: the moves that are legal with no shield of the other side, and that are not legal now. It is for a client that shows these captures. It makes the tables of the rules with no shield for each call, thus the search does not use it. If no piece of the other side has a shield now, it generates no move.
 
 ### Auras
 
