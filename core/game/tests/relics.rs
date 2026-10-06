@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 
 type Pieces<'a> = &'a [(Kind, &'a str)];
 
-const RULE_RELICS: [&str; 11] = [
+const RULE_RELICS: [&str; 12] = [
     "vault",
     "crossfire",
     "closeQuarters",
@@ -29,6 +29,7 @@ const RULE_RELICS: [&str; 11] = [
     "huntress",
     "shieldWall",
     "echelon",
+    "enfilade",
 ];
 const EFFECT_RELICS: [&str; 3] = ["apprenticeship", "coup", "gambit"];
 
@@ -176,6 +177,14 @@ fn shield_wall_lets_a_pawn_capture_straight_forward() {
 #[test]
 fn echelon_lets_a_pawn_move_diagonally_forward_to_an_empty_square() {
     assert_gives_move("echelon", &[KING, (Kind::Pawn, "c2")], &[FOE], "c2", "d3");
+}
+
+#[test]
+fn enfilade_lets_a_rook_turn_to_the_side_after_two_empty_squares() {
+    assert_gives_move("enfilade", &[KING, (Kind::Rook, "a1")], &[FOE], "a1", "c2");
+    // A piece on the line stops the turn behind it.
+    let mut blocked = position(&[KING, (Kind::Rook, "a1"), (Kind::Pawn, "b1")], &[FOE], &["enfilade"], &[], false);
+    assert!(blocked.find_move(sq("a1"), sq("c2"), None).is_err());
 }
 
 #[test]

@@ -290,9 +290,9 @@ fn a_seed_and_the_requests_give_the_same_transcript() {
 // ---- Saved files and debug boards ----
 
 /// The number of ids at the start of `RELIC_IDS` that a boss can have as a trait.
-const TRAITS: usize = 17;
+const TRAITS: usize = 18;
 
-const RELIC_IDS: [&str; 24] = [
+const RELIC_IDS: [&str; 25] = [
     "forcedMarch",
     "backpedal",
     "earlyPromo",
@@ -310,6 +310,7 @@ const RELIC_IDS: [&str; 24] = [
     "huntress",
     "shieldWall",
     "echelon",
+    "enfilade",
     "bounty",
     "secondWind",
     "conscription",

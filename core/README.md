@@ -443,7 +443,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
 
 A relic has movement rules and an effect. The movement rules are a list of `RuleEdit`: edits of `SideRules::standard()` that the engine and the AI read. The effect is one kind of `Effect`, at a fixed point of a battle.
 
-`RuleEdit::Leap` and `RuleEdit::Slide` add one atom to one kind: a leap, or a slide of 1 to `steps` steps. Thus a relic with such a rule needs no code. A relic with a text for the enemy (`foe_text`) can be a boss trait.
+`RuleEdit::Leap` and `RuleEdit::Slide` add one atom to one kind: a leap, or a slide of 1 to `steps` steps. `RuleEdit::Hook` adds one hook to one kind: a line of `min_leg` or more empty squares, and then one square to the side. Thus a relic with such a rule needs no code. A relic with a text for the enemy (`foe_text`) can be a boss trait.
 
 The effects have these points of a battle:
 

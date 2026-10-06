@@ -1,6 +1,7 @@
 //! The formation of an enemy army: the squares that the battle gives to the kinds of a floor.
 //! The player has no win on the first move and no forced win in two moves, for the start army,
-//! for a rook on each home square, and for each relic that changes a movement.
+//! for a rook on each home square, and for each relic that changes a movement. The one exception
+//! is Enfilade against an army of a king and a rook.
 
 use std::collections::HashSet;
 
@@ -96,7 +97,17 @@ fn each_relic_that_changes_a_movement_has_no_fast_win() {
             for seed in 0..10 {
                 let mut run = run_on(seed, floor);
                 run.relics = vec![id];
-                assert_eq!(start_flaw(&run), None, "{} floor {floor} seed {seed}", id.key());
+                let flaw = start_flaw(&run);
+                // An army of a king and a rook has no formation that is sound against Enfilade: the
+                // rook of the player gives check on rank 7 to a king with no pawns. The battle takes
+                // a formation with the smallest flaw.
+                let bare =
+                    matches!(&run.enemy.pieces, EnemyPieces::Kinds(kinds) if kinds[..] == [Kind::King, Kind::Rook]);
+                if id.key() == "enfilade" && bare {
+                    assert!(flaw <= Some(Flaw::WinInTwo), "enfilade floor {floor} seed {seed}: {flaw:?}");
+                    continue;
+                }
+                assert_eq!(flaw, None, "{} floor {floor} seed {seed}", id.key());
             }
         }
     }

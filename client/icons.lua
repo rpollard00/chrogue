@@ -32,6 +32,7 @@ local PATHS = {
   coup = 'M13 2L5 13h6l-1 9l8-12h-6z',
   gambit = 'M12 4v16M7 20h10M5 7h14M5 7l-3 7h6zM19 7l-3 7h6z',
   shieldWall = 'M3 10h6v6l-3 4-3-4zM9 10h6v6l-3 4-3-4zM15 10h6v6l-3 4-3-4zM12 7V2M9.5 4.5L12 2l2.5 2.5',
+  enfilade = 'M4 18h12V7M12 11l4-4 4 4',
   echelon = 'M12 21v-6M12 15L5 5M12 15l7-10M5 10V5h5M14 5h5v5',
   gem = 'M6 4h12l4 6-10 11L2 10zM2 10h20',
   vase = 'M9 3h6M10 3c0 3-4 5-4 10a6 6 0 0 0 12 0c0-5-4-7-4-10M12 19v2M9 21h6',
