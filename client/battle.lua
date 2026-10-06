@@ -2,8 +2,9 @@
   The battle screen: its state and its behavior.
   The core has the rules. This module keeps only the state of the interface: the selection, the promotion picker,
   and the motion. Each response of the core gives the full view; the events of the response start the motion.
-  board.lua, plaques.lua, fan.lua and result.lua draw this state.
+  board.lua, plaques.lua, fan.lua and result.lua draw this state. aura.lua has the badges and the zones of the auras.
 ]]
+local aura = require('aura')
 local board = require('board')
 local fan = require('fan')
 local gfx = require('gfx')
@@ -62,20 +63,30 @@ function battle:syncPieces(animate)
   end
 end
 
+-- The time when a piece is at rest after the motion of a response: after the move, and after the light of a promotion.
+local function restAt(self, id)
+  local sprite = self.sprites[id]
+  local at = self.time + battle.MOVE_TIME
+  if sprite and sprite.promotedAt then at = math.max(at, sprite.promotedAt + battle.PROMOTE_DELAY + battle.PROMOTE_TIME) end
+  return at
+end
+
 function battle.new(app, view, events)
   local self = setmetatable({
     app = app, view = view,
     selected = -1, promotion = nil, pending = false,
     time = 0, enemyAt = nil, enemySent = nil, enemyRefusals = 0, enemyFailed = false, givenUp = false,
-    sprites = {}, gone = {}, floaters = {}, flashes = {},
-    alarmAt = nil, resultAt = nil, introAt = nil,
+    sprites = {}, gone = {}, floaters = {}, flashes = {}, foeFlashes = {}, auras = aura.new(),
+    alarmAt = nil, resultAt = nil, introAt = nil, popAt = nil,
     stashAt = { w = nil, b = nil },
     gold = { from = view.capture_gold or 0, to = view.capture_gold or 0, at = -1 },
     -- The frames while the core selects the enemy move: the longest frame, in milliseconds.
     enemy = { count = 0, worstFrameMs = 0, lastMs = 0, worstMs = 0 },
   }, battle)
   self:syncPieces(false)
-  -- The relics and the traits do not change in a battle. A debug command that changes them starts a new battle screen.
+  aura.sync(self.auras, view, self.time)
+  -- The relics and the traits of the view do not change in a battle. A debug command that changes them starts a new
+  -- battle screen. After the battle has its result, such a command changes the run after the battle, not this view.
   self.myFan = fan.new(view.relics, 'player', layout.me.fan, nil, view.relic_slots)
   self.foeFan = fan.new(view.traits, 'enemy', layout.foe.fan)
   if view.result then self.resultAt = -10 end
@@ -90,6 +101,8 @@ function battle:events(list)
     local kind = e.type
     if kind == 'battle_start' then
       self.introAt = self.time
+      -- After the banner, each badge comes into view one more time, and the medals of their relics flash.
+      self.popAt = self.time + battle.INTRO_TIME
     elseif kind == 'capture' then
       -- The side that captured: the color of the captured piece is the other side.
       self.stashAt[e.color == 'b' and 'w' or 'b'] = self.time
@@ -124,6 +137,8 @@ function battle:apply(view, events, request)
   self.view = view
   self:syncPieces(true)
   self:events(events)
+  -- After the events: a promote event changes the time when its piece is at rest.
+  aura.sync(self.auras, view, self.time, function(id) return restAt(self, id) end)
   if request and (request.cmd == 'move' or request.cmd == 'enemy_move') then self.pending = false end
   if request and request.cmd == 'enemy_move' then self.enemyRefusals = 0 end
   if request and request.cmd == 'enemy_move' and self.enemySent then
@@ -143,6 +158,7 @@ function battle:refused(view, request)
   self.view = view
   self.pending = false
   self:syncPieces(false)
+  aura.sync(self.auras, view, self.time)
   self.enemySent = nil
   self.enemyAt = nil
   -- If the enemy still has the move, the client asks again after the pause, one time. After a second refusal, the lamp
@@ -274,11 +290,30 @@ function battle:update(dt, pointer)
   if self.app.dialog then x, y = nil, nil end
   fan.update(self.myFan, x, y, self.time, dt)
   fan.update(self.foeFan, x, y, self.time, dt)
+  if self.popAt and self.time >= self.popAt then
+    self.popAt = nil
+    aura.pop(self.auras, self.time)
+    local relics = aura.relics(self.auras)
+    for id in pairs(relics.w) do self.flashes[id] = self.time end
+    for id in pairs(relics.b) do self.foeFlashes[id] = self.time end
+  end
+  -- The auras in focus: of the medal that shows its card, and of the piece under the pointer. The board below the
+  -- result has no focus. The pointer on the promotion picker is not on the piece below it.
+  local shown, square = NONE, nil
+  if not self.resultAt then
+    shown = { w = self.myFan.ids[fan.shown(self.myFan)], b = self.foeFan.ids[fan.shown(self.foeFan)] }
+    square = x and not self.promotion and layout.squareOf(x, y)
+  end
+  aura.update(self.auras, dt, self.time, self.view, shown, square and self.at[square], self.at[self.selected])
+  fan.light(self.myFan, self.auras.lit.w)
+  fan.light(self.foeFan, self.auras.lit.b)
 end
 
--- True while a piece moves, the enemy waits, or a request waits for the core. The test script uses it.
+-- False while a piece moves, a badge comes or goes, the enemy waits, or a request waits for the core. At the start of
+-- a battle with badges, it is false until the badges came into view after the banner. The test script uses it.
 function battle:settled()
-  if self.enemyAt or self.pending then return false end
+  if self.enemyAt or self.pending or not aura.settled(self.auras, self.time) then return false end
+  if self.popAt and aura.any(self.auras) then return false end
   for _, sprite in pairs(self.sprites) do
     if self.time - sprite.movedAt < battle.MOVE_TIME then return false end
   end
@@ -369,7 +404,7 @@ local function drawCard(self, f, pointer)
 end
 
 function battle:draw(pointer)
-  plaques.enemy(self, self.foeFan, function(f) drawFan(self, f, nil, pointer) end)
+  plaques.enemy(self, self.foeFan, function(f) drawFan(self, f, self.foeFlashes, pointer) end)
   plaques.player(self, self.myFan, function(f) drawFan(self, f, self.flashes, pointer) end, pointer)
   board.draw(self, pointer)
   result.draw(self, pointer)
@@ -382,6 +417,14 @@ function battle:draw(pointer)
   if stash then plaques.stashList(self, stash) end
   drawCard(self, self.foeFan, pointer)
   drawCard(self, self.myFan, pointer)
+end
+
+-- The relics of the medals that had a flash, in the order of their ids.
+local function flashed(flashes)
+  local ids = {}
+  for id in pairs(flashes) do ids[#ids + 1] = id end
+  table.sort(ids)
+  return ids
 end
 
 -- The state of the interface, for the dump of the test script.
@@ -398,6 +441,8 @@ function battle:state()
     shownGold = self:shownGold(), playerMedal = self.myFan.hovered or 0, enemyMedal = self.foeFan.hovered or 0,
     resultShown = result.layout(self) ~= nil, enemyMove = self.enemy, enemyRefusals = self.enemyRefusals,
     enemyFailed = self.enemyFailed, givenUp = self.givenUp, stuck = self:stuck(),
+    auras = aura.state(self.auras, self.time), startPop = self.popAt ~= nil,
+    flashed = { player = flashed(self.flashes), enemy = flashed(self.foeFlashes) },
   }
 end
 

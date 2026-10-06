@@ -20,6 +20,7 @@
   { 'key', 'f1' }                         a key
   { 'wait', 0.5 }                         seconds
   { 'settle' }                            until no request waits for the core, the enemy moved, and no piece moves
+  { 'response' }                          until no request waits for the core. The motion of the response is at its start.
   { 'screen', 'camp' }                    until the screen is camp, and settled
   { 'send', { cmd = 'debug_set_floor', floor = 8 } }   a request to the core, to prepare a test (--no-debug stops the debug commands)
   { 'expect', function(view, client, app) return ok, detail end, 'label' }   stops the game with an error if not ok
@@ -30,7 +31,7 @@
   { 'log', 'text' }                       a line on stdout
   { 'quit' }
 
-  A 'settle' or 'screen' step stops the game with an error after 30 seconds.
+  A 'settle', 'screen' or 'response' step stops the game with an error after 30 seconds.
 ]]
 local net = require('net')
 
@@ -109,6 +110,13 @@ function script.update(self, app)
         if now - self.since > LIMIT then
           error(('Step %d (%s) did not end in %d seconds. The screen is %s.'):format(self.at, describe(step), LIMIT, tostring(app.name)))
         end
+        return
+      end
+      self.since = nil
+    elseif kind == 'response' then
+      self.since = self.since or now
+      if net.busy() then
+        if now - self.since > LIMIT then error(('Step %d (response): the core gave no response in %d seconds.'):format(self.at, LIMIT)) end
         return
       end
       self.since = nil
@@ -201,8 +209,8 @@ function script.update(self, app)
     end
     self.at = self.at + 1
     -- A step that changes the picture ends the frame, thus the next screenshot shows the change.
-    if kind ~= 'wait' and kind ~= 'settle' and kind ~= 'screen' and kind ~= 'expect' and kind ~= 'log' and kind ~= 'dump'
-      and kind ~= 'refusal' then return end
+    if kind ~= 'wait' and kind ~= 'settle' and kind ~= 'screen' and kind ~= 'response' and kind ~= 'expect' and kind ~= 'log'
+      and kind ~= 'dump' and kind ~= 'refusal' then return end
   end
 end
 

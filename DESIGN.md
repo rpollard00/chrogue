@@ -48,6 +48,8 @@ Decision source: the user selected mockup C, "Platform with objects", on 1 Octob
 | Menu | A raised bar of keys on a screen between runs. The primary key has the full width. | Established |
 | Medal board | A shelf of 16 set slots, 4 by 4. Each slot is a well that holds the medal of one upgrade, its name, its levels, and the cost of its next level. | Established |
 | Panel | A raised surface that shows the one upgrade that the player selects on the medal board: its text, its levels, and the key that buys it. | Established |
+| Badge | A small dark plate on a piece that has a boon now: a thing that the piece gets from a near piece of its side. | Provisional |
+| Zone | The squares of one aura, with a tint and a line at its edge. A zone shows only while its aura is in focus. | Provisional |
 
 Rules:
 
@@ -61,6 +63,11 @@ Rules:
 - The Discard key of the camp is a quiet key with a set place below the fan. It is always there, and it is disabled while no medal is selected. The game asks before it discards a relic. Then the medal leaves the fan, and the medals after it go to their new slots.
 - An empty area has no "None" text. It shows as an empty slot.
 - On the board, the marks of a piece of the player are green and dark. The marks of an enemy piece that the player selects with Scout are red.
+- A badge is a round plate with a rim and a solid picture in the color of its side: green for the player, and red for the enemy. Its diameter is 0.24 of a square. The picture tells the boon: a shield for a piece that the enemy cannot capture, and a star for a piece that has more moves.
+- A square has two set slots for badges, in a column on its left side: the shield at (0.20, 0.36) of the square, and the star at (0.20, 0.64). A piece with one boon keeps the slot of that boon. The slots are away from the coordinates of the board, and a badge can be above a small part of its piece.
+- A badge does not move while nothing changes. A new badge becomes smaller to its size with one ring, after its piece is at rest. A badge that a piece loses becomes larger and goes away. At the start of a battle, each badge comes into view one more time after the banner, and the medals of their relics flash.
+- An aura is in focus while the pointer is on the medal of its relic, on a piece that gives it, or on a piece with a badge from it. The board then shows the zone of the aura: a tint on each of its squares, below the mark of the square, and a line where the zone ends. A square in the zone is the square of a piece that gives the boon, a place where a piece has the boon, or a place where a piece that can have it gets it. The zones in focus of one side show as one shape, with one tint and one line. The zones of the two sides stay two shapes.
+- The pointer on such a piece, and the selection of such a piece, also light the medals of its relics in the fan of its side. A lit medal has the ring of its side. It does not go up, and it shows no card.
 - In a battle, each plaque is a grid with set rows. A stash shows the last piece that a side captured and the number of the pieces. Its list of all the pieces shows above the layout.
 - An upgrade is not a card. A card is a thing of one run. An upgrade stays between runs, and it has a set slot on the medal board.
 - On the medal board, an upgrade keeps its slot in each visit. A slot with no upgrade stays as an empty well. The slot of the upgrade that the player selects has an amber ring.
@@ -78,7 +85,7 @@ Rules:
 - Upgrades: the crowns are at the top, and the key that goes back is at the bottom. Between them are the medal board and the panel. On a wide screen, the panel is at the right of the board. On a phone, the panel is below the board. Nothing on this screen scrolls.
 - The game has no rules screen. The player finds the rules and the relics in a run. The result of a battle gives its cause.
 
-Status: established. The relic slots, the selection of a medal, and the Discard key are provisional: the user decided them on 3 October 2026. The user accepted the rendered screens of the TypeScript game on 1 October 2026. For the upgrades screen, the user selected mockup C, "a board of medals and one panel", and accepted the rendered screen on 1 October 2026. The client draws the same screens. Reference surfaces: the screens of the client.
+Status: established. The relic slots, the selection of a medal, and the Discard key are provisional: the user decided them on 3 October 2026. The badge and the zone are provisional: on 5 October 2026, the user selected the quiet badge, its column on the left side of the square, its diameter, and the zone in the place of lines to the source piece. The user accepted the rendered screens of the TypeScript game on 1 October 2026. For the upgrades screen, the user selected mockup C, "a board of medals and one panel", and accepted the rendered screen on 1 October 2026. The client draws the same screens. Reference surfaces: the screens of the client.
 
 ## The debug menu
 

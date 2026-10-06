@@ -25,7 +25,7 @@ function fan.new(items, side, area, align, slots)
   local ids = {}
   for i, item in ipairs(items) do ids[i] = item.id end
   local self = { items = items, ids = ids, side = side, area = area, hovered = nil, selected = nil, shownAt = 0, raise = {},
-    slots = slots or 0, slide = {}, slideAt = nil, time = 0 }
+    slots = slots or 0, slide = {}, slideAt = nil, time = 0, lit = {} }
   for i = 1, #ids do self.raise[i], self.slide[i] = 0, 0 end
   self.flair = side == 'enemy' and C.danger or C.relic
   -- In the battle, the medals of the enemy are at the right side of their area, next to the stash.
@@ -83,6 +83,10 @@ function fan.select(self, i, time)
   if fan.shown(self) ~= before then self.shownAt = time end
 end
 
+-- Lights the medals of some relics: `lit[id]` is true. A lit medal has the ring of its side. It does not go up, and it
+-- shows no card.
+function fan.light(self, lit) self.lit = lit end
+
 -- Finds the medal under the pointer.
 function fan.update(self, x, y, time, dt)
   self.time = time
@@ -119,6 +123,8 @@ local function chip(self, i, flashes, time)
   local flash = flashed and 1 - gfx.ease((time - flashed) / FLASH_TIME) or 0
   if fan.shown(self) == i then
     gfx.shadow(cx - r, cy - r, 2 * r, 2 * r, r, px(6), px(10), 0, 0.7)
+    gfx.circle(cx, cy, r + px(1.5), self.flair)
+  elseif self.lit[id] then
     gfx.circle(cx, cy, r + px(1.5), self.flair)
   else
     gfx.circle(cx - px(2), cy, r + px(1), C.black, 0.3)

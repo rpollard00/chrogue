@@ -1,4 +1,5 @@
--- The board: the squares and their marks, the pieces, the gold of a capture, the promotion picker, and the banner of the floor.
+-- The board: the squares and their marks, the pieces and their badges, the gold of a capture, the promotion picker, and the banner of the floor.
+local aura = require('aura')
 local gfx = require('gfx')
 local layout = require('layout')
 local text = require('text')
@@ -27,6 +28,8 @@ local function squares(self)
     local f, r = s % 8, math.floor(s / 8)
     local x, y = layout.squareAt(s)
     gfx.rect(x, y, SQ, SQ, 0, (f + r) % 2 == 1 and C.light or C.dark)
+    -- The zone of an aura in focus is below the mark of the square.
+    aura.drawZone(self.auras, s, x, y)
     -- A square has one mark. The check is before the selection, and the selection is before the last move.
     local last = self.view.last
     if s == check then
@@ -80,6 +83,7 @@ local function pieces(self)
       end
     end
     gfx.piece(sprite.kind, sprite.color, x + SQ / 2, y + SQ / 2, PIECE, 1, scale)
+    aura.drawBadges(self.auras, sprite.id, x, y, self.time)
   end
   for _, sprite in pairs(self.sprites) do
     if self.time - sprite.movedAt < self.MOVE_TIME then moving[#moving + 1] = sprite else draw(sprite) end

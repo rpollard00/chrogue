@@ -81,6 +81,10 @@ theme.color = {
   markAlarm = rgba(255, 70, 50, 0.95), markTarget = rgba(30, 30, 30, 0.4), markCapture = rgba(30, 30, 30, 0.45),
   scoutSelected = rgba(200, 86, 75, 0.55), scoutTarget = rgba(160, 30, 22, 0.6), scoutCapture = rgba(160, 30, 22, 0.75),
   coord = rgba(20, 20, 20, 0.6),
+  -- The badge of a piece with a boon, and the zone of an aura: green for the player, and red for the enemy.
+  badge = rgba(16, 20, 16, 0.88),
+  zone = rgba(95, 194, 150, 0.2), zoneLine = rgba(95, 194, 150, 0.9),
+  zoneFoe = rgba(200, 86, 75, 0.2), zoneFoeLine = rgba(200, 86, 75, 0.9),
   medalHi = hex('#2e343f'), medalLo = hex('#14161b'), chipHi = hex('#2c323d'), chipLo = hex('#22262f'),
   flash = rgba(217, 164, 65, 0.6),
 }
