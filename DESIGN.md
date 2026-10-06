@@ -86,7 +86,7 @@ The debug menu is a development tool (`client/README.md`, "The debug menu"). It 
 
 - The menu is above the layout, as a dialog is. It does not move or resize an area of a screen.
 - The menu is the one place that lists the relics. The game shows no such list ("Composition").
-- The panel of the menu has a set size, and each tab has a set layout for its largest content: 26 relics, 8 floors, 5 kinds of pieces, the 16 upgrades of the medal board, and 11 backgrounds. A row with no content stays empty.
+- The panel of the menu has a set size, and each tab has a set layout for its largest content: 28 relics, 8 floors, 5 kinds of pieces, the 16 upgrades of the medal board, and 11 backgrounds. A row with no content stays empty.
 - The menu uses the objects of the game: keys, wells, medals, and the paper tip. A toggle is a key that has an amber ring, an amber lamp, and an amber label when it is on.
 
 Decision source: the user asked for the menu on 3 October 2026. Status: provisional.
@@ -117,5 +117,5 @@ Each color has a name in `client/theme.lua`. A module uses the name, not a raw v
 - The end of a run does not show a summary of the run. This is a follow-up task.
 - The medal board holds 16 upgrades. The design for more upgrades (a second page, or a board that scrolls) is not decided. A test stops a 17th upgrade.
 - A slot on a phone holds a name of 13 characters. A test stops a longer name.
-- The Relics tab of the debug menu holds 26 relics. A 27th relic does not show.
+- The Relics tab of the debug menu holds 28 relics. A 29th relic does not show.
 - The phone layout, the focus ring, the text for a screen reader, and the stop of motion for a player who prefers reduced motion ("Responsive and accessibility rules").
