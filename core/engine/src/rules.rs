@@ -6,7 +6,8 @@
 //! steps, a mode, a condition, and three properties for en passant and the clock. A leap is an
 //! atom with one step, and a slide is an atom with `Atom::MAX_STEPS`. A kind can also have a
 //! promotion. A kind can also have hooks: slides that end with one step in another direction.
-//! The castles of a side are rows of `Castle`.
+//! The castles of a side are rows of `Castle`. A side can also have shields: pieces that the
+//! enemy cannot capture while they are near another piece of their side.
 
 use crate::types::{Bitboard, Color, Kind, Square, bit};
 
@@ -336,12 +337,28 @@ impl Castle {
     }
 }
 
+/// A protection of one kind: the enemy cannot capture a piece of kind `protected` while another
+/// piece of its side of kind `protector` is `range` squares away or less, as a king counts
+/// squares. The king cannot have a shield (`RulesError::BadShield`).
+///
+/// A shield does not change the attacked squares: a piece still gives check through it, and a
+/// king cannot go to a square next to a piece with a shield that the piece attacks.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct Shield {
+    pub protector: Kind,
+    pub protected: Kind,
+    /// From 1 to 7.
+    pub range: u8,
+}
+
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub struct SideRules {
     /// The movement of each kind, by `Kind::index()`: pawn, knight, bishop, rook, queen, king.
     pub kinds: [KindRules; Kind::COUNT],
     /// The castles of the side, in the order of the generated moves.
     pub castles: Vec<Castle>,
+    /// The shields of the pieces of the side.
+    pub shields: Vec<Shield>,
 }
 
 /// The names of the rule flags: the six named edits of ordinary chess (`SideRules::with_flag`).
@@ -373,6 +390,8 @@ pub enum RulesError {
     /// An atom of the kind has `Condition::Near` with a range that is not from 1 to 7, or with an
     /// en passant property.
     BadCondition(Kind),
+    /// The shield at this index protects the king, or its range is not from 1 to 7.
+    BadShield(usize),
 }
 
 impl std::fmt::Display for RulesError {
@@ -392,6 +411,7 @@ impl std::fmt::Display for RulesError {
             RulesError::NoPromotion => write!(f, "The list of promotion kinds is empty"),
             RulesError::KingMakesEnPassant => write!(f, "An atom of the king makes en passant squares"),
             RulesError::BadCastle(index) => write!(f, "The castle at index {index} is not valid"),
+            RulesError::BadShield(index) => write!(f, "The shield at index {index} is not valid"),
             RulesError::BadHook(kind) => write!(f, "A hook of kind {} is not valid", kind.letter()),
             RulesError::BadCondition(kind) => {
                 write!(f, "An atom of kind {} has a condition that is not valid", kind.letter())
@@ -430,6 +450,7 @@ impl SideRules {
                 KindRules { atoms: vec![Atom::leap(&KING, Both)], promotion: None, hooks: Vec::new() },
             ],
             castles: Castle::STANDARD.to_vec(),
+            shields: Vec::new(),
         }
     }
 
@@ -454,6 +475,12 @@ impl SideRules {
     /// Adds a hook to the movement of a kind.
     pub fn with_hook(mut self, kind: Kind, hook: Hook) -> SideRules {
         self.kinds[kind.index()].hooks.push(hook);
+        self
+    }
+
+    /// Adds a shield.
+    pub fn with_shield(mut self, shield: Shield) -> SideRules {
+        self.shields.push(shield);
         self
     }
 
@@ -583,6 +610,11 @@ impl SideRules {
                 if !plain || !legs || hook.bends.iter().any(|&(leg, last)| !on_board(leg) || !on_board(last)) {
                     return Err(RulesError::BadHook(kind));
                 }
+            }
+        }
+        for (index, shield) in self.shields.iter().enumerate() {
+            if shield.protected == Kind::King || !(1..=7).contains(&shield.range) {
+                return Err(RulesError::BadShield(index));
             }
         }
         for (index, castle) in self.castles.iter().enumerate() {

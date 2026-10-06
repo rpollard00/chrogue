@@ -12,8 +12,8 @@ use chrogue_engine::movegen::{evasion_moves, evasion_squares, may_give_check};
 use chrogue_engine::rules::{ALFIL, CAMEL, DABBABA, DIAG, FORWARD, KING, KNIGHT, ORTHO};
 use chrogue_engine::{
     Atom, Castle, Color, Hook, Kind, Mode, Move, MoveList, Outcome, Piece, Placement, Promotion, Promotions, Rules,
-    RulesError, SideRules, Special, Square, State, StateError, Tables, in_check, is_attacked, is_legal, legal_moves,
-    moves_from, outcome, perft, pseudo_moves,
+    RulesError, Shield, SideRules, Special, Square, State, StateError, Tables, in_check, is_attacked, is_legal,
+    legal_moves, moves_from, outcome, perft, pseudo_moves,
 };
 use common::{from_fen, legal, squares, targets, targets_from};
 
@@ -107,6 +107,45 @@ fn a_hook_of_black_is_the_mirror_of_the_hook_of_white() {
     assert_eq!(targets(&mut state, "a8"), squares(&["b7", "b6"]));
     // A hook that only moves attacks no square.
     assert!(!is_attacked(&state, square("b7"), Color::Black));
+}
+
+/// The pawns of Black next to a bishop of Black cannot be captured.
+fn blessed_black() -> Rules {
+    let shield = Shield { protector: Kind::Bishop, protected: Kind::Pawn, range: 1 };
+    Rules::new(SideRules::standard(), SideRules::standard().with_shield(shield))
+}
+
+#[test]
+fn a_pawn_next_to_its_bishop_cannot_be_captured() {
+    // The rook on d1 cannot capture the pawn on d5: the bishop on d6 is next to the pawn.
+    let mut state = from_fen("4k3/8/3b4/3p4/8/8/8/3RK3", Color::White, blessed_black());
+    assert_eq!(targets(&mut state, "d1"), squares(&["a1", "b1", "c1", "d2", "d3", "d4"]));
+    let mut plain = from_fen("4k3/8/3b4/3p4/8/8/8/3RK3", Color::White, Rules::standard());
+    assert!(targets(&mut plain, "d1").contains(&square("d5")));
+    // The pawn on a5 is not next to a bishop, and the bishop has no shield.
+    let mut state = from_fen("4k3/8/3b4/p7/8/8/8/R2RK3", Color::White, blessed_black());
+    assert!(targets(&mut state, "a1").contains(&square("a5")));
+    let mut state = from_fen("4k3/8/3b4/8/8/8/8/3RK3", Color::White, blessed_black());
+    assert!(targets(&mut state, "d1").contains(&square("d6")));
+    // The shield is for Black only.
+    let mut state = from_fen("3rk3/8/8/8/3P4/3B4/8/4K3", Color::Black, blessed_black());
+    assert!(targets(&mut state, "d8").contains(&square("d4")));
+
+    // A pawn with a shield gives check, and the king cannot capture it.
+    let mut state = from_fen("4k3/8/3b4/3p4/4K3/8/8/8", Color::White, blessed_black());
+    assert!(in_check(&state, Color::White));
+    assert!(!targets(&mut state, "e4").contains(&square("d5")));
+    let mut plain = from_fen("4k3/8/3b4/3p4/4K3/8/8/8", Color::White, Rules::standard());
+    assert!(targets(&mut plain, "e4").contains(&square("d5")));
+
+    // An en passant capture cannot take a pawn with a shield.
+    let mut state = from_fen("4k3/3p4/2b5/4P3/8/8/8/4K3", Color::Black, blessed_black());
+    let double = legal(&mut state).into_iter().find(|m| m.special == Special::DoubleStep).expect("the double step");
+    state.make(double);
+    assert!(legal(&mut state).iter().all(|m| m.special != Special::EnPassant));
+    let mut plain = from_fen("4k3/3p4/2b5/4P3/8/8/8/4K3", Color::Black, Rules::standard());
+    plain.make(double);
+    assert!(legal(&mut plain).iter().any(|m| m.special == Special::EnPassant));
 }
 
 #[test]
@@ -463,6 +502,14 @@ fn rules_and_states_that_are_not_valid_give_an_error() {
         .with_atom(Kind::Rook, Atom::leap(&KNIGHT, Mode::MoveOnly).if_unmoved())
         .with_hook(Kind::Rook, hook(1, 7));
     assert_eq!(first_move.validate(), Err(RulesError::BadHook(Kind::Rook)));
+
+    // A shield cannot protect the king, and its range is from 1 to 7.
+    let shield =
+        |protected, range| SideRules::standard().with_shield(Shield { protector: Kind::Bishop, protected, range });
+    assert!(shield(Kind::Pawn, 7).validate().is_ok());
+    for bad in [shield(Kind::King, 1), shield(Kind::Pawn, 0), shield(Kind::Pawn, 8)] {
+        assert_eq!(bad.validate(), Err(RulesError::BadShield(0)));
+    }
 
     // An officer can have an atom that makes en passant squares.
     let rook = SideRules::standard().with_atom(Kind::Rook, Atom::slide(&ORTHO, Mode::MoveOnly).makes_en_passant());

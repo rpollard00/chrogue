@@ -3,7 +3,7 @@
 //! The naive generator in this file reads the rules data directly. It walks the offsets square
 //! by square and uses no table of the engine. It follows the rules of `core/README.md`: the
 //! groups of atoms, the steps of an atom, the two kinds of condition, en passant, the promotion, the clock,
-//! the hooks, and the castle rows. For each random rule set and position, the test compares all the pseudo
+//! the hooks, the shields, and the castle rows. For each random rule set and position, the test compares all the pseudo
 //! moves (of the pawns too), the castles, and the attacked squares of the two colors, also after
 //! each move that makes en passant squares. A second test walks the move tree, compares each
 //! `make` with a naive `make`, and makes sure that `unmake` gives back the full state and the
@@ -16,7 +16,7 @@ use chrogue_engine::rng::Rng;
 use chrogue_engine::zobrist::key_from_scratch;
 use chrogue_engine::{
     Atom, Bitboard, Castle, Color, Condition, Hook, Kind, Mode, Move, MoveList, Offset, Piece, Placement, Promotion,
-    Promotions, Rules, SideRules, Special, Square, State, in_check, is_attacked, legal_moves, pseudo_moves,
+    Promotions, Rules, Shield, SideRules, Special, Square, State, in_check, is_attacked, legal_moves, pseudo_moves,
 };
 
 /// The number of rule sets of the comparison with the naive generator.
@@ -189,7 +189,17 @@ fn random_side(rng: &mut Rng) -> SideRules {
         1 => random_castles(rng),
         _ => Castle::STANDARD.to_vec(),
     };
-    let side = side.with_castles(castles);
+    let mut side = side.with_castles(castles);
+    if rng.below(4) == 0 {
+        for _ in 0..1 + rng.below(2) {
+            let protected = Kind::ALL[rng.below(5) as usize];
+            side = side.with_shield(Shield {
+                protector: Kind::ALL[rng.below(6) as usize],
+                protected,
+                range: 1 + rng.below(2) as u8,
+            });
+        }
+    }
     side.validate().expect("the random rules are valid");
     side
 }
@@ -297,6 +307,19 @@ fn usable(state: &State, from: Square, atom: &Atom, piece: Piece) -> bool {
     }
 }
 
+/// True if the piece on `s` has a shield: another piece of its side of the protector kind is in
+/// the range.
+fn has_shield(state: &State, s: Square) -> bool {
+    let Some(piece) = state.piece_at(s) else { return false };
+    state.rules().side(piece.color).shields.iter().filter(|shield| shield.protected == piece.kind).any(|shield| {
+        (0..64).any(|other: Square| {
+            let near = (other % 8).abs_diff(s % 8) <= shield.range && (other / 8).abs_diff(s / 8) <= shield.range;
+            let protector = |p: Piece| p.color == piece.color && p.kind == shield.protector;
+            other != s && near && state.piece_at(other).is_some_and(protector)
+        })
+    })
+}
+
 /// The rank of a square from the view of a color.
 fn view_rank(s: Square, color: Color) -> u8 {
     if color == Color::White { s / 8 } else { 7 - s / 8 }
@@ -336,6 +359,8 @@ fn naive_piece_moves(state: &State, from: Square, piece: Piece, captures_only: b
     let forward = color.forward();
     let rules = state.rules().side(color).kind(piece.kind);
     let foe = |p: &Option<Piece>| p.is_some_and(|p| p.color != color);
+    // A piece with a shield cannot be captured.
+    let open = |s: Square| !has_shield(state, s);
     let promotes = |to: Square| {
         rules.promotion.is_some_and(|promotion| {
             view_rank(to, color) >= 7 - promotion.distance && view_rank(to, color) >= view_rank(from, color)
@@ -363,7 +388,7 @@ fn naive_piece_moves(state: &State, from: Square, piece: Piece, captures_only: b
 
     // The en passant squares where a group can capture.
     let ep = state.ep_squares();
-    let victim_is_foe = ep != 0 && foe(&state.piece_at(state.ep_victim()));
+    let victim_is_foe = ep != 0 && foe(&state.piece_at(state.ep_victim())) && open(state.ep_victim());
     let ep_targets = |atoms: &[&Atom]| -> Vec<Square> {
         let mut targets = Vec::new();
         for atom in atoms.iter().filter(|atom| atom.captures_en_passant && atom.mode.can_capture()) {
@@ -386,7 +411,7 @@ fn naive_piece_moves(state: &State, from: Square, piece: Piece, captures_only: b
         for atom in atoms {
             for reached in walk(state, from, atom, forward) {
                 let quiet = reached.piece.is_none() && atom.mode.can_move();
-                let capture = foe(&reached.piece) && atom.mode.can_capture();
+                let capture = foe(&reached.piece) && open(reached.to) && atom.mode.can_capture();
                 if !quiet && !capture {
                     continue;
                 }
@@ -420,7 +445,7 @@ fn naive_piece_moves(state: &State, from: Square, piece: Piece, captures_only: b
     for hook in &rules.hooks {
         for to in hook_targets(state, from, hook, forward) {
             let piece = state.piece_at(to);
-            let capture = foe(&piece) && hook.mode.can_capture();
+            let capture = foe(&piece) && open(to) && hook.mode.can_capture();
             let quiet = piece.is_none() && hook.mode.can_move() && !captures_only;
             if (quiet || capture) && given.insert(to) {
                 push(moves, to, Special::None);

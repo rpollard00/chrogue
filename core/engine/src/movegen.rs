@@ -79,7 +79,31 @@ fn condition_anchors(state: &State, condition: Condition, color: Color, s: Squar
     }
 }
 
-/// True if a piece of side `by` attacks the square. An attack is a move that can capture there.
+/// The pieces of `color` that the enemy cannot capture: the pieces with a shield of the side
+/// (`Shield`).
+pub fn shielded(state: &State, color: Color) -> Bitboard {
+    let mut set = 0;
+    for shield in &state.rules().side(color).shields {
+        let mut protectors = state.pieces(color, shield.protector);
+        let mut zone = 0;
+        while protectors != 0 {
+            zone |= Condition::near_zone(pop_square(&mut protectors), shield.range);
+        }
+        set |= zone & state.pieces(color, shield.protected);
+    }
+    set
+}
+
+/// The pieces that a piece of `color` can capture: the pieces of the other side with no shield.
+#[inline(always)]
+fn capturable(state: &State, color: Color) -> Bitboard {
+    let them = color.other();
+    let foes = state.color_set(them);
+    if state.rules().side(them).shields.is_empty() { foes } else { foes & !shielded(state, them) }
+}
+
+/// True if a piece of side `by` attacks the square. An attack is a move that can capture there,
+/// or that could capture there if the piece on the square had no shield.
 pub fn is_attacked(state: &State, s: Square, by: Color) -> bool {
     let side = state.tables().side(by);
     let theirs = state.color_set(by);
@@ -508,7 +532,7 @@ fn add_kind_moves(
     }
     let steps = &side.always[kind.index()];
     let occupied = state.occupied();
-    let foes = state.color_set(color.other());
+    let foes = capturable(state, color);
     while pieces != 0 {
         let from = pop_square(&mut pieces);
         let (quiets, captures) = step_targets(steps, from, occupied, foes);
@@ -532,7 +556,7 @@ fn add_group_kind_moves(
     list: &mut MoveList,
 ) {
     let occupied = state.occupied();
-    let foes = state.color_set(color.other());
+    let foes = capturable(state, color);
     let ep = state.ep_squares();
     let en_passant = ep != 0 && tables.captures_en_passant && foes & bit(state.ep_victim()) != 0;
     while pieces != 0 {

@@ -91,6 +91,14 @@ A kind can also have hooks (`KindRules::hooks`). A `Hook` is a slide that turns:
 - A hook that can capture attacks its targets, thus it gives check. A piece on a square of the leg stops the check.
 - Only a kind with no promotion, and with atoms that have no condition and no en passant property, can have a hook (`RulesError::BadHook`).
 
+### Shields
+
+A side can have shields (`SideRules::shields`). A `Shield` has a `protector` kind, a `protected` kind, and a `range` from 1 to 7. The enemy cannot capture a piece of the protected kind while another piece of its side of the protector kind is `range` squares away or less, as a king counts squares. This is also true for an en passant capture.
+
+- The king cannot be the protected kind (`RulesError::BadShield`).
+- A shield does not change the attacked squares. `is_attacked` is true for the square of a piece with a shield that an enemy piece could capture with no shield. Thus a piece gives check through a piece with a shield, and a king cannot go next to such a piece on a square that the piece attacks.
+- `movegen::shielded` gives the pieces of a side that have a shield. The threat term of the evaluation does not count such a piece.
+
 ### Promotion
 
 `KindRules::promotion` is `None` or a `Promotion`: the distance of the zone from the last rank (0 is ordinary chess, at most 6; with 6 the zone starts on the second rank, thus a piece promotes on its first move forward) and the `Promotions` (one to four different kinds, not the pawn or the king). A move that ends in the zone gives one move for each promotion kind, in the order of the list. A move that goes backward never promotes. A move that promotes makes no en passant squares.
@@ -126,7 +134,7 @@ The six rule flags are edits of it:
 
 ### Add a movement rule
 
-1. Write the rule as an edit of `SideRules`: atoms, hooks, a promotion, or castles. Do not change `tables.rs` or `movegen.rs`.
+1. Write the rule as an edit of `SideRules`: atoms, hooks, shields, a promotion, or castles. Do not change `tables.rs` or `movegen.rs`.
 2. If the game needs a name for the rule, add a method to `SideRules` in `engine/src/rules.rs`.
 3. Add a test to `engine/tests/data_rules.rs` or `engine/tests/data_moves.rs` for the moves and for the check that the rule gives.
 

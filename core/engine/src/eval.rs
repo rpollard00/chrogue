@@ -42,7 +42,7 @@
 
 use std::sync::Arc;
 
-use crate::movegen::{piece_attacks, piece_reach};
+use crate::movegen::{piece_attacks, piece_reach, shielded};
 use crate::outcome::CLOCK_LIMIT;
 use crate::rules::{Atom, Condition, KindRules, Rules, SideRules};
 use crate::search::MATE_BOUND;
@@ -518,6 +518,8 @@ impl Evaluator {
                 let c = color.index();
                 let (own, foe) = (&self.sides[c], &self.sides[1 - c]);
                 let undefended = attacks[1 - c] & !attacks[c];
+                // The enemy cannot capture a piece with a shield.
+                let safe = if self.tables.rules().side(color).shields.is_empty() { 0 } else { shielded(state, color) };
                 for kind in [Kind::Pawn, Kind::Knight, Kind::Bishop, Kind::Rook, Kind::Queen] {
                     let value = own.value[kind.index()];
                     let mut danger = undefended;
@@ -526,7 +528,7 @@ impl Evaluator {
                             danger |= attacks_by[1 - c][attacker.index()];
                         }
                     }
-                    let threatened = (state.pieces(color, kind) & danger).count_ones() as i32;
+                    let threatened = (state.pieces(color, kind) & danger & !safe).count_ones() as i32;
                     score[c] -= threatened * value / THREAT_DIVISOR;
                 }
             }

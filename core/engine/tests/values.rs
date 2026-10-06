@@ -262,3 +262,15 @@ fn the_evaluation_is_never_the_score_of_a_win() {
         assert!(score.abs() < MATE_BOUND, "{turn:?}: the evaluation is {score}");
     }
 }
+
+#[test]
+fn the_threat_term_does_not_count_a_piece_with_a_shield() {
+    // The rook on d1 attacks the pawn on d5, and no piece of Black defends the pawn.
+    let score = |black: SideRules| {
+        let state =
+            fen::from_fen("4k3/8/3b4/3p4/8/8/8/3RK3", Color::White, Rules::new(SideRules::standard(), black)).unwrap();
+        Evaluator::new(&state, EvalVariant::Derived).evaluate(&state)
+    };
+    let shield = chrogue_engine::Shield { protector: Kind::Bishop, protected: Kind::Pawn, range: 1 };
+    assert!(score(SideRules::standard().with_shield(shield)) < score(SideRules::standard()));
+}
