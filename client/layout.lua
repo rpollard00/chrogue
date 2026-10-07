@@ -47,14 +47,14 @@ layout.edge = layout.px(8)
   rule: a set layout"). The comments name these areas.
 ]]
 
--- The menu of a screen between runs: a raised bar, the primary key with the full width, and two keys in a row.
+-- The menu of a screen between runs: a raised bar, the primary key with the full width, and a row of keys.
+-- The row has two set arrangements: three keys (`row`), or two keys that fill the row (`pair`).
 local function menu(y)
   return {
     bar = rect(24.5, y, 31, 8.8),
     primary = rect(25.6, y + 1.1, 28.8, 3.3),
-    left = rect(25.6, y + 5.3, 14.05, 2.25),
-    right = rect(40.35, y + 5.3, 14.05, 2.25),
-    full = rect(25.6, y + 5.3, 28.8, 2.25),
+    row = { rect(25.6, y + 5.3, 9.13, 2.25), rect(35.435, y + 5.3, 9.13, 2.25), rect(45.27, y + 5.3, 9.13, 2.25) },
+    pair = { rect(25.6, y + 5.3, 14.05, 2.25), rect(40.35, y + 5.3, 14.05, 2.25) },
   }
 end
 

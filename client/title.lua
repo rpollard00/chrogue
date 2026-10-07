@@ -21,17 +21,22 @@ function title:refused(view) self.view = view end
 function title:update(dt) self.time = self.time + dt end
 function title:settled() return true end
 
--- The keys of the menu: name, label, rectangle, kind.
+-- The keys of the menu: name, label, rectangle, kind. With no saved run, the row has two keys that fill it.
 function title:keys()
   local v, m = self.view, L.menu
   if v.can_continue and v.run then
     return {
       { 'continueRun', ('Continue run (floor %d)'):format(v.run.floor), m.primary, 'primary' },
-      { 'newRun', 'New run', m.left, 'key' },
-      { 'upgrades', 'Upgrades', m.right, 'key' },
+      { 'upgrades', 'Upgrades', m.row[1], 'key' },
+      { 'relics', 'Relics', m.row[2], 'key' },
+      { 'newRun', 'New run', m.row[3], 'key' },
     }
   end
-  return { { 'newRun', 'New run', m.primary, 'primary' }, { 'upgrades', 'Upgrades', m.full, 'key' } }
+  return {
+    { 'newRun', 'New run', m.primary, 'primary' },
+    { 'upgrades', 'Upgrades', m.pair[1], 'key' },
+    { 'relics', 'Relics', m.pair[2], 'key' },
+  }
 end
 
 function title:hit(x, y)
@@ -51,6 +56,7 @@ function title:activate(name)
   if app.waiting() then return end
   if name == 'continueRun' then app.send({ cmd = 'continue_run' })
   elseif name == 'upgrades' then app.send({ cmd = 'open_upgrades' })
+  elseif name == 'relics' then app.send({ cmd = 'open_relics' })
   elseif name == 'newRun' then
     -- A new run replaces the saved run, with no crowns for it. Thus the game asks first.
     if self.view.can_continue then app.confirm(text.NEW_RUN, function() app.send({ cmd = 'new_run' }) end)

@@ -24,21 +24,23 @@ function over:refused(view) self.view = view end
 function over:update(dt) self.time = self.time + dt end
 function over:settled() return self.time > TALLY_START + 1.5 end
 
+-- The keys of the menu: name, label, rectangle, kind.
 local KEYS = {
-  { 'newRun', 'New run', 'primary', 'primary' },
-  { 'upgrades', 'Upgrades', 'left', 'key' },
-  { 'title', 'Title', 'right', 'key' },
+  { 'newRun', 'New run', L.menu.primary, 'primary' },
+  { 'upgrades', 'Upgrades', L.menu.row[1], 'key' },
+  { 'relics', 'Relics', L.menu.row[2], 'key' },
+  { 'title', 'Title', L.menu.row[3], 'key' },
 }
 
 function over:hit(x, y)
   for _, k in ipairs(KEYS) do
-    if layout.contains(L.menu[k[3]], x, y) then return k[1] end
+    if layout.contains(k[3], x, y) then return k[1] end
   end
 end
 
 function over:control(name)
   for _, k in ipairs(KEYS) do
-    if k[1] == name then return L.menu[k[3]] end
+    if k[1] == name then return k[3] end
   end
 end
 
@@ -47,6 +49,7 @@ function over:activate(name)
   if app.waiting() then return end
   if name == 'newRun' then app.send({ cmd = 'new_run' })
   elseif name == 'upgrades' then app.send({ cmd = 'open_upgrades' })
+  elseif name == 'relics' then app.send({ cmd = 'open_relics' })
   elseif name == 'title' then app.send({ cmd = 'to_title' }) end
 end
 
@@ -130,7 +133,7 @@ function over:draw(pointer)
   end
   local m = L.menu
   gfx.raised(m.bar.x, m.bar.y, m.bar.w, m.bar.h, px(12))
-  for _, k in ipairs(KEYS) do ui.key(m[k[3]], k[2], k[4], ui.state(pointer, k[1])) end
+  for _, k in ipairs(KEYS) do ui.key(k[3], k[2], k[4], ui.state(pointer, k[1])) end
 end
 
 function over:state() return { heading = self.view.summary.won and 'The Black King falls' or 'Your king fell' } end

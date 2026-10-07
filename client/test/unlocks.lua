@@ -1,5 +1,6 @@
 --[[
-  The relics screen, at 1440 by 900.
+  The relics screen and the menu keys that open it, at 1440 by 900.
+  - The menu of the title with no saved run and with a saved run, and the menu at the end of a run: a row of three keys, or of two keys that fill it.
   - A new save: 8 relics of 27. A slot of a relic that crowns buy, a slot of a relic of a feat, and a slot of a relic
     that the player has.
   - A purchase with the key and a purchase with Enter. The purse counts down, and the slot shows the relic.
@@ -35,8 +36,11 @@ local crownSlot, featSlot, secondSlot, longSlot = { 'press', 'slot', 1 }, { 'pre
 local cost, secondCost
 
 return {
-  { 'screen', 'title' },
-  { 'send', { cmd = 'open_relics' } }, { 'screen', 'relics' },
+  { 'screen', 'title' }, { 'wait', 0.3 }, shot('title-new'),
+  expect('the title with no saved run has two keys in the row', function(v, c)
+    return not v.can_continue and table.concat(c.keys, ', ') == 'New run, Upgrades, Relics', table.concat(c.keys, ', ')
+  end),
+  { 'press', 'relics' }, { 'screen', 'relics' },
   expect('a new save has the 8 starter relics, and slot 1 is selected', function(v, c)
     crownSlot[3] = first(v, function(s) return field(s, 'cost') end)
     featSlot[3] = first(v, function(s) return field(s, 'feat') end)
@@ -79,6 +83,21 @@ return {
     return v.unlocked == 10 and v.meta.crowns == 10 - cost - secondCost and v.slots[c.selected].unlocked and c.selected == secondSlot[3]
   end),
 
+  { 'press', 'back' }, { 'screen', 'title' },
+
+  -- The title with a saved run, and the end of a run.
+  { 'press', 'newRun' }, { 'screen', 'battle' },
+  { 'send', { cmd = 'to_title' } }, { 'screen', 'title' }, { 'wait', 0.3 }, shot('title-saved'),
+  expect('the title with a saved run has three keys in the row', function(v, c)
+    return v.can_continue and table.concat(c.keys, ', ') == 'Continue run (floor 1), Upgrades, Relics, New run', table.concat(c.keys, ', ')
+  end),
+  { 'press', 'continueRun' }, { 'screen', 'battle' }, { 'wait', 2 },
+  { 'press', 'giveUp' }, { 'press', 'ok' }, { 'screen', 'over' }, { 'wait', 0.5 }, shot('over'),
+  { 'press', 'relics' }, { 'screen', 'relics' },
+  expect('the relics screen opens from the end of a run, with the first relic that the player can buy', function(v, c)
+    return v.unlocked == 10 and c.selected == first(v, function(s) return s.affordable end) and c.canBuy, tostring(c.selected)
+  end),
+
   -- Each relic unlocked. The ids of the locked relics come from `hello`: the view of the screen does not have them.
   { 'send', { cmd = 'hello' } }, { 'response' },
   expect('the test unlocks each relic', function(v, c, app)
@@ -97,5 +116,6 @@ return {
   end),
   longSlot, { 'hover', 'none' }, { 'wait', 0.1 }, shot('all'), dump('all'),
   { 'press', 'back' }, { 'screen', 'title' },
+  expect('Back goes to the title', function(v) return v.screen == 'title' and not v.can_continue end),
   { 'quit' },
 }

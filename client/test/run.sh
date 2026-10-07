@@ -42,6 +42,7 @@ run --size 1440x900 --seed 7 --debug --no-save --script "$here/test/denied.lua"
 # The debug menu. The run has no --debug: the core accepts the debug commands unless the game gets --no-debug.
 run --size 1280x720 --seed 7 --no-save --script "$here/test/debug.lua"
 run --size 1280x720 --seed 7 --no-save --script "$here/test/relics.lua"
+run --size 1440x900 --seed 7 --no-save --script "$here/test/unlocks.lua"
 run --size 1280x720 --no-save --script "$here/test/icons.lua"
 # The core in the process of the game: the same session with no socket and no core program. Then a saved run: the
 # first game starts a battle and quits, and a second game on the same save folder continues the run.
