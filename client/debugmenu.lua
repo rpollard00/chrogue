@@ -31,7 +31,7 @@ local ROW = 2.6
 
 --[[
   The set layout of the menu, in stage units. The panel is in the center of the stage. Each tab has the rectangles of its
-  largest content: 28 relics, 8 floors, 5 kinds, the 16 upgrades of the medal board, and 11 backgrounds.
+  largest content: 28 relics, 8 floors, 5 kinds, the 16 upgrades of the medal board, 11 backgrounds, and 2 post passes.
 ]]
 local L = {
   panel = rect(4, 2.5, 72, 40),
@@ -102,6 +102,11 @@ local L = {
     modeHead = rect(52, 7.5, 20, 1),
     mode = { x = 52, w = 13 },
     modeNote = rect(52, 17.2, 22.75, 2.25),
+    postHead = rect(52, 21, 20, 1),
+    -- Two rows: the key of a post pass (it has space for "Rear projection"), and its note below the key.
+    posts = 2, postsY = 22.5, postStep = 4.4,
+    post = { x = 52, w = 13 },
+    postNote = { x = 52, w = 22.75 },
   },
 }
 
@@ -548,6 +553,14 @@ function BUILD.effects(self, items)
       { on = shaders.mode == i, sends = false, act = function() shaders.mode = i end })
   end
   label(items, 'With all off, the game shows no background.', E.modeNote, { size = 0.85, color = C.dim })
+  kicker(items, 'Screen', E.postHead)
+  for i, post in ipairs(shaders.POSTS) do
+    if i > E.posts then break end
+    local y = E.postsY + (i - 1) * E.postStep
+    key(items, 'post', post.id, rect(E.post.x, y, E.post.w, 2.25), post.label,
+      { on = shaders.post == post.id, sends = false, act = function() shaders.setPost(post.id) end })
+    label(items, post.note, rect(E.postNote.x, y + 2.25, E.postNote.w, 1.6), { size = 0.85, color = C.dim })
+  end
 end
 
 -- The elements of the menu: the tabs, the Close key, and the elements of the current tab. Each element has `rect` and

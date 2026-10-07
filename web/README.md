@@ -74,7 +74,7 @@ A new build has a new stamp. Thus a browser does not use `love.wasm` of an old b
 
 ## Options
 
-Five options of the client come from the address of the page: `seed`, `debug`, `no-save`, `script`, and `background`. `?seed=7&debug` is `--seed 7 --debug`. `../client/README.md` tells their functions. The page does not give the other options to the game: they are for a window or for a socket.
+Six options of the client come from the address of the page: `seed`, `debug`, `no-save`, `script`, `background`, and `post`. `?seed=7&debug` is `--seed 7 --debug`. `../client/README.md` tells their functions. The page does not give the other options to the game: they are for a window or for a socket.
 
 For the default local server, open `http://127.0.0.1:8000/?seed=7&debug` to use those page options.
 

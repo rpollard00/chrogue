@@ -33,6 +33,7 @@ The options come after the game folder. The client gives `--seed`, `--no-save`, 
 - `--script FILE`: a Lua file of test steps. See "Test scripts".
 - `--novsync`: no limit for the frames per second, for a measurement.
 - `--background NAME`: the background at the start. The names are the `id` values of `shaders.BACKGROUNDS` in `shaders.lua`, for example `walnut`. The default is `swirl`.
+- `--post NAME`: the post pass at the start. The names are the `id` values of `shaders.POSTS` in `shaders.lua`: `crt` and `projection`. The default is `crt`.
 
 ## Keys
 
@@ -55,7 +56,7 @@ The menu shows the debug state of the core (`../core/PROTOCOL.md`, "Debug state"
 - Relics: the heading shows the relics of the run against its relic slots. With no run, it shows the slots of new runs. One row for each relic. Owned gives the relic to the run or removes it. Offered permits or stops the relic as a reward, as a shop item, and as a boss trait. Trait gives the relic to the enemy or removes it. The pointer on a name shows the text of the relic. Offer all and Offer none change Offered for each relic.
 - Enemy: for each floor, the AI level, the budget of the enemy army, and the number of boss traits. For each kind of piece, the most pieces in an army, the weight, and the first floor. A click on a budget stepper with `Shift` changes the budget by 5. A value that differs from its default is amber. Defaults sets each number of this tab to its default.
 - Upgrades: the crowns, and the level of each upgrade.
-- Effects: the background, and the effects mode of `F1`. This tab changes the shaders of the client. It sends no command, and it works before the core gives its debug state. The backgrounds other than Swirl are experiments for the look of the game. The selection is not saved: the game starts with Swirl, or with the background of `--background`.
+- Effects: the background, the effects mode of `F1`, and the screen. This tab changes the shaders of the client. It sends no command, and it works before the core gives its debug state. The backgrounds other than Swirl are experiments for the look of the game. Screen selects the post pass: CRT is a tube screen with scan lines, and Rear projection is a flat screen with a hot zone and color bands. The picture of Rear projection is smaller than the window, and a dark border is around it. The game shows the post pass only in the mode "all on". The selections are not saved: the game starts with Swirl and CRT, or with the selections of `--background` and `--post`.
 
 A command that changes the run or the upgrades during a battle starts the battle again (`../core/PROTOCOL.md`, "Debug commands"). The settings of the Enemy tab, the seed of new runs, and Offered are not saved: a new core starts with the defaults.
 
@@ -146,11 +147,12 @@ The named controls are in the `control` function of each screen module and of `d
 - Dialog: `ok`, `cancel`.
 - Notice: `notice` (the number of the notice, from 1).
 - Debug menu: `debugChip` (the chip in the corner of the window, on each screen). While the menu is open, a step gets only the controls of the menu and of its current tab:
-  - `tab` (`'run'`, `'relics'`, `'enemy'`, or `'upgrades'`), `close`.
+  - `tab` (`'run'`, `'relics'`, `'enemy'`, `'upgrades'`, or `'effects'`), `close`.
   - Run: `useSeed`, `seedField`, `setSeed`, `randomSeed`, `newRun`, and the steppers `relicSlots`, `floor`, and `gold` (the side: `'-'` or `'+'`).
   - Relics: `owned`, `offered`, `trait`, and `name` (a relic id), `offerAll`, `offerNone`.
   - Enemy: the steppers `level`, `budget`, and `traits` (the floor and the side: `{ 3, '+' }`), the steppers `cap`, `weight`, and `minFloor` (the kind and the side: `{ 'q', '-' }`), `defaults`.
   - Upgrades: the steppers `crowns` (`'-'` or `'+'`) and `upgrade` (an upgrade id and the side: `{ 'pawn', '+' }`).
+  - Effects: `background` (a background id), `mode` (1 to 3), and `post` (a post pass id: `'crt'` or `'projection'`).
 
 `test/run.sh [folder]` runs all the scripts of `test/`. It writes the screenshots, the dumps, and the log to the folder (default `/tmp/chrogue-love4/run`). Each run opens a window for some seconds. With `CHROGUE_NO_AUTH=1`, each run has `--no-auth`.
 
@@ -166,7 +168,7 @@ The run fails if a game stops with an error, if the core refused a command that 
 - `test/battle.lua`: a battle that starts with no legal move, Give up during the pause before the enemy move, refusals of `enemy_move`, and a promotion to a knight.
 - `test/auras.lua`: the badges and the zones of the auras, at 1440 by 900. The badges agree with the view, they come and go with a move of the bishop, and the pointer on a medal or on a piece puts an aura in focus. It also shows the largest content: 32 pieces with badges, a check, a capture ring on a badge, and the last move.
 - `test/denied.lua`: the barred ring, at 1440 by 900. A selected rook attacks two pieces with a shield: the barred rings, the badges that pulse, and the lit medal. Escape, a click on a barred square, and the same for an enemy rook with Scout.
-- `test/debug.lua`: the debug menu. The chip and `F2`, two new runs with one seed, the stepper of the relic slots, Owned and Offered, a third trait and an 11th relic that the core refuses, a budget stepper, and an upgrade stepper.
+- `test/debug.lua`: the debug menu. The chip and `F2`, two new runs with one seed, the stepper of the relic slots, Owned and Offered, a third trait and an 11th relic that the core refuses, a budget stepper, an upgrade stepper, and the background, the post pass, and the mode of the Effects tab.
 - `test/relics.lua`: the relic slots and the discard of a relic in the camp. A relic card with "Relics full", the selection of a medal, Cancel and OK of the question, and the purchase of the card after the discard.
 - `test/saves.lua`: the notices of `save_failed` (a save folder that cannot take a file) and of `save_problem`.
 - `test/icons.lua`: the SVG path reader of `icons.lua`.
@@ -189,7 +191,7 @@ With `CHROGUE_EFFECTS=off`, `flow.lua` and `showcase.lua` start with the effects
 | `aura.lua` | The auras of the battle: the badge of a piece that has a boon, the zone of an aura in focus, and the pulse of a badge that refuses a capture |
 | `ui.lua` | The shared elements: keys, amounts, medals, cards, the paper tip, pips, tallies, and the dialog |
 | `debugmenu.lua` | The debug menu: a development tool above the layout |
-| `shaders.lua` | The background, the foil, and the post pass |
+| `shaders.lua` | The backgrounds, the foil, and the post passes (CRT and rear projection) |
 | `gfx.lua`, `icons.lua`, `theme.lua` | Surfaces, text, pieces, icons, colors, and typefaces |
 | `script.lua` | The test hook |
 | `test/` | The test scripts and `run.sh` |

@@ -1,6 +1,7 @@
 -- The three shaders of the experiment, and the canvases that they need.
 -- 1. background: the surface behind the layout. The swirl is the default. The debug menu selects a different one.
--- 2. post: the full scene goes to a canvas, and the canvas goes to the window through this shader.
+-- 2. post: the full scene goes to a canvas, and the canvas goes to the window through this shader. It gives the look
+--    of a screen. The tube screen (CRT) is the default. The debug menu selects a different one.
 -- 3. foil: a sheen on the relic medals and on the relic card. It moves with the time and with the pointer.
 local gfx = require('gfx')
 local theme = require('theme')
@@ -15,9 +16,6 @@ shaders.MODES = {
   { label = 'Effects: all off', name = 'All off', background = false, foil = false, post = false },
 }
 shaders.mode = 1
-
--- The curve of the screen in the post pass. The same value moves the pointer, thus a click goes to the thing that the player sees.
-local CURVE = 0.06
 
 -- OpenGL ES (a browser, a phone) gives a pixel shader floats of medium precision if the shader does not ask for more:
 -- about 3 digits. The noise of the background and the screen positions need more. LÖVE declares `effect` with medium
@@ -300,7 +298,7 @@ vec4 effect(mediump vec4 color, Image tex, mediump vec2 uv, mediump vec2 pixel) 
 }
 ]]
 
-local POST = PRECISION .. [[
+local CRT = PRECISION .. [[
 extern vec2 resolution;
 // The pixels of the window for each unit. A scan line has the same height on each screen.
 extern float scale;
@@ -324,17 +322,88 @@ vec4 effect(mediump vec4 color, Image tex, mediump vec2 uv, mediump vec2 pixel) 
 }
 ]]
 
--- The shader of each background that the game showed, by its id.
-local backgrounds = {}
-local foil, post
+--[[
+  An old rear projection set: three tubes behind a flat screen. The screen is bright in a wide zone at its middle, and
+  the color changes with the light: toward cyan in the zone, toward violet at the edges. Each term is small, thus the
+  text stays easy to read. The picture is smaller than the window. The border around it is the part of the screen that
+  gets no light: a flat, dark surface.
+]]
+local PROJECTION = PRECISION .. [[
+extern vec2 resolution;
+// The pixels of the window for each unit. A rib has the same width on each screen.
+extern float scale;
+extern float time;
+// The border, as a part of the window at each side.
+extern float inset;
+
+vec4 effect(mediump vec4 color, Image tex, mediump vec2 uv, mediump vec2 pixel) {
+  vec2 sc = love_PixelCoord;
+  // The point of the picture. The picture becomes smaller as one unit, with no curve.
+  float size = 1.0 - 2.0 * inset;
+  vec2 p = (uv - 0.5) / size + 0.5;
+  vec2 c = p - 0.5;
+  // One unit of the window, as a part of the picture.
+  vec2 unit = scale / resolution / size;
+  // The three tubes do not agree fully: the red and the blue are a part of a unit apart, and more near the sides.
+  vec2 apart = vec2(0.3 + 1.6 * c.x * c.x, 0.0) * unit;
+  vec3 col = vec3(Texel(tex, p + apart).r, Texel(tex, p).g, Texel(tex, p - apart).b);
+  // The picture is soft, and a bright shape has a light blue halo: six points around the pixel, the far ones at its
+  // sides. The halo is on the dark parts only.
+  vec3 soft = Texel(tex, p + vec2(1.5, 1.5) * unit).rgb + Texel(tex, p + vec2(-1.5, 1.5) * unit).rgb
+    + Texel(tex, p + vec2(1.5, -1.5) * unit).rgb + Texel(tex, p + vec2(-1.5, -1.5) * unit).rgb
+    + 0.75 * (Texel(tex, p + vec2(3.5, -0.5) * unit).rgb + Texel(tex, p + vec2(-3.5, 0.5) * unit).rgb);
+  soft /= 5.5;
+  vec3 weight = vec3(0.299, 0.587, 0.114);
+  col = mix(col, soft, 0.10) + vec3(0.62, 0.84, 1.0) * dot(soft, weight) * (1.0 - dot(col, weight)) * 0.16;
+  // The hot zone: a wide zone at the middle of the screen. The light falls off toward the top and the bottom, and less
+  // toward the sides.
+  float hot = exp(-(c.x * c.x * 1.3 + c.y * c.y * 5.0));
+  // A small number of wide, soft bands across the screen, and one bar that moves slowly.
+  float band = 0.6 * sin(p.y * 31.0 + 0.9) + 0.4 * sin(p.y * 73.0 + 2.1);
+  float hum = sin((p.y + time * 0.035) * 6.2831853);
+  float tone = clamp(hot + 0.22 * band, 0.0, 1.0);
+  // The bands are bands of color: cyan where the light is strong, violet where it is weak.
+  col *= mix(vec3(1.05, 0.91, 1.09), vec3(0.95, 1.04, 1.04), tone);
+  col *= 0.80 + 0.27 * hot + 0.030 * band + 0.010 * hum;
+  // The light of the tubes is also on the dark parts of the picture.
+  col += vec3(0.008, 0.020, 0.036) * tone;
+  // The fade: one band across the middle of the screen, from side to side, where the picture is pale.
+  float fade = exp(-c.y * c.y * 30.0) * (1.0 - 0.6 * c.x * c.x);
+  col += (1.0 - col) * vec3(0.060, 0.105, 0.130) * fade;
+  // The ribs of the screen: thin lines from the top to the bottom.
+  col *= 1.0 - 0.022 * (0.5 + 0.5 * sin(sc.x / scale * 6.2831853 / 3.0));
+  // The border: dark gray, and a small amount darker toward the corners of the window. A small part of the light of
+  // the picture goes across its edge.
+  vec2 w = uv - 0.5;
+  vec2 past = max(abs(c) - 0.5, 0.0) * size * resolution / scale;
+  vec3 border = vec3(0.040, 0.042, 0.050) * (1.0 - 0.5 * dot(w, w)) + col * 0.10 * exp(-length(past) * 0.22);
+  vec2 inside = smoothstep(vec2(0.0), vec2(1.5) / (resolution * size), p) * smoothstep(vec2(0.0), vec2(1.5) / (resolution * size), 1.0 - p);
+  return vec4(mix(border, col, inside.x * inside.y), 1.0);
+}
+]]
+
+-- The post passes, in the sequence of the debug menu. `curve` is the curve of the screen. `inset` is the border around
+-- the picture, as a part of the window at each side. The same values move the pointer, thus a click goes to the thing
+-- that the player sees.
+shaders.POSTS = {
+  { id = 'crt', label = 'CRT', note = 'The default: a tube with scan lines', source = CRT, curve = 0.06, inset = 0 },
+  { id = 'projection', label = 'Rear projection', note = 'A flat screen in a dark border, with color bands', source = PROJECTION,
+    curve = 0, inset = 0.03 },
+}
+shaders.post = 'crt'
+
+-- The shader of each background and of each post pass that the game showed, by its id.
+local backgrounds, posts = {}, {}
+local foil
 local scene, msaa
+-- The time of the frame, for the post pass.
+local now = 0
 -- The pixels of a canvas for each unit of the window, in each direction.
 local density = 1
 local pool = {}
 
 function shaders.load()
   foil = lg.newShader(FOIL)
-  post = lg.newShader(POST)
   msaa = math.min(4, lg.getSystemLimits().canvasmsaa)
 end
 
@@ -359,15 +428,20 @@ function shaders.current() return shaders.MODES[shaders.mode] end
 
 function shaders.cycle() shaders.mode = shaders.mode % #shaders.MODES + 1 end
 
-local function byId(id)
-  for _, entry in ipairs(shaders.BACKGROUNDS) do
+local function byId(list, id)
+  for _, entry in ipairs(list) do
     if entry.id == id then return entry end
   end
 end
 
 function shaders.setBackground(id)
-  assert(byId(id), 'No background ' .. tostring(id))
+  assert(byId(shaders.BACKGROUNDS, id), 'No background ' .. tostring(id))
   shaders.background = id
+end
+
+function shaders.setPost(id)
+  assert(byId(shaders.POSTS, id), 'No post pass ' .. tostring(id))
+  shaders.post = id
 end
 
 -- A background gets its shader when the game shows it for the first time.
@@ -375,14 +449,26 @@ local function backgroundShader()
   local id = shaders.background
   local shader = backgrounds[id]
   if not shader then
-    shader = lg.newShader(byId(id).source)
+    shader = lg.newShader(byId(shaders.BACKGROUNDS, id).source)
     if shader:hasUniform('path') then shader:send('path', unpack(TOUR_PATH)) end
     backgrounds[id] = shader
   end
   return shader
 end
 
+-- A post pass gets its shader when the game shows it for the first time.
+local function postShader()
+  local entry = byId(shaders.POSTS, shaders.post)
+  local shader = posts[entry.id]
+  if not shader then
+    shader = lg.newShader(entry.source)
+    posts[entry.id] = shader
+  end
+  return shader, entry
+end
+
 function shaders.beginScene(time)
+  now = time
   lg.setCanvas({ scene, stencil = true })
   lg.clear(0.082, 0.090, 0.110, 1)
   if shaders.current().background then
@@ -401,9 +487,12 @@ function shaders.endScene()
   lg.setColor(1, 1, 1, 1)
   lg.setBlendMode('alpha', 'premultiplied')
   if shaders.current().post then
+    local post, entry = postShader()
     post:send('resolution', { lg.getPixelDimensions() })
     post:send('scale', lg.getDPIScale())
-    post:send('curve', CURVE)
+    if post:hasUniform('curve') then post:send('curve', entry.curve) end
+    if post:hasUniform('time') then post:send('time', now) end
+    if post:hasUniform('inset') then post:send('inset', entry.inset) end
     lg.setShader(post)
   end
   lg.draw(scene)
@@ -448,9 +537,12 @@ function shaders.foil(area, time, pointerX, pointerY, strength, draw)
   lg.setShader()
 end
 
+-- The curve and the border of the post pass in use move a point. With no curve and no border, the point stays.
+-- A point in the border goes to a point outside the scene.
 local function warp(x, y)
+  local entry = byId(shaders.POSTS, shaders.post)
   local cx, cy = x - 0.5, y - 0.5
-  local k = (1 + CURVE * (cx * cx + cy * cy)) / (1 + CURVE * 0.25)
+  local k = (1 + entry.curve * (cx * cx + cy * cy)) / (1 + entry.curve * 0.25) / (1 - 2 * entry.inset)
   return 0.5 + cx * k, 0.5 + cy * k
 end
 

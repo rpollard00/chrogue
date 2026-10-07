@@ -281,6 +281,7 @@ local function parse(args)
     elseif name == '--no-auth' then options.noAuth = true
     elseif name == '--embed' then options.embed = true
     elseif name == '--background' then shaders.setBackground(value())
+    elseif name == '--post' then shaders.setPost(value())
     end
     i = i + 1
   end
@@ -518,6 +519,7 @@ function app.dump()
     measurements = app.measurements or {},
     effects = shaders.current().label,
     background = shaders.background,
+    post = shaders.post,
     window = { width = lg.getWidth(), height = lg.getHeight(), unit = gfx.u },
     fps = { now = love.timer.getFPS(), average = app.frames.count / math.max(seconds, 0.001), frames = app.frames.count,
       seconds = seconds, worstFrameMs = app.frames.worstMs, worstWorkMs = app.frames.worstWorkMs or 0,
