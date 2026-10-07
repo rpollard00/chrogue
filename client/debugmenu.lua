@@ -1,7 +1,7 @@
 --[[
   The debug menu: a development tool. It is above the layout, as a dialog is, and it is not a part of the interface of the
-  game. It changes the relics, the AI levels, the enemy armies, the seed of a run, and the upgrades with the debug commands
-  of the core (core/PROTOCOL.md, "Debug commands").
+  game. It changes the relics, the AI levels, the enemy armies, the seed of a run, the upgrades, and the relics that the
+  player unlocked with the debug commands of the core (core/PROTOCOL.md, "Debug commands").
   The menu draws only the state of the core: the debug state of the responses (`data.debug`) and the content of `hello`.
   It has no game rules, and the limits of its numbers come from the core. Each control sends one command.
   The Effects tab is different: it changes the shaders of the client, and it sends no command.
@@ -89,6 +89,8 @@ local L = {
   upgrades = {
     crownsLabel = rect(5.25, 7.5, 5, 2.25),
     crowns = rect(10.5, 7.5, 10.5, 2.25),
+    unlockAll = rect(22.5, 7.5, 10.2, 2.25),
+    lockAll = rect(33.2, 7.5, 9.2, 2.25),
     -- Two columns of 8 rows: the 16 slots of the medal board. The stepper has space for "3 of 3".
     perColumn = 8,
     level = { w = 10 },
@@ -225,7 +227,7 @@ end
 -- Starts a new run from each screen, with no question: the commands that go to the title, then new_run.
 function menu:newRun()
   local name = self.app.name
-  if name == 'upgrades' then self:send({ cmd = 'back' })
+  if name == 'upgrades' or name == 'relics' then self:send({ cmd = 'back' })
   elseif name ~= 'title' then self:send({ cmd = 'to_title' }) end
   self:send({ cmd = 'new_run' })
 end
@@ -524,6 +526,24 @@ function BUILD.upgrades(self, items, d, content)
   label(items, 'Crowns', U.crownsLabel)
   stepper(items, 'crowns', nil, U.crowns, { value = d.meta.crowns, min = 0, max = CROWNS_MAX, step = 10,
     send = function(v) self:send({ cmd = 'debug_set_crowns', crowns = v }) end })
+  -- The relics that a new save does not have, and the number of them that are unlocked now. A relic of a feat is
+  -- unlocked while its feat is in the meta.
+  local locked, byUnlock = {}, { crowns = 0, feat = 0 }
+  for _, relic in ipairs(content and content.relics or {}) do
+    if relic.unlock ~= 'start' then
+      locked[#locked + 1] = relic.id
+      byUnlock[relic.unlock] = (byUnlock[relic.unlock] or 0) + 1
+    end
+  end
+  local bought, feats = #(d.meta.relics or {}), #(d.meta.feats or {})
+  local function unlock(on)
+    return function()
+      for _, id in ipairs(locked) do self:send({ cmd = 'debug_set_unlock', relic = id, unlocked = on }) end
+    end
+  end
+  key(items, 'unlockAll', nil, U.unlockAll, 'Unlock all relics', { act = unlock(true),
+    disabled = #locked == 0 or (bought >= byUnlock.crowns and feats >= byUnlock.feat) })
+  key(items, 'lockAll', nil, U.lockAll, 'Lock all relics', { act = unlock(false), disabled = bought + feats == 0 })
   for i, upgrade in ipairs(content and content.upgrades or {}) do
     local slot = row(i, U.perColumn)
     if not slot then break end

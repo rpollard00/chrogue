@@ -306,8 +306,8 @@ function ui.tallyRow(x, y, w, label, value, since, total)
 end
 
 --[[
-  A notice about the saved data: a panel above the layout at the top left corner of the stage. There the battle has an
-  empty column, and the camp has only text. Its height comes from its text. `y` is its top. The rectangle has the lines.
+  A notice about the saved data, or about a relic that a feat unlocked: a panel above the layout at the top left corner
+  of the stage. There the battle has an empty column, and the camp has only text. Its height comes from its text. `y` is its top. The rectangle has the lines.
 ]]
 local NOTICE = { x = 0.75, w = 22, pad = 1, title = 1.05, size = 0.85, line = 0.85 * 1.4, detail = 0.75, detailLine = 0.75 * 1.4 }
 

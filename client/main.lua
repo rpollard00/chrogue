@@ -84,7 +84,7 @@ end
 -- new screen does not take it.
 function app.inputReady() return love.timer.getTime() - app.enteredAt >= TRANSITION end
 
--- The events that are not for one screen: the problems of the saved data.
+-- The events that are not for one screen: the problems of the saved data, and a relic that a feat unlocked.
 function app.events(events)
   for _, e in ipairs(events) do
     local notice = text.notice(e, app.saveDir)

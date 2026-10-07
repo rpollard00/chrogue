@@ -4,10 +4,14 @@
   - A new save: 8 relics of 27. A slot of a relic that crowns buy, a slot of a relic of a feat, and a slot of a relic
     that the player has.
   - A purchase with the key and a purchase with Enter. The purse counts down, and the slot shows the relic.
+  - A checkmate with a move of a rook, with no lost piece, does two feats. Each of the two relics gives a notice, and
+    the notices stay in the camp.
+  - The keys "Unlock all relics" and "Lock all relics" of the debug menu.
   - Each relic unlocked, with the relic of the longest text in the panel: the largest content of the panel.
 
   Run with: --size 1440x900 --seed 7 --no-save --script test/unlocks.lua
-  The debug commands only set the crowns and unlock the relics. Each purchase is a click or a key.
+  The debug commands only set the crowns, the pieces of the battle, and the unlocked relics. Each purchase and each
+  move is a click or a key.
 ]]
 local json = require('json')
 
@@ -91,22 +95,44 @@ return {
   expect('the title with a saved run has three keys in the row', function(v, c)
     return v.can_continue and table.concat(c.keys, ', ') == 'Continue run (floor 1), Upgrades, Relics, New run', table.concat(c.keys, ', ')
   end),
-  { 'press', 'continueRun' }, { 'screen', 'battle' }, { 'wait', 2 },
+  { 'press', 'continueRun' }, { 'screen', 'battle' },
+
+  -- Two feats in one battle: Ra1-a8 is checkmate, and the enemy captured no piece.
+  { 'send', { cmd = 'debug_set_army', units = { { kind = 'k', home = 4 }, { kind = 'r', home = 0 } } } },
+  { 'send', { cmd = 'debug_set_enemy', pieces = { { kind = 'k', square = 63 }, { kind = 'p', square = 54 }, { kind = 'p', square = 55 } } } },
+  { 'settle' }, { 'wait', 2 },
+  { 'click', 'a1' }, { 'click', 'a8' }, { 'settle' },
+  expect('the move that ends the battle unlocks two relics, and each gives a notice', function(v, c, app)
+    local ids = {}
+    for _, e in ipairs(app.response.events) do if e.type == 'relic_unlocked' then ids[#ids + 1] = e.id end end
+    local n = app.notices
+    return v.result.reason == 'checkmate' and table.concat(ids, ' ') == 'enfilade blessing' and #n == 2
+      and n[1].title == 'Relic unlocked' and n[1].lines[1] == 'Enfilade can now come in a reward and in the shop.'
+      and n[1].detail == 'Give checkmate with a move of a rook.' and n[2].detail == 'Win a battle and lose no piece.', table.concat(ids, ' ')
+  end),
+  { 'wait', 1.5 }, shot('notice-battle'),
+  { 'press', 'continue' }, { 'screen', 'camp' }, shot('notice-camp'),
+  { 'press', 'notice', 1 }, { 'press', 'notice', 1 },
+  expect('a click closes a notice', function(v, c, app) return #app.notices == 0 end),
+  { 'press', 'skip' }, { 'settle' }, { 'press', 'start' }, { 'screen', 'battle' }, { 'wait', 2 },
   { 'press', 'giveUp' }, { 'press', 'ok' }, { 'screen', 'over' }, { 'wait', 0.5 }, shot('over'),
-  { 'press', 'relics' }, { 'screen', 'relics' },
-  expect('the relics screen opens from the end of a run, with the first relic that the player can buy', function(v, c)
-    return v.unlocked == 10 and c.selected == first(v, function(s) return s.affordable end) and c.canBuy, tostring(c.selected)
+  { 'press', 'relics' }, { 'screen', 'relics' }, { 'wait', 0.1 }, shot('after-feats'),
+  expect('the relics screen opens from the end of a run, with the first relic that the player can buy', function(v, c, app)
+    local done = 0
+    for _, s in ipairs(v.slots) do if s ~= json.null and s.unlocked and (s.id == 'enfilade' or s.id == 'blessing') then done = done + 1 end end
+    return v.unlocked == 12 and done == 2 and c.selected == first(v, function(s) return s.affordable end) and c.canBuy and #app.notices == 0,
+      tostring(c.selected)
   end),
 
-  -- Each relic unlocked. The ids of the locked relics come from `hello`: the view of the screen does not have them.
-  { 'send', { cmd = 'hello' } }, { 'response' },
-  expect('the test unlocks each relic', function(v, c, app)
-    for _, relic in ipairs(app.response.data.content.relics) do
-      if relic.unlock ~= 'start' then app.send({ cmd = 'debug_set_unlock', relic = relic.id, unlocked = true }) end
-    end
-    return true
+  -- The debug menu locks and unlocks each relic that a new save does not have.
+  { 'key', 'f2' }, { 'settle' }, { 'press', 'tab', 'upgrades' },
+  { 'press', 'lockAll' }, { 'settle' },
+  expect('Lock all relics leaves the starter relics', function(v, c, app)
+    local d = app.debugMenu.debug
+    return v.unlocked == 8 and c.unlocked == 8 and #d.meta.relics == 0 and #d.meta.feats == 0, ('unlocked %d'):format(v.unlocked)
   end),
-  { 'settle' },
+  { 'press', 'unlockAll' }, { 'settle' }, { 'wait', 0.1 }, shot('debug-keys'),
+  { 'key', 'f2' },
   expect('each relic is unlocked', function(v, c)
     local longest = 0
     for i, s in ipairs(v.slots) do

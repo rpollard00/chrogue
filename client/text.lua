@@ -108,6 +108,13 @@ local AFTER = { meta = 'The game continues with no crowns and no upgrades.', run
   message of the core, or nil). `dir` is the save folder, thus the notice can give the full path of a file.
 ]]
 function text.notice(e, dir)
+  -- A relic that a feat unlocked in a battle. The detail is the condition of the feat. A purchase has no feat, and it
+  -- gives no notice: the relics screen shows it.
+  if e.type == 'relic_unlocked' then
+    if type(e.feat) ~= 'string' then return nil end
+    return { kind = 'unlock', title = 'Relic unlocked', detail = e.feat,
+      lines = { ('%s can now come in a reward and in the shop.'):format(e.name) } }
+  end
   local what = SAVED[e.what] or tostring(e.what)
   if e.type == 'save_failed' then
     return { kind = 'failed', title = 'The game did not save', detail = e.message,
