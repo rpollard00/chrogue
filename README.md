@@ -60,7 +60,7 @@ The options of the tool `balance` come after the name of the script, for example
 A run has 8 floors. Floor 4 and floor 8 are boss floors, and a boss has traits that change its moves.
 After each battle, you select one of three rewards, buy pieces and relics, and arrange your first two ranks.
 A run has 4 relic slots. In the camp, you can discard a relic to make a slot free. You get no gold for it.
-Each run gives crowns. Crowns buy permanent upgrades on the title screen.
+Each run gives crowns. Crowns buy permanent upgrades and unlock relics. You also unlock relics with achievements in a battle. A run offers only the relics that you unlocked.
 
 ## Structure
 

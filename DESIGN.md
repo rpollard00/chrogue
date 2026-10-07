@@ -45,9 +45,10 @@ Decision source: the user selected mockup C, "Platform with objects", on 1 Octob
 | Well | A recessed slot that holds a count or a group of pieces | Established |
 | Shelf | A recessed area that holds a row of cards | Established |
 | Lamp | The turn status. It is lit when the player can move. | Established |
-| Menu | A raised bar of keys on a screen between runs. The primary key has the full width. | Established |
+| Menu | A raised bar of keys on a screen between runs. The primary key has the full width. Below it is a set row of three keys. | Established. The row of three keys: provisional |
 | Medal board | A shelf of 16 set slots, 4 by 4. Each slot is a well that holds the medal of one upgrade, its name, its levels, and the cost of its next level. | Established |
-| Panel | A raised surface that shows the one upgrade that the player selects on the medal board: its text, its levels, and the key that buys it. | Established |
+| Panel | A raised surface that shows the one upgrade that the player selects on the medal board: its text, its levels, and the key that buys it. The relics screen has the same panel for the slot that the player selects on the relic board. | Established. On the relics screen: provisional |
+| Relic board | A shelf of 36 set slots, 6 by 6. Each slot is a well that holds the medal of one relic and one caption row. | Provisional |
 | Badge | A small dark plate on a piece that has a boon now: a thing that the piece gets from a near piece of its side. | Provisional |
 | Zone | The squares of one aura, with a tint and a line at its edge. A zone shows only while its aura is in focus. | Provisional |
 
@@ -73,6 +74,11 @@ Rules:
 - An upgrade is not a card. A card is a thing of one run. An upgrade stays between runs, and it has a set slot on the medal board.
 - On the medal board, an upgrade keeps its slot in each visit. A slot with no upgrade stays as an empty well. The slot of the upgrade that the player selects has an amber ring.
 - The panel has a set size. It has space for a text of three lines on a phone. On a wide screen, the panel also shows the cost of each level.
+- On the relic board, a relic keeps its slot in each visit, also after the unlock. A slot with no relic stays as an empty well. The selected slot has an amber ring.
+- The relic board hides a locked relic. Each locked relic has the same gray medal with a lock. The caption row of its slot shows the cost in crowns (amber when the player has the crowns), or a ribbon for a relic of an achievement. The slot of an unlocked relic has the medal of the relic and an empty caption row. A slot shows no name.
+- The panel of a locked relic has the name "Unknown relic". Its text is the condition of the achievement, or a line that tells the player to buy the relic. The panel of an unlocked relic has the name and the effect. The panel has space for a text of six lines.
+- The row of three keys of a menu has set places. On the title with no saved run, the third place has no key: it stays as an empty well.
+- A relic that an achievement unlocks in a battle gives a notice above the layout. The notice has the name of the relic and the condition of the achievement.
 - The display typeface is for names, headings, the wordmark, the primary key, the boss badge, and the purse, as in mockup C. Body text uses Fira Sans.
 
 ## Composition
@@ -84,16 +90,18 @@ Rules:
 
 - Screens between runs (the title, the end of a run) are one column in the center: a heading, a menu, and wells for the numbers. The upgrades screen is different: see below.
 - Upgrades: the crowns are at the top, and the key that goes back is at the bottom. Between them are the medal board and the panel. On a wide screen, the panel is at the right of the board. On a phone, the panel is below the board. Nothing on this screen scrolls.
-- The game has no rules screen. The player finds the rules and the relics in a run. The result of a battle gives its cause.
+- Relics: the frame of the upgrades screen, with the relic board in the place of the medal board. The count of the unlocked relics is in a well at the left of the crowns.
+- The game has no rules screen. The player finds the rules in a run. The result of a battle gives its cause.
+- The relics screen is the one list of relics in the game. It hides a locked relic: the player sees only its cost in crowns, or the condition of its achievement. The name and the effect show after the unlock.
 
-Status: established. The relic slots, the selection of a medal, and the Discard key are provisional: the user decided them on 3 October 2026. The badge and the zone are provisional: on 5 October 2026, the user selected the quiet badge, its column on the left side of the square, its diameter, and the zone in the place of lines to the source piece. The barred ring is provisional: the user asked for it on 5 October 2026. The user accepted the rendered screens of the TypeScript game on 1 October 2026. For the upgrades screen, the user selected mockup C, "a board of medals and one panel", and accepted the rendered screen on 1 October 2026. The client draws the same screens. Reference surfaces: the screens of the client.
+Status: established. The relic slots, the selection of a medal, and the Discard key are provisional: the user decided them on 3 October 2026. The badge and the zone are provisional: on 5 October 2026, the user selected the quiet badge, its column on the left side of the square, its diameter, and the zone in the place of lines to the source piece. The barred ring is provisional: the user asked for it on 5 October 2026. The user accepted the rendered screens of the TypeScript game on 1 October 2026. For the upgrades screen, the user selected mockup C, "a board of medals and one panel", and accepted the rendered screen on 1 October 2026. The relics screen, the relic board, and the row of three keys are provisional: on 6 October 2026, the user decided that a screen from the main menu shows the relics and hides a locked relic. The client draws the same screens. Reference surfaces: the screens of the client.
 
 ## The debug menu
 
 The debug menu is a development tool (`client/README.md`, "The debug menu"). It is not a part of the interface of the game.
 
 - The menu is above the layout, as a dialog is. It does not move or resize an area of a screen.
-- The menu is the one place that lists the relics. The game shows no such list ("Composition").
+- The Relics tab of the menu lists each relic with its name and its text, also a locked relic. In the game, only the relics screen lists the relics, and it hides a locked relic ("Composition").
 - The panel of the menu has a set size, and each tab has a set layout for its largest content: 28 relics, 8 floors, 5 kinds of pieces, the 16 upgrades of the medal board, and 11 backgrounds. A row with no content stays empty.
 - The menu uses the objects of the game: keys, wells, medals, and the paper tip. A toggle is a key that has an amber ring, an amber lamp, and an amber label when it is on.
 
@@ -125,5 +133,6 @@ Each color has a name in `client/theme.lua`. A module uses the name, not a raw v
 - The end of a run does not show a summary of the run. This is a follow-up task.
 - The medal board holds 16 upgrades. The design for more upgrades (a second page, or a board that scrolls) is not decided. A test stops a 17th upgrade.
 - A slot on a phone holds a name of 13 characters. A test stops a longer name.
+- The relic board holds 36 relics. The game has 27. The design for more relics is not decided. A test stops a 37th relic.
 - The Relics tab of the debug menu holds 28 relics. A 29th relic does not show.
 - The phone layout, the focus ring, the text for a screen reader, and the stop of motion for a player who prefers reduced motion ("Responsive and accessibility rules").

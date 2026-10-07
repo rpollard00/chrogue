@@ -1,6 +1,6 @@
 # Chrogue in LÖVE
 
-This folder is a client of Chrogue for LÖVE 11.5. It has all the screens of a run: the title, the upgrades, the battle, the camp, and the end of a run.
+This folder is a client of Chrogue for LÖVE 11.5. It has all the screens of the game: the title, the upgrades, the relics, the battle, the camp, and the end of a run.
 
 The client has no game rules. The Rust core in `../core` has them. The client starts the core, sends commands to it, draws the `view` of each response, and plays the `events` of each response as motion. `../core/PROTOCOL.md` is the contract between the two.
 
@@ -40,7 +40,7 @@ The options come after the game folder. The client gives `--seed`, `--no-save`, 
 - `F1` changes the effects: all on, post pass off, all off. The corner of the window shows the mode.
 - `F2` opens and closes the debug menu. See "The debug menu".
 - `Escape` closes the dialog, the promotion picker, and a pinned paper tip. Then it clears the selection of a piece or of a relic medal.
-- `Enter` does the function of the primary key: Continue run or New run on the title, Continue after a battle, Start the battle in the camp, Buy on the upgrades, and New run at the end of a run. In a dialog, `Enter` is OK.
+- `Enter` does the function of the primary key: Continue run or New run on the title, Continue after a battle, Start the battle in the camp, Buy on the upgrades, Unlock on the relics, and New run at the end of a run. In a dialog, `Enter` is OK.
 
 A new screen takes no click and no key (other than `F1` and `F2`) during its fade of 0.2 seconds. Thus the second click of a double click, or a second `Enter`, does not act on the next screen. A press of the button on one screen and its release on a different screen is not a click.
 
@@ -55,7 +55,7 @@ The menu shows the debug state of the core (`../core/PROTOCOL.md`, "Debug state"
 - Run: the seed of this run, and the seed of new runs. To set the seed of new runs, click the field, type at most 9 digits, and press `Enter` or Set. Random clears the seed. New run starts a new run from each screen, with no question. The stepper Relic slots changes the relic slots of the run and of each new run, and it works with no run. The other steppers change the floor and the gold of the run.
 - Relics: the heading shows the relics of the run against its relic slots. With no run, it shows the slots of new runs. One row for each relic. Owned gives the relic to the run or removes it. Offered permits or stops the relic as a reward, as a shop item, and as a boss trait. Trait gives the relic to the enemy or removes it. The pointer on a name shows the text of the relic. Offer all and Offer none change Offered for each relic.
 - Enemy: for each floor, the AI level, the budget of the enemy army, and the number of boss traits. For each kind of piece, the most pieces in an army, the weight, and the first floor. A click on a budget stepper with `Shift` changes the budget by 5. A value that differs from its default is amber. Defaults sets each number of this tab to its default.
-- Upgrades: the crowns, and the level of each upgrade.
+- Upgrades: the crowns, and the level of each upgrade. Unlock all relics and Lock all relics send `debug_set_unlock` for each relic that a new save does not have. The Relics tab does not show the unlocks: its toggles are for the run and for the enemy.
 - Effects: the background, the effects mode of `F1`, and the screen. This tab changes the shaders of the client. It sends no command, and it works before the core gives its debug state. The backgrounds other than Swirl are experiments for the look of the game. Screen selects the post pass: CRT is a tube screen with scan lines, and Rear projection is a flat screen with a hot zone and color bands. The picture of Rear projection is smaller than the window, and a dark border is around it. The game shows the post pass only in the mode "all on". The selections are not saved: the game starts with Swirl and CRT, or with the selections of `--background` and `--post`.
 
 A command that changes the run or the upgrades during a battle starts the battle again (`../core/PROTOCOL.md`, "Debug commands"). The settings of the Enemy tab, the seed of new runs, and Offered are not saved: a new core starts with the defaults.
@@ -139,11 +139,12 @@ A `settle` or `screen` step stops the game with an error after 30 seconds.
 
 The named controls are in the `control` function of each screen module and of `debugmenu.lua`:
 
-- Title: `continueRun`, `newRun`, `upgrades`.
+- Title: `continueRun`, `newRun`, `upgrades`, `relics`.
 - Upgrades: `slot` (a number from 1 to 16, or an upgrade id), `buy`, `back`.
+- Relics: `slot` (a number from 1 to 36), `buy`, `back`.
 - Battle: `continue`, `giveUp`, `promo` (1 to 4, or a kind: `'q'`, `'n'`, `'r'`, `'b'`), `square`, `stash`, `medal`.
 - Camp: `take` (1 to 3), `buy` (an item of the shop), `card` and `info` (`{ 'shop', 3 }` or `{ 'reward', 1 }`), `skip`, `reroll`, `start`, `home`, `medal` (`{ 'player', 2 }`: a click selects the medal of a relic), `discard`.
-- End of a run: `newRun`, `upgrades`, `title`.
+- End of a run: `newRun`, `upgrades`, `relics`, `title`.
 - Dialog: `ok`, `cancel`.
 - Notice: `notice` (the number of the notice, from 1).
 - Debug menu: `debugChip` (the chip in the corner of the window, on each screen). While the menu is open, a step gets only the controls of the menu and of its current tab:
@@ -151,7 +152,7 @@ The named controls are in the `control` function of each screen module and of `d
   - Run: `useSeed`, `seedField`, `setSeed`, `randomSeed`, `newRun`, and the steppers `relicSlots`, `floor`, and `gold` (the side: `'-'` or `'+'`).
   - Relics: `owned`, `offered`, `trait`, and `name` (a relic id), `offerAll`, `offerNone`.
   - Enemy: the steppers `level`, `budget`, and `traits` (the floor and the side: `{ 3, '+' }`), the steppers `cap`, `weight`, and `minFloor` (the kind and the side: `{ 'q', '-' }`), `defaults`.
-  - Upgrades: the steppers `crowns` (`'-'` or `'+'`) and `upgrade` (an upgrade id and the side: `{ 'pawn', '+' }`).
+  - Upgrades: the steppers `crowns` (`'-'` or `'+'`) and `upgrade` (an upgrade id and the side: `{ 'pawn', '+' }`), `unlockAll`, `lockAll`.
   - Effects: `background` (a background id), `mode` (1 to 3), and `post` (a post pass id: `'crt'` or `'projection'`).
 
 `test/run.sh [folder]` runs all the scripts of `test/`. It writes the screenshots, the dumps, and the log to the folder (default `/tmp/chrogue-love4/run`). Each run opens a window for some seconds. With `CHROGUE_NO_AUTH=1`, each run has `--no-auth`.
@@ -170,6 +171,7 @@ The run fails if a game stops with an error, if the core refused a command that 
 - `test/denied.lua`: the barred ring, at 1440 by 900. A selected rook attacks two pieces with a shield: the barred rings, the badges that pulse, and the lit medal. Escape, a click on a barred square, and the same for an enemy rook with Scout.
 - `test/debug.lua`: the debug menu. The chip and `F2`, two new runs with one seed, the stepper of the relic slots, Owned and Offered, a third trait and an 11th relic that the core refuses, a budget stepper, an upgrade stepper, and the background, the post pass, and the mode of the Effects tab.
 - `test/relics.lua`: the relic slots and the discard of a relic in the camp. A relic card with "Relics full", the selection of a medal, Cancel and OK of the question, and the purchase of the card after the discard.
+- `test/unlocks.lua`: the relics screen and the relic unlocks, at 1440 by 900. The row of three keys of the title and of the end of a run. A locked slot of a relic that crowns buy and of a relic of a feat, a purchase with the key and with `Enter`, and each relic unlocked with the longest text in the panel. A battle that does two feats gives two notices. The keys Unlock all relics and Lock all relics of the debug menu.
 - `test/saves.lua`: the notices of `save_failed` (a save folder that cannot take a file) and of `save_problem`.
 - `test/icons.lua`: the SVG path reader of `icons.lua`.
 - `test/saved-a.lua`, `test/saved-b.lua`: with `--embed`, a game starts a run and quits, and a second game on the same save folder continues the run.
@@ -186,10 +188,10 @@ With `CHROGUE_EFFECTS=off`, `flow.lua` and `showcase.lua` start with the effects
 | `json.lua` | The JSON reader and writer of the protocol |
 | `text.lua` | The interface text for the codes of the protocol |
 | `layout.lua` | The set layout of each screen: rectangles in stage units |
-| `title.lua`, `upgrades.lua`, `battle.lua`, `camp.lua`, `over.lua` | One module for each screen of the view |
+| `title.lua`, `upgrades.lua`, `relics.lua`, `battle.lua`, `camp.lua`, `over.lua` | One module for each screen of the view |
 | `board.lua`, `plaques.lua`, `fan.lua`, `result.lua` | The areas of the battle. `fan.lua` is also in the camp |
 | `aura.lua` | The auras of the battle: the badge of a piece that has a boon, the zone of an aura in focus, and the pulse of a badge that refuses a capture |
-| `ui.lua` | The shared elements: keys, amounts, medals, cards, the paper tip, pips, tallies, and the dialog |
+| `ui.lua` | The shared elements: keys, amounts, medals, cards, the paper tip, pips, the slot well and the panel of a medal board, tallies, the notice, and the dialog |
 | `debugmenu.lua` | The debug menu: a development tool above the layout |
 | `shaders.lua` | The backgrounds, the foil, and the post passes (CRT and rear projection) |
 | `gfx.lua`, `icons.lua`, `theme.lua` | Surfaces, text, pieces, icons, colors, and typefaces |
@@ -211,18 +213,23 @@ The stage is 80 by 45 units. The stage becomes larger or smaller as one unit. At
 Each area has the size of its largest content (`DESIGN.md`, "The first rule: a set layout"). `layout.lua` names each of these areas:
 
 - The wells of the title and the purses have the width of their largest value.
+- The menu of the title and of the end of a run has a row of three set places for keys. The title with no saved run has no key in the third place: it stays as an empty well.
 - The well of the next enemy in the camp has space for 16 pieces. The fan of traits has a set place before it.
 - The start key of the camp stays in place when the text below it goes.
 - The reward shelf has 3 set card slots, and the shop has 4. A card keeps its slot when the player buys a different card, and a bought card leaves an empty slot. After a new connection, the cards fill the slots from the left. When a shelf has no card, its heading line tells it.
 - The end of a run has the positions of a won run. The tally well keeps its height when a lost run has one row.
 - The text of the upgrade panel has a slot for three lines, and the ladder has a slot for three levels.
+- The relic board has 36 set slots, and a relic keeps its slot after the unlock. A slot has a medal and one caption row: the cost of a locked relic, or the ribbon of a relic of a feat. The count well has the width of "36 of 36".
+- The relic panel has a slot for a name of 16 characters and a slot for a text of six lines. The longest text of a relic has four lines.
 - On the battle, the name "You" stays in its row when the lamp goes after the result.
 - The fan of the player has space for 10 relic slots. A run shows its slots (4 at its start): the medals fill them from the left, and a slot with no relic is an empty ring.
 - The Discard key of the camp has a set place below the fan. It is disabled while no medal is selected.
 
 ## Other properties of the interface
 
-- The relic medals, the relic cards, and the relic cards on the shelves have the foil shader.
+- The relic medals, the relic cards, and the relic cards on the shelves have the foil shader. On the relics screen, the medals of the unlocked relics have it.
+- The relics screen draws only its view. The view has no id, no name, and no text of a locked relic, thus the screen shows the same medal with a lock for each locked relic. The screen does not read the relics of `hello`, which lists each relic.
+- A `relic_unlocked` event with a feat gives a notice at the top left corner of the window, as the events of the saved data do: the name of the relic, and the condition of the feat. A purchase on the relics screen gives no notice.
 - The dialogs (Give up, a new run over a saved run, the discard of a relic) are in the game window. The height of a dialog comes from the lines of its question.
 - In the camp, a click on a relic medal selects it: the medal gets an amber ring, and its card stays in view. A second click, a click on a different place, or `Escape` clears the selection. Discard asks first, then the medal leaves the fan and the medals after it go to their new slots. The count next to "Your relics" is amber when each slot has a relic.
 - A screen comes into view with a fade of 0.2 seconds. During the fade, the screen takes no input.

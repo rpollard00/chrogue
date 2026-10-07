@@ -46,6 +46,16 @@ A run has 4 relic slots. In the camp, the player can discard a relic to make a s
 
 Decision source: the user gave this decision on 3 October 2026. The first version had a limit of 10 relics with no discard.
 
+### Relics are unlocked with crowns and with achievements
+
+The player unlocks a relic with crowns or with an achievement. Only an unlocked relic comes as a reward, in the shop, or from the Heirloom upgrade.
+
+- A new save has a starter set of 8 relics: one relic for each kind of piece, and two gold relics.
+- A screen that opens from the main menu shows the relics. A locked relic is hidden: the player sees only its cost in crowns, or the condition of its achievement. The name and the effect show after the unlock.
+- The game has six achievements at this time. Later, a crafted boss will unlock its relic when the player defeats it.
+
+Decision source: the user gave these decisions on 6 October 2026.
+
 ### The first run is for a beginner at chess
 
 A player who knows how the pieces move, and no more, can play the first run. An older child is such a player.

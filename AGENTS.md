@@ -30,7 +30,8 @@ The client has only the wide layout at this time. `client/layout.lua` has the ar
 
 ## Other rules
 
-- The game does not show a rules screen or a list of relics. The player finds these in a run.
+- The game does not show a rules screen. The player finds the rules in a run.
+- The relics screen is the one list of relics in the game. It hides a locked relic: it shows only the cost in crowns or the condition of the achievement. The name and the effect show after the unlock. Do not show a locked relic in a different place.
 - Use `jj`, not `git`. Make one change for each feature, with a Conventional Commit description.
 - Core: In `core/`, run `cargo test --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check` before you finish.
 - Client: Look at the result in the client at 1440×900 (`love . --size 1440x900` in `client/`). Run `client/test/run.sh` only when the user tells you to: it opens many windows and takes some minutes.
