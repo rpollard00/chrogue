@@ -1,10 +1,13 @@
-//! Saved data. A `Storage` keeps two documents: the meta (crowns and upgrades) and the run in
-//! progress. This module writes them as versioned JSON and checks the data that it reads.
+//! Saved data. A `Storage` keeps two documents: the meta (crowns, upgrades, and relic unlocks)
+//! and the run in progress. This module writes them as versioned JSON and checks the data that it reads.
 //!
 //! The checks: unknown relic and upgrade ids are dropped, a field of the meta that is not valid
 //! counts as 0, and an offer that is not valid is dropped. These rules also apply:
 //!
 //! - A relic id counts one time in a list. The core removes the second copy.
+//! - The `relics` of the meta has the relics that the player bought. A starter relic is dropped
+//!   from it. The `feats` of the meta has the keys of the feats, and an unknown key is dropped. A
+//!   meta with no `relics` or no `feats` loads with an empty set for that field.
 //! - A run has at most `RELICS_MAX` relics. The core keeps the first ones.
 //! - The `slots` of a run is at most `RELICS_MAX`. A run with no `slots` loads with `RELIC_SLOTS`.
 //! - The enemy has at most `TRAITS_MAX` traits, and each one is a relic that a boss can have.
@@ -36,7 +39,8 @@ use serde_json::{Value, json};
 
 use crate::battle::Battle;
 use crate::chess::{self, Kind, Square};
-use crate::content::{FLOORS, RELIC_SLOTS, RELICS_MAX, RelicId, TRAITS_MAX, UpgradeId};
+use crate::content::{FLOORS, RELIC_SLOTS, RELICS_MAX, RelicId, TRAITS_MAX, Unlock, UpgradeId};
+use crate::feat::Feat;
 use crate::run::{
     ENEMY_PIECES_MAX, Enemy, EnemyPiece, EnemyPieces, Meta, Offer, Phase, Run, SEED_MAX, UNIT_ID_MAX, Unit, UnitId,
 };
@@ -429,7 +433,14 @@ pub fn run_document(run: &Run) -> String {
 pub fn meta_json(meta: &Meta) -> Value {
     let upgrades: serde_json::Map<String, Value> =
         meta.upgrades.iter().map(|(id, &level)| (id.key().to_string(), Value::from(level))).collect();
-    json!({ "crowns": meta.crowns, "best": meta.best, "runs": meta.runs, "upgrades": upgrades })
+    json!({
+        "crowns": meta.crowns,
+        "best": meta.best,
+        "runs": meta.runs,
+        "upgrades": upgrades,
+        "relics": meta.relics.iter().map(|id| id.key()).collect::<Vec<_>>(),
+        "feats": meta.feats.iter().map(|feat| feat.name()).collect::<Vec<_>>(),
+    })
 }
 
 pub fn offer_json(offer: Offer) -> Value {
@@ -532,6 +543,10 @@ pub fn parse_meta(raw: &Value) -> Meta {
             }
         }
     }
+    let bought = relics(data.get("relics").unwrap_or(&Value::Null));
+    meta.relics = bought.into_iter().filter(|id| id.def().unlock != Unlock::Start).collect();
+    meta.feats =
+        list(data.get("feats").unwrap_or(&Value::Null)).iter().filter_map(|v| Feat::parse(v.as_str()?)).collect();
     meta
 }
 

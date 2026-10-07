@@ -110,7 +110,7 @@ fn the_same_seed_gives_the_same_run_after_battles_with_different_numbers_of_move
     assert_eq!(first, second);
     assert_eq!(first.enemy, generate_enemy(7, 2, &defaults()));
     assert_eq!(first.draft, Some(roll_draft(&first, &Meta::default(), &defaults())));
-    assert_eq!(first.shop, roll_shop(&first, &defaults()));
+    assert_eq!(first.shop, roll_shop(&first, &Meta::default(), &defaults()));
 }
 
 #[test]
@@ -343,9 +343,10 @@ fn the_draft_and_the_shop_do_not_offer_a_relic_that_the_run_has() {
     let mut run = new_run(&Meta::default());
     let all: Vec<RelicId> = RelicId::all().collect();
     run.relics = all[1..].to_vec();
+    let meta = Meta::complete();
     for seed in 0..50 {
         run.seed = seed;
-        for offer in roll_draft(&run, &Meta::default(), &defaults()).into_iter().chain(roll_shop(&run, &defaults())) {
+        for offer in roll_draft(&run, &meta, &defaults()).into_iter().chain(roll_shop(&run, &meta, &defaults())) {
             if let Offer::Relic(id) = offer {
                 assert_eq!(id, all[0]);
             }
@@ -359,9 +360,10 @@ fn the_game_does_not_offer_a_barred_relic_and_a_boss_does_not_get_it_as_a_trait(
     let (kept, rest) = (pool[0], Tuning { barred: pool[1..].to_vec(), ..defaults() });
     assert!(!relic_pool(&rest).contains(&rest.barred[0]));
     let mut run = new_run(&Meta::default());
+    let meta = Meta::complete();
     for seed in 0..50 {
         run.seed = seed;
-        for offer in roll_draft(&run, &Meta::default(), &rest).into_iter().chain(roll_shop(&run, &rest)) {
+        for offer in roll_draft(&run, &meta, &rest).into_iter().chain(roll_shop(&run, &meta, &rest)) {
             if let Offer::Relic(id) = offer {
                 assert!(!rest.barred.contains(&id));
             }

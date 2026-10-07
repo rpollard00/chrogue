@@ -1,6 +1,7 @@
 //! The feats: the achievements of the player. A relic can have a feat as its unlock rule
-//! (`content::Unlock`).
+//! (`content::Unlock`). A feat reads only the facts of a battle, not the engine.
 
+use crate::chess::Kind;
 use crate::protocol::names;
 
 names! {
@@ -28,4 +29,32 @@ impl Feat {
             Feat::WinRun => "Win a run.",
         }
     }
+
+    /// True if a battle with these facts does the feat.
+    pub fn met(self, facts: &BattleFacts) -> bool {
+        match self {
+            Feat::KnightMate => facts.mate_by == Some(Kind::Knight),
+            Feat::RookMate => facts.mate_by == Some(Kind::Rook),
+            Feat::CleanWin => facts.won && facts.pieces_lost == 0,
+            Feat::TwoPromotions => facts.won && facts.promotions >= 2,
+            Feat::CostlyWin => facts.won && facts.pieces_lost >= 3,
+            Feat::WinRun => facts.won && facts.last_floor,
+        }
+    }
+}
+
+/// What a battle with a result gives to the feats. `Battle::facts` makes it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct BattleFacts {
+    /// True if the battle is the battle of the last floor of a run.
+    pub last_floor: bool,
+    /// True if the player won the battle.
+    pub won: bool,
+    /// The kind of the piece that gave checkmate to the enemy. None for each other result.
+    pub mate_by: Option<Kind>,
+    /// The number of units that the player lost: `Battle::lost`. A unit that a relic returns after
+    /// the battle is not in it, and the pawn of Conscription is not a unit.
+    pub pieces_lost: u32,
+    /// The number of pawns that the player promoted.
+    pub promotions: u32,
 }

@@ -74,7 +74,8 @@ fn squire_gives_a_second_knight_to_a_new_run() {
 
 #[test]
 fn heirloom_gives_one_relic_that_comes_from_the_seed_of_the_run() {
-    let meta = meta_with(&[("heirloom", 1)]);
+    // Each relic is unlocked, thus the relic comes from the full pool.
+    let meta = Meta { upgrades: meta_with(&[("heirloom", 1)]).upgrades, ..Meta::complete() };
     let start = |seed: u64, tuning: &Tuning| Run::new(&meta, seed, tuning).relics;
     assert_eq!(Run::new(&Meta::default(), 7, &defaults()).relics, vec![]);
     let relics: HashSet<RelicId> = seeds()

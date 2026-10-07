@@ -1,13 +1,14 @@
 //! The data of the roguelite layer (`Meta`, `Run`, `Unit`, `Enemy`, `Offer`) and the life of a
 //! run: its start, the enemy of each floor, the camp actions, and its end.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chess::{Kind, Square};
 use crate::content::{
     self, ARMY_MAX, DRAFT_GOLD_WEIGHT, DRAFT_RELIC_WEIGHT, FLOORS, RECRUIT_KINDS, RECRUITS, RELIC_PRICE, REROLL_COST,
-    RelicId, UpgradeEffect, UpgradeId, WIN_CROWNS,
+    RelicId, Unlock, UpgradeEffect, UpgradeId, WIN_CROWNS,
 };
+use crate::feat::{BattleFacts, Feat};
 use crate::protocol::{Code, Fail, fail};
 use crate::random::{Dice, Stream};
 use crate::tuning::Tuning;
@@ -165,7 +166,8 @@ pub struct Run {
     pub rolls: u32,
 }
 
-/// The data that stays from one run to the next run.
+/// The data that stays from one run to the next run. The default is a new save: it has only the
+/// starter relics.
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct Meta {
     pub crowns: u64,
@@ -173,6 +175,11 @@ pub struct Meta {
     pub runs: u64,
     /// The level of each upgrade that the player has. A level is more than 0.
     pub upgrades: BTreeMap<UpgradeId, u64>,
+    /// The relics that the player bought with crowns, or that a debug command gave. No starter
+    /// relic is in it.
+    pub relics: BTreeSet<RelicId>,
+    /// The feats that the player did.
+    pub feats: BTreeSet<Feat>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -286,6 +293,73 @@ impl Meta {
     }
 }
 
+// ---- Relic unlocks ----
+
+impl Meta {
+    /// A meta with each relic unlocked: for tools and for tests of the full pool.
+    pub fn complete() -> Meta {
+        let relics = RelicId::all().filter(|id| matches!(id.def().unlock, Unlock::Crowns(_))).collect();
+        Meta { relics, feats: Feat::ALL.iter().copied().collect(), ..Meta::default() }
+    }
+
+    /// True if the game can offer the relic: a starter, a bought relic, or a relic whose feat
+    /// the player did.
+    pub fn has_relic(&self, id: RelicId) -> bool {
+        match id.def().unlock {
+            Unlock::Start => true,
+            Unlock::Crowns(_) => self.relics.contains(&id),
+            Unlock::Feat(feat) => self.feats.contains(&feat) || self.relics.contains(&id),
+        }
+    }
+
+    /// Buys a relic. Errors: `blocked` (unlocked already, or a feat unlocks it), `not_affordable`.
+    pub fn buy_relic(&mut self, id: RelicId) -> Result<(), Fail> {
+        if self.has_relic(id) {
+            return fail(Code::Blocked, "The relic is unlocked already");
+        }
+        let Unlock::Crowns(cost) = id.def().unlock else {
+            return fail(Code::Blocked, "An achievement unlocks this relic");
+        };
+        if self.crowns < cost {
+            return fail(Code::NotAffordable, format!("The relic costs {cost} crowns"));
+        }
+        self.crowns -= cost;
+        self.relics.insert(id);
+        Ok(())
+    }
+
+    /// Debug: unlocks or locks a relic at no cost. A starter does not change. For a feat relic
+    /// it adds or removes the feat.
+    pub fn set_relic(&mut self, id: RelicId, unlocked: bool) {
+        match id.def().unlock {
+            Unlock::Start => {}
+            Unlock::Crowns(_) if unlocked => {
+                self.relics.insert(id);
+            }
+            Unlock::Feat(feat) if unlocked => {
+                self.feats.insert(feat);
+            }
+            Unlock::Crowns(_) => {
+                self.relics.remove(&id);
+            }
+            Unlock::Feat(feat) => {
+                self.feats.remove(&feat);
+                self.relics.remove(&id);
+            }
+        }
+    }
+
+    /// Records the feats that the battle did. Returns the relics that became unlocked, in board
+    /// order. A second call returns nothing.
+    pub fn earn(&mut self, facts: &BattleFacts) -> Vec<RelicId> {
+        let mut locked = content::board_order();
+        locked.retain(|&id| !self.has_relic(id));
+        self.feats.extend(Feat::ALL.iter().copied().filter(|feat| feat.met(facts)));
+        locked.retain(|&id| self.has_relic(id));
+        locked
+    }
+}
+
 // ---- Army ----
 
 /// Home squares on the first two ranks, from the center to the edge.
@@ -343,7 +417,7 @@ impl Run {
                 }
                 UpgradeEffect::GoldEachLevel(gold) => run.gold = run.gold.saturating_add(gold.saturating_mul(level)),
                 UpgradeEffect::StartRelic => {
-                    let pool = relic_pool(tuning);
+                    let pool = offer_pool(meta, tuning);
                     let dice = &mut Dice::stream(seed, Stream::Start, 0, 0);
                     if run.can_add_relic()
                         && let Some(&id) = pool.get(dice.below(pool.len()))
@@ -418,7 +492,7 @@ impl Run {
         self.enemy = generate_enemy(self.seed, self.floor, tuning);
         self.draft = if with_draft { Some(roll_draft(self, meta, tuning)) } else { None };
         self.rolls = 0;
-        self.shop = roll_shop(self, tuning);
+        self.shop = roll_shop(self, meta, tuning);
         self.phase = Phase::Camp;
     }
 
@@ -464,16 +538,22 @@ impl Run {
         }
         self.gold -= cost;
         self.rolls = self.rolls.saturating_add(1);
-        self.shop = roll_shop(self, tuning);
+        self.shop = roll_shop(self, meta, tuning);
         Ok(())
     }
 }
 
 // ---- Enemies and offers ----
 
-/// The relics that the game can offer as a reward or in the shop.
+/// The relics that are not barred. A boss trait comes from them: it does not follow the unlocks.
 pub fn relic_pool(tuning: &Tuning) -> Vec<RelicId> {
     RelicId::all().filter(|id| !tuning.barred.contains(id)).collect()
+}
+
+/// The relics that the game can offer to the player as a reward, in the shop, or with Heirloom:
+/// the relics of `relic_pool` that the player unlocked.
+pub fn offer_pool(meta: &Meta, tuning: &Tuning) -> Vec<RelicId> {
+    relic_pool(tuning).into_iter().filter(|&id| meta.has_relic(id)).collect()
 }
 
 /// The relics that the game can give to a boss as a trait.
@@ -516,8 +596,8 @@ fn piece_pool(floor: usize) -> Vec<(Offer, f64)> {
     RECRUITS.iter().filter(|r| floor >= r.min_floor).map(|r| (Offer::Piece(r.kind), r.weight)).collect()
 }
 
-fn new_relics(run: &Run, n: usize, dice: &mut Dice, tuning: &Tuning) -> Vec<Offer> {
-    let pool: Vec<RelicId> = relic_pool(tuning).into_iter().filter(|id| !run.relics.contains(id)).collect();
+fn new_relics(run: &Run, meta: &Meta, n: usize, dice: &mut Dice, tuning: &Tuning) -> Vec<Offer> {
+    let pool: Vec<RelicId> = offer_pool(meta, tuning).into_iter().filter(|id| !run.relics.contains(id)).collect();
     dice.shuffle(pool).into_iter().take(n).map(Offer::Relic).collect()
 }
 
@@ -527,7 +607,7 @@ fn new_relics(run: &Run, n: usize, dice: &mut Dice, tuning: &Tuning) -> Vec<Offe
 pub fn roll_draft(run: &Run, meta: &Meta, tuning: &Tuning) -> Vec<Offer> {
     let dice = &mut Dice::stream(run.seed, Stream::Draft, run.floor as u64, 0);
     let mut pool = piece_pool(run.floor);
-    pool.extend(new_relics(run, 2, dice, tuning).into_iter().map(|offer| (offer, DRAFT_RELIC_WEIGHT)));
+    pool.extend(new_relics(run, meta, 2, dice, tuning).into_iter().map(|offer| (offer, DRAFT_RELIC_WEIGHT)));
     pool.push((Offer::Gold(content::draft_gold(run.floor)), DRAFT_GOLD_WEIGHT));
     let mut draft = Vec::new();
     if meta.draft_has_relic() {
@@ -543,9 +623,9 @@ pub fn roll_draft(run: &Run, meta: &Meta, tuning: &Tuning) -> Vec<Offer> {
 }
 
 /// The shop items of the camp before `run.floor`, after `run.rolls` rerolls.
-pub fn roll_shop(run: &Run, tuning: &Tuning) -> Vec<Offer> {
+pub fn roll_shop(run: &Run, meta: &Meta, tuning: &Tuning) -> Vec<Offer> {
     let dice = &mut Dice::stream(run.seed, Stream::Shop, run.floor as u64, run.rolls as u64);
     let mut shop = dice.pick_weighted(piece_pool(run.floor), 2);
-    shop.extend(new_relics(run, 2, dice, tuning));
+    shop.extend(new_relics(run, meta, 2, dice, tuning));
     shop
 }

@@ -2,6 +2,7 @@
 
 use crate::chess::{self, Boon, Color, Kind, Move, Outcome, Piece, Placement, Special, Square, State};
 use crate::content::{self, ARMY_MAX, Effect, FLOORS, RelicId};
+use crate::feat::BattleFacts;
 use crate::formation;
 use crate::random::{Dice, Stream};
 use crate::run::{CONSCRIPT_ID, ENEMY_ID_BASE, EnemyPiece, EnemyPieces, Meta, Run, UNIT_ID_MAX, UnitId};
@@ -93,6 +94,8 @@ pub struct Battle {
     pub last: Option<Move>,
     /// The number of moves that the battle played.
     pub plies: u32,
+    /// The number of moves of the player that promoted a pawn.
+    pub promotions: u32,
 }
 
 /// The effects of one move.
@@ -227,6 +230,7 @@ impl Battle {
             result: None,
             last: None,
             plies: 0,
+            promotions: 0,
         })
     }
 
@@ -289,6 +293,9 @@ impl Battle {
         let played = chess::play(&mut self.state, mv);
         self.last = Some(mv);
         self.plies = self.plies.saturating_add(1);
+        if mover_color == Color::White && mv.promo.is_some() {
+            self.promotions = self.promotions.saturating_add(1);
+        }
         let mut report = MoveReport { mover, mv, capture: None, relics: Vec::new(), unit_lost: None };
         if let Some((captured, square)) = played.captured {
             self.taken[mover_color.index()].push(captured.kind);
@@ -383,6 +390,23 @@ impl Battle {
     pub fn ai_move(&mut self, run: &Run, level: usize) -> Option<Move> {
         let seed = Dice::stream(run.seed, Stream::Ai, run.floor as u64, self.plies as u64).seed();
         chess::ai_move(&mut self.state, level, seed)
+    }
+
+    /// The facts of the battle for the feats. None while the battle has no result. `run` is the
+    /// run of the battle, before `settle`.
+    pub fn facts(&self, run: &Run) -> Option<BattleFacts> {
+        let outcome = self.result.as_ref()?.outcome;
+        let mate = outcome == (Outcome::Checkmate { winner: Color::White });
+        // The last move of a checkmate by the player is a move of the player. A pawn that
+        // promotes has its new kind.
+        let mate_by = self.last.filter(|_| mate).and_then(|mv| chess::piece_at(&self.state, mv.to)).map(|p| p.kind);
+        Some(BattleFacts {
+            last_floor: run.floor == FLOORS.len(),
+            won: outcome.winner() == Some(Color::White),
+            mate_by,
+            pieces_lost: self.lost.len() as u32,
+            promotions: self.promotions,
+        })
     }
 
     /// What `settle` will do.

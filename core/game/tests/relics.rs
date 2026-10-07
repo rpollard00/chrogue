@@ -945,7 +945,7 @@ fn the_game_offers_a_discarded_relic_again() {
             if discard {
                 run.discard_relic(old).unwrap();
             }
-            roll_shop(&run, &Tuning::default()).contains(&Offer::Relic(old))
+            roll_shop(&run, &Meta::complete(), &Tuning::default()).contains(&Offer::Relic(old))
         };
         (0..100).filter(|&seed| offers(seed)).count()
     };
