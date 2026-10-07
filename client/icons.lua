@@ -42,6 +42,9 @@ local PATHS = {
   letter = 'M3 6h18v12H3zM3 6l9 7 9-7',
   troops = 'M9 5a3 3 0 1 0 0 6a3 3 0 0 0 0-6M3 20v-1a6 6 0 0 1 12 0v1M16 5.2a3 3 0 0 1 0 5.6M18 14a6 6 0 0 1 3 5v1',
   frame = 'M4 4h16v16H4zM12 8l4 4-4 4-4-4z',
+  -- The relics screen: a relic that the player did not unlock, and a relic of a feat.
+  lock = 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3M12 14.5v2',
+  ribbon = 'M12 3a6 6 0 1 0 0 12a6 6 0 0 0 0-12M8.5 14L7 21l5-3 5 3-1.5-7',
 }
 
 -- The mark of an id that has no path: a plain ring. Content of the core can come before its icon.

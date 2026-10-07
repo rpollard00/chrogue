@@ -72,6 +72,17 @@ text.ARMY_HINT = 'To move a piece, select the piece and then select a square.'
 text.START_REASON = 'Select or skip the reward before the battle.'
 text.UPGRADES_HINT = 'Upgrades apply to each new run.'
 
+-- The relics screen. The name and the text of a relic come from the view, and only for a relic that the player unlocked.
+text.RELICS_HINT = 'A run offers only the relics that you unlocked.'
+text.RELIC_UNKNOWN = 'Unknown relic'
+text.RELIC_STATUS = { unlocked = 'Unlocked', locked = 'Locked' }
+text.RELIC_BUY_FIRST = 'Buy this relic to see its name and its effect.'
+-- The key of the panel: for a relic that the player has, for a relic that crowns buy, and for a relic of a feat.
+text.RELIC_KEY = { unlocked = 'Unlocked', buy = 'Unlock', feat = 'Achievement' }
+
+-- The count of the relics that the player unlocked, and of all the relics.
+function text.relicsUnlocked(unlocked, total) return ('%d of %d'):format(unlocked, total) end
+
 -- The text of the connection to the core.
 text.NET = {
   starting = 'The game starts the core.',

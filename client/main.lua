@@ -19,6 +19,7 @@ local C, px = theme.color, gfx.px
 local SCREENS = {
   title = require('title'),
   upgrades = require('upgrades'),
+  relics = require('relics'),
   battle = require('battle'),
   camp = require('camp'),
   over = require('over'),
@@ -481,7 +482,7 @@ end
 
 -- The set areas of each screen, in stage units, for the dump.
 local AREAS = {
-  title = layout.title, upgrades = layout.upgrades, camp = layout.camp, over = layout.over,
+  title = layout.title, upgrades = layout.upgrades, relics = layout.relics, camp = layout.camp, over = layout.over,
   battle = { board = layout.board, foe = layout.foe, me = layout.me },
 }
 

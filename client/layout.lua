@@ -106,6 +106,42 @@ function layout.upgradeSlot(i)
   return rect(b.x + pad + col * (w + gap), b.y + pad + row * (h + gap), w, h)
 end
 
+-- The relics. The frame of the upgrades: the heading and the crowns at the top, a board and a panel, and the key that
+-- goes back.
+layout.relics = {
+  heading = rect(10, 1.5, 30, 3),
+  -- The count well has the width of "36 of 36": a relic in each slot of the board.
+  count = rect(57.4, 1.7, 6.4, 2.6),
+  -- The purse has the width of 3 digits of crowns.
+  purse = rect(64.4, 1.7, 5.6, 2.6),
+  -- The board has 36 set slots, 6 by 6. The game has 27 relics.
+  board = rect(10, 5.25, 38.25, 34.9),
+  boardPad = 0.8, slotGap = 0.6, columns = 6,
+  -- A slot has a medal and one caption row. The caption has the height of its largest content: a cost of 2 digits, or
+  -- the ribbon of a feat.
+  slotMedal = 3, slotCaption = 1.1, slotStep = 0.3,
+  panel = rect(49, 5.25, 21, 34.9),
+  kind = rect(50.1, 6.25, 18.8, 1.02),
+  medal = { x = 59.5, y = 11.22, size = 6.5 },
+  -- The name of a relic has at most 16 characters.
+  name = rect(50.1, 15.17, 18.8, 1.87),
+  status = rect(50.1, 17.74, 18.8, 1.2),
+  -- The text of the longest relic has four lines. The slot has space for six lines.
+  text = rect(50.1, 19.64, 18.8, 8.3),
+  buy = rect(50.1, 35.95, 18.8, 3),
+  back = rect(10, 41.08, 3.96, 2.25),
+  hint = rect(40, 41.66, 30, 1.08),
+}
+
+-- The rectangle of a slot of the relic board. `i` starts at 1.
+function layout.relicSlot(i)
+  local u = layout.relics
+  local b, pad, gap, n = u.board, u.boardPad, u.slotGap, u.columns
+  local w, h = (b.w - 2 * pad - (n - 1) * gap) / n, (b.h - 2 * pad - (n - 1) * gap) / n
+  local col, row = (i - 1) % n, math.floor((i - 1) / n)
+  return rect(b.x + pad + col * (w + gap), b.y + pad + row * (h + gap), w, h)
+end
+
 layout.camp = {
   foe = {
     plaque = rect(1, 1.16, 78, 6.5),
