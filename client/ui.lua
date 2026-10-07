@@ -210,6 +210,74 @@ function ui.pips(x, cy, level, max, size, gap, fresh, since)
   return max * size + (max - 1) * gap
 end
 
+--[[
+  The well of a slot of a medal board. `state` is 'selected' (the amber ring, and a raised face with the tint of `flair`),
+  'hover', or nil for the plain well.
+]]
+function ui.slotWell(r, state, flair)
+  local radius = px(9)
+  if state == 'selected' then
+    for k = 3, 1, -1 do gfx.rect(r.x - px(2) - k * px(3), r.y - px(2) - k * px(3), r.w + px(4) + k * px(6), r.h + px(4) + k * px(6), radius + k * px(3), C.accent, 0.06) end
+    gfx.rect(r.x - px(2), r.y - px(2), r.w + px(4), r.h + px(4), radius + px(2), C.accent)
+    gfx.gradientRect(r.x, r.y, r.w, r.h, radius, theme.mix(flair, 0.22, C.raisedHi), C.raisedLo)
+    gfx.topLight(r.x, r.y, r.w, r.h, radius, px(1), C.shine)
+  elseif state == 'hover' then
+    gfx.gradientRect(r.x, r.y, r.w, r.h, radius, C.wellLo, C.panel)
+    gfx.gradientRect(r.x, r.y, r.w, px(6), radius, theme.alpha(C.black, 0.55), theme.alpha(C.black, 0))
+  else
+    gfx.well(r.x, r.y, r.w, r.h, radius)
+  end
+end
+
+-- The time of the motion of a panel after a purchase.
+ui.PANEL_TIME = 0.8
+
+-- The scale of a panel `since` seconds after a purchase (nil for no purchase).
+function ui.panelScale(since)
+  if since and since < ui.PANEL_TIME then return 1 + 0.03 * (1 - gfx.ease(since / ui.PANEL_TIME)) end
+  return 1
+end
+
+--[[
+  The panel of a medal board: a raised surface with the tint of `flair`. `body` draws its content. `since` is the time
+  since a purchase, or nil: the panel becomes a little larger, a ring grows and fades, and a light goes across.
+]]
+function ui.panel(p, flair, since, body)
+  local moving = since and since < ui.PANEL_TIME
+  local scale = ui.panelScale(since)
+  gfx.scaled(p.x + p.w / 2, p.y + p.h / 2, scale, scale, function()
+    if moving then
+      -- The ring of the purchase grows and fades.
+      local t = since / ui.PANEL_TIME
+      local grow = 1 * math.min(1, t * 2)
+      gfx.rect(p.x - grow, p.y - grow, p.w + 2 * grow, p.h + 2 * grow, px(12) + grow, C.accent, 0.6 * (1 - math.min(1, t * 2)))
+    end
+    gfx.shadow(p.x, p.y, p.w, p.h, px(12), px(12), px(14), -px(8), 0.8)
+    gfx.rect(p.x, p.y + px(3), p.w, p.h, px(12), C.edge)
+    gfx.gradientRect(p.x, p.y, p.w, p.h, px(12), C.raisedHi, C.raisedLo, true)
+    gfx.gradientRect(p.x, p.y, p.w, p.h * 0.55, px(12), theme.alpha(flair, 0.24), theme.alpha(flair, 0))
+    gfx.outline(p.x, p.y, p.w, p.h, px(12), px(1), theme.mix(flair, 0.45, theme.hex('#111111')))
+    gfx.topLight(p.x, p.y, p.w, p.h, px(12), px(1), C.shine)
+    body()
+  end)
+  if moving then
+    -- A light goes across the panel after a purchase.
+    local t = since / ui.PANEL_TIME
+    local cx = p.x - p.w + 2 * p.w * gfx.ease(t)
+    lg.stencil(function() lg.rectangle('fill', p.x, p.y, p.w, p.h, px(12), px(12), 12) end, 'replace', 1)
+    lg.setStencilTest('equal', 1)
+    -- linear-gradient(105deg, transparent 40%, white 20% at 50%, transparent 60%): thin slices with a soft profile.
+    local slices = 12
+    for i = 0, slices - 1 do
+      local a0, a1 = 0.4 + 0.2 * i / slices, 0.4 + 0.2 * (i + 1) / slices
+      local alpha = 0.2 * (1 - math.abs((i + 0.5) / slices - 0.5) * 2)
+      gfx.setColor(C.white, alpha)
+      lg.polygon('fill', cx + p.w * a0, p.y, cx + p.w * a1, p.y, cx + p.w * a1 - 3, p.y + p.h, cx + p.w * a0 - 3, p.y + p.h)
+    end
+    lg.setStencilTest()
+  end
+end
+
 -- Sparks that fly out from a point. `since` is the time since the start, `delay` the time before the sparks.
 function ui.burst(cx, cy, since, count, delay)
   local t = (since - delay) / 1.1
