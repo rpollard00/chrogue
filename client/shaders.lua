@@ -251,6 +251,9 @@ shaders.BACKGROUNDS = {
     source = scene(FELT, TOUR, 'vec3 scene(vec2 p, float u) { return mix(felt(p), vec3(0.30, 0.46, 0.38), tour(p, u) * 0.55); }\n') },
   { id = 'walnutTour', label = 'Walnut and tour', note = "The knight's tour as brass inlay in walnut",
     source = scene(WALNUT, TOUR, 'vec3 scene(vec2 p, float u) { return mix(walnut(p), vec3(0.62, 0.47, 0.22) * (0.45 + 0.55 * lamp(p)), tour(p, u) * 0.8); }\n') },
+  -- The field is flat: it has no lamp and no dark corners. Thus it shows what a post pass does to the picture.
+  { id = 'bluescreen', label = 'Blue screen', note = 'No picture: one flat blue',
+    source = scene('vec3 scene(vec2 p, float u) { return vec3(0.150, 0.185, 0.620); }\n') },
 }
 shaders.background = 'swirl'
 
@@ -473,8 +476,9 @@ function shaders.beginScene(time)
   lg.clear(0.082, 0.090, 0.110, 1)
   if shaders.current().background then
     local background = backgroundShader()
-    background:send('time', time)
-    background:send('resolution', { scene:getPixelDimensions() })
+    -- A background with no motion or with no picture does not have each value.
+    if background:hasUniform('time') then background:send('time', time) end
+    if background:hasUniform('resolution') then background:send('resolution', { scene:getPixelDimensions() }) end
     lg.setShader(background)
     lg.setColor(1, 1, 1, 1)
     lg.rectangle('fill', 0, 0, scene:getDimensions())
