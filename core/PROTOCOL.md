@@ -70,13 +70,14 @@ Squares are numbers from 0 (a1) to 63 (h8). The file is `square % 8` and the ran
 
 ## Screens and commands
 
-The screens are `title`, `upgrades`, `battle`, `camp`, and `over`. A command on a screen that does not have it gets `wrong_screen`.
+The screens are `title`, `upgrades`, `relics`, `battle`, `camp`, and `over`. A command on a screen that does not have it gets `wrong_screen`.
 
 ```
 title ──new_run──> battle ──continue──> camp ──start_battle──> battle ...
   │  └─continue_run─> battle or camp       └──> over (won or lost)
-  └─open_upgrades─> upgrades ──back──> title
-over ──new_run──> battle;  over ──open_upgrades──> upgrades;  over ──to_title──> title
+  ├─open_upgrades─> upgrades ──back──> title
+  └─open_relics─> relics ──back──> title
+over ──new_run──> battle;  over ──open_upgrades──> upgrades;  over ──open_relics──> relics;  over ──to_title──> title
 ```
 
 ### Any screen
@@ -94,6 +95,7 @@ over ──new_run──> battle;  over ──open_upgrades──> upgrades;  ov
 | `new_run` | | Starts a new run and its first battle. A saved run is replaced, with no crowns for it. |
 | `continue_run` | | Continues the saved run: the camp, or the battle of the run from its start. Error `no_run` if no run is saved. |
 | `open_upgrades` | | Goes to the upgrades screen. |
+| `open_relics` | | Goes to the relics screen. |
 
 ### Upgrades
 
@@ -101,6 +103,19 @@ over ──new_run──> battle;  over ──open_upgrades──> upgrades;  ov
 | --- | --- | --- |
 | `buy_upgrade` | `upgrade`: an upgrade id | Buys the next level. Errors `max_level`, `not_affordable`. |
 | `back` | | Goes to the title. |
+
+### Relics
+
+The game offers a relic to the player only after the player unlocked it: as a reward, in the shop, and with the Heirloom upgrade. A new save has the 8 starter relics. The player buys a relic with crowns on this screen, or gets it for a feat: a thing that the player does in a battle (see `relic_unlocked` in [Events](#events)). A boss trait does not follow the unlocks: a boss can have a locked relic as a trait.
+
+| Command | Arguments | Effect |
+| --- | --- | --- |
+| `buy_relic` | `slot`: an index of `slots` of the view, from 0 | Buys the relic of the slot with crowns. Event `relic_unlocked`. Errors `bad_args` (no `slot`, not a whole number, or a number above 1048576; the `index` of the camp commands has the same rule), `bad_index` (the slot has no relic, or the board has no such slot), `blocked` (the relic is unlocked already, or a feat unlocks it), `not_affordable`. |
+| `back` | | Goes to the title. |
+
+A purchase changes only later offers: a saved run keeps its reward and its shop items.
+
+The feats count the units that the player lost in the battle: the `lost` list of the battle view. A unit that Second Wind returns and the pawn of Conscription do not count. A checkmate counts for the kind of the piece that made the move, after a promotion. The core also saves a feat that unlocks no relic (for example, the player has the relic from `debug_set_unlock` already); such a feat gives no event.
 
 ### Battle
 
@@ -114,7 +129,7 @@ The `phase` of the battle view tells who acts: `player`, `enemy`, or `over`.
 | `continue` | | `over` | Goes to `camp`, or to `over` if the run is won or lost. The core settled the battle when it ended (see below). |
 | `to_title` | | any | Goes to the title. A battle with no result is not saved: `continue_run` starts it again from its start. After the result, the title has the run in the camp, or no run if the run ended. |
 
-The core settles a battle with the move that ends it (the move that gives the `result` event): the gold, the lost units, and the promoted pieces go to the run, the run goes to the camp before its next floor or it ends, and the core saves this at once. The view of the battle shows the run of the battle until `continue`. Thus a client that starts again after the result continues in the camp, or has no run. It cannot play the battle a second time.
+The core settles a battle with the move that ends it (the move that gives the `result` event): the gold, the lost units, and the promoted pieces go to the run, the run goes to the camp before its next floor or it ends, and the core saves this at once. The feats of the battle come first: the same response has a `relic_unlocked` event for each relic that the battle unlocked, and the camp that follows can offer that relic. `give_up` does no feat. The view of the battle shows the run of the battle until `continue`. Thus a client that starts again after the result continues in the camp, or has no run. It cannot play the battle a second time.
 
 The client owns the pause before the enemy move. The LÖVE client waits 350 ms after the move of the player, then sends `enemy_move`.
 
@@ -139,6 +154,7 @@ The client owns the pause before the enemy move. The LÖVE client waits 350 ms a
 | --- | --- |
 | `new_run` | Starts a new run. |
 | `open_upgrades` | Goes to the upgrades screen. |
+| `open_relics` | Goes to the relics screen. |
 | `to_title` | Goes to the title. |
 
 ### Debug commands
@@ -146,6 +162,8 @@ The client owns the pause before the enemy move. The LÖVE client waits 350 ms a
 These commands work only in a session with `--debug`. Else the error is `debug_disabled`. They change the meta, the run, and the offers at no cost, for a test or for the preparation of a position. A change of the meta or of the run is saved immediately. If the screen is a battle with no result, the battle starts again. After the result, the change goes to the run after the battle (error `no_run` if the run ended), and the screen stays. Each change gives the event `debug_changed`.
 
 `debug_state`, `debug_set_seed`, `debug_set_relic_slots`, `debug_tune`, and `debug_bar_relic` read or change the tuning: the debug settings of the session. They need no run. The table gives their effect on a battle. The tuning is not saved, and a new session starts with the defaults.
+
+`debug_set_unlock` changes the meta and needs no run. A battle does not start again.
 
 Each successful debug command has the debug state in `data.debug` (see [Debug state](#debug-state)).
 
@@ -159,12 +177,13 @@ A command that changes the pieces or their rules (`debug_set_army`, `debug_set_e
 | `debug_tune` | One of these three: `reset` (true). `floor` (1 to 8) with one or more of `level` (1 to 11), `budget` (0 to 39), and `traits` (0 to 2). `kind` (`p`, `n`, `b`, `r`, `q`) with one or more of `cap` (0 to `cap_max`), `weight` (0 to 9, a fraction is permitted), and `min_floor` (1 to 8). | Changes the numbers of one floor or of one kind. `reset` sets each floor and each kind to the default. Error `bad_args`, and nothing changes: a value that is not in its range, no number to change, or more than one of `reset`, `floor`, and `kind`. Event `debug_changed` (`what`: `tuning`). If a number other than `level` changes, the run in progress gets a new enemy for its floor, the core saves the run, and a battle with no result starts again. With no run, only the tuning changes. A change of only `level` keeps the enemy and the battle. |
 | `debug_set_crowns` | `crowns` | Sets the crowns. |
 | `debug_set_upgrade` | `upgrade`, `level` | Sets the level of an upgrade at no cost. The level stays from 0 to the maximum level. |
+| `debug_set_unlock` | `relic`, `unlocked` | Unlocks or locks a relic at no cost. A starter relic does not change. For a relic of a feat, the command adds or removes the feat. A relic that a run has, a reward, and the shop items do not change. A battle does not start again. Event `debug_changed` (`what`: `unlock`). |
 | `debug_set_floor` | `floor`: 1 to 8 | Moves the run to the floor and makes a new enemy for it. |
 | `debug_set_gold` | `gold` | Sets the gold of the run. |
 | `debug_add_unit` | `kind`: `p`, `n`, `b`, `r`, `q` | Adds a unit on a free home square. Error `blocked` if the army is full. |
 | `debug_remove_unit` | `unit`: a unit id | Removes a unit. Error `blocked` for the king. |
 | `debug_set_army` | `units`: a list of `{"id"?, "kind", "home"}` | Replaces the army. One king, distinct ids and homes. A unit with no id gets its position in the list plus 1. |
-| `debug_set_relic` | `relic`, `on` | Adds or removes a relic of the player. The relic slots of the run are not a limit here: the run can get up to `relics_max` relics (then the error is `blocked`). |
+| `debug_set_relic` | `relic`, `on` | Adds or removes a relic of the player, also a relic that the player did not unlock. The relic slots of the run are not a limit here: the run can get up to `relics_max` relics (then the error is `blocked`). |
 | `debug_set_trait` | `relic`, `on` | Adds or removes a trait of the enemy. The relic must have a text for the enemy. The enemy has at most `traits_max` traits (error `blocked`). |
 | `debug_set_enemy` | `pieces`: a list of `{"kind", "square"}`, `traits` (optional) | Replaces the enemy army with pieces on set squares. One king, distinct squares. The battle does not select a formation for this army. |
 | `debug_bar_relic` | `relic`, `barred` | A barred relic is not a reward, not a shop item, and not a boss trait. The tuning keeps this set. A battle does not start again. |
@@ -180,7 +199,7 @@ A command that changes the pieces or their rules (`debug_set_army`, `debug_set_e
 - `seed`: the seed of each new run (`debug_set_seed`), or `null` if the session makes the seeds.
 - `relic_slots`: the relic slots of each new run (`debug_set_relic_slots`).
 - `run`: `null` with no run in progress. Else the run: `seed`, `floor`, `gold`, `relics` (the relic ids), `relic_slots` (the relic slots of the run), and `traits` (the ids of the enemy traits). After a battle has its result, it is the run after the battle.
-- `meta`: `crowns`, and `upgrades`: an object with the level of each upgrade that the player has. Each key is an upgrade id (for example `pawn`).
+- `meta`: `crowns`, `upgrades`, `relics`, and `feats`. `upgrades` is an object with the level of each upgrade that the player has. Each key is an upgrade id (for example `pawn`). `relics` has the ids of the relics that the player bought, or that `debug_set_unlock` gave. No starter relic is in it. `feats` has the keys of the feats that the player did: `knightMate`, `rookMate`, `cleanWin`, `twoPromotions`, `costlyWin`, and `winRun`. A relic of a feat is unlocked while its feat is in this list.
 - `barred`: the ids of the barred relics (`debug_bar_relic`).
 - `floors`: 8 items, one for each floor: `number`, `name`, `level` (the AI level of the floor, 1 to 11), `level_name` (the name of that level), `budget` (the value of the enemy army), and `traits` (the number of boss traits).
 - `kinds`: 5 items, one for each of `p`, `n`, `b`, `r`, `q`: `kind`, `cap` (the most pieces of the kind in an enemy army), `cap_max` (the largest `cap`: the default `cap` of the kind), `weight` (the chance of the kind against the other kinds), and `min_floor` (the first floor that can have the kind).
@@ -212,6 +231,16 @@ Each view has `screen`. The other fields depend on the screen.
 
 - `meta`: as on the title.
 - `slots`: 16 items. An item is `null` (an empty slot) or an upgrade: `id`, `name`, `text`, `level`, `max_level`, `costs` (the crowns of each level), `next_cost` (`null` at the maximum level), `affordable`.
+
+### `relics`
+
+- `meta`: as on the title.
+- `unlocked`: the number of relics that the player unlocked. `total`: the number of relics (27).
+- `slots`: 36 items, the slots of the relic board in a set order: the starter relics, then the relics that crowns buy from the lowest cost, then the relics of the feats. An item is `null` (an empty slot) or a relic. The slot of a relic does not change when the player unlocks it.
+  - An unlocked relic: `{"unlocked":true,"id":"bounty","name":"Bounty","text":"…","cost":null,"feat":null,"affordable":false}`.
+  - A locked relic that crowns buy: `{"unlocked":false,"id":null,"name":null,"text":null,"cost":3,"feat":null,"affordable":true}`. `cost` is its price in crowns. `affordable` is true if the player has the crowns.
+  - A locked relic of a feat: `{"unlocked":false,"id":null,"name":null,"text":null,"cost":null,"feat":"Give checkmate with a move of a knight.","affordable":false}`. `feat` is the text of the condition.
+  - A locked slot has no `id`, no `name`, and no `text`: the view does not tell which relic the slot has. A client shows only the cost or the condition.
 
 ### `battle`
 
@@ -291,6 +320,7 @@ Each event is an object with `type`. The other fields depend on the type.
 | `camp_action` | `action` (the command), `gold_before`, `gold`, `units` (`id`, `kind`, `home` of each new unit), `relics` (new relic ids), `discarded` (the ids of the relics that left the run), `rolled` | A camp command succeeded. `discarded` is an empty list for each action other than `discard_relic`. `rolled` is true when the shop has new items. |
 | `unit_placed` | `id`, `from`, `to`, `swapped` (the id of the unit that swapped, or `null`) | A unit moved to a new home square. |
 | `upgrade_bought` | `id`, `level`, `crowns_before`, `crowns` | An upgrade got a level. |
+| `relic_unlocked` | `id`, `name`, `text`, `feat`, `crowns_before`, `crowns` | The player unlocked a relic: the game can offer it from now on. `feat` is `null` for a purchase (`buy_relic`). For a feat, `feat` is the text of its condition, the event is in the response of the move that ends the battle, after `result`, and the two crown numbers are equal. A feat gives its relic one time. |
 | `run_end` | `won`, `cleared`, `bonus`, `crowns`, `new_best`, and `run` in a debug session | The run ended. `run` is the last state of the run in the format of the saved data. |
 | `debug_changed` | `what` | A debug command changed the data. |
 | `save_failed` | `what` (`meta` or `run`), `message` | The storage could not save. The game continues. |
@@ -326,10 +356,10 @@ The content text (the names and texts of relics, upgrades, floors, pieces, and o
 | `no_run` | The command needs a run, and no run is in progress or saved. |
 | `reward_pending` | The reward is open. Take it or skip it first. |
 | `reward_closed` | The camp has no open reward. |
-| `blocked` | The run cannot take the offer (see `blocked`), a debug limit, or the battle cannot start because a unit is on the square of an enemy piece. |
+| `blocked` | The run cannot take the offer (see `blocked`), crowns cannot buy the relic (it is unlocked already, or a feat unlocks it), a debug limit, or the battle cannot start because a unit is on the square of an enemy piece. |
 | `not_affordable` | Not sufficient gold or crowns. |
 | `max_level` | The upgrade has its maximum level. |
-| `bad_index` | No card or item has this index. |
+| `bad_index` | No card or item has this index, or no relic is in this slot of the relic board. |
 | `internal` | A fault in the core. The state did not change. Report it. |
 
 ## hello
@@ -339,12 +369,12 @@ The content text (the names and texts of relics, upgrades, floors, pieces, and o
 - `protocol`: the version. `debug`: true if the debug commands work.
 - `commands`, `events`, `errors`: the names in this file.
 - `content`:
-  - `relics`: `id`, `name`, `text`, `foe_text` (`null` if a boss cannot have it), and `trait`.
+  - `relics`: `id`, `name`, `text`, `foe_text` (`null` if a boss cannot have it), `trait`, `unlock` (`start` for a starter relic, `crowns`, or `feat`), and `cost` (the crowns of a relic with `crowns`, else `null`). The list has each relic, also the locked ones.
   - `upgrades`: `id`, `name`, `text`, `costs`.
   - `floors`: `number`, `name`, `budget` (the value of the enemy army), `traits` (the number of boss traits), `boss`, `level` (the name of the AI level), and `draft_gold` (the gold card of the reward before this floor).
   - `pieces`: `kind`, `name`, `value` (the gold of a capture), and `price` (in the shop, before upgrades).
   - `recruits`: `kind`, `weight`, `min_floor` of the pieces in rewards and in the shop.
-  - `relic_price` and `reroll_cost` (before upgrades), `relic_slots` (the relic slots of a new run), `relics_max` (the most relic slots of a run), `win_crowns`, `army_max`, `upgrade_slots`, `upgrade_name_max`, `traits_max`, `relic_count`.
+  - `relic_price` and `reroll_cost` (before upgrades), `relic_slots` (the relic slots of a new run), `relics_max` (the most relic slots of a run), `win_crowns`, `army_max`, `upgrade_slots`, `upgrade_name_max`, `traits_max`, `relic_count`, `relic_board_slots` (the slots of the relics screen).
 
 The content of `hello` is the default content. The tuning of a debug session does not change it.
 
@@ -384,10 +414,11 @@ The responses are short here: `…` replaces some fields and list items.
 < {"ok":true,"id":7,"events":[{"name":"title","type":"screen"}],"view":{"can_continue":false,"floors":8,"meta":{"best":0,"crowns":0,"runs":1},"run":null,"screen":"title"}}
 ```
 
-A won battle and a camp action (from the test `the_camp_example_is_real`: the army is a king and a rook, the run has Bounty, Interest, and 20 gold, and the reward cards are 14 gold and a knight):
+A won battle and a camp action (from the test `the_camp_example_is_real`: the army is a king and a rook, the run has Bounty, Interest, and 20 gold, and the reward cards are 14 gold and a knight). The player loses no piece in the first battle of the save, thus the battle also unlocks Blessing:
 
 ```
-< …"events":[{"type":"move",…},{"type":"capture","color":"b","id":30001,"kind":"r","square":8,"gold":7.5},{"type":"relic","ids":["bounty","interest"]},{"type":"result","winner":"w","reason":"rout"}],
+< …"events":[{"type":"move",…},{"type":"capture","color":"b","id":30001,"kind":"r","square":8,"gold":7.5},{"type":"relic","ids":["bounty","interest"]},{"type":"result","winner":"w","reason":"rout"},
+             {"type":"relic_unlocked","id":"blessing","name":"Blessing","feat":"Win a battle and lose no piece.","crowns_before":0,"crowns":0,…}],
    "view":{…,"phase":"over","result":{"winner":"w","reason":"rout","outcome":"victory","next":"camp",
      "reward":{"captures":8,"clear":4,"bonuses":[{"id":"interest","label":"Interest","gold":6}],"total":18},
      "rows":[{"row":"captures","gold":8},{"row":"clear","gold":4},{"row":"bonus","id":"interest","label":"Interest","gold":6}],"total":18,"rescued":0,"recruits":[]}}

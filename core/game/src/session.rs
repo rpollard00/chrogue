@@ -9,7 +9,7 @@ use serde_json::{Map, Value, json};
 
 use crate::battle::{Battle, BattlePhase, FindError, MoveReport, Next};
 use crate::chess::{self, Kind, Move, Special, Square};
-use crate::content::{self, FLOORS, RECRUIT_KINDS, RelicId, UpgradeId};
+use crate::content::{self, FLOORS, RECRUIT_KINDS, RelicId, Unlock, UpgradeId};
 use crate::protocol::{Code, Command, EventKind, Fail, MAX_REQUEST_BYTES, event, fail, gold_number};
 use crate::random::Dice;
 use crate::run::{
@@ -39,13 +39,16 @@ pub enum Settled {
 }
 
 /// The current screen and the data that only this screen has.
-/// The title and the upgrades screen keep the run in progress, if one is saved.
+/// The title, the upgrades screen, and the relics screen keep the run in progress, if one is saved.
 #[derive(Clone, Debug)]
 pub enum Screen {
     Title {
         run: Option<Run>,
     },
     Upgrades {
+        run: Option<Run>,
+    },
+    Relics {
         run: Option<Run>,
     },
     /// `run` is the run at the start of the battle: the view of the battle shows it until
@@ -69,6 +72,7 @@ impl Screen {
         match self {
             Screen::Title { .. } => "title",
             Screen::Upgrades { .. } => "upgrades",
+            Screen::Relics { .. } => "relics",
             Screen::Battle { .. } => "battle",
             Screen::Camp { .. } => "camp",
             Screen::Over { .. } => "over",
@@ -79,7 +83,7 @@ impl Screen {
     /// the run after the battle, or None if the run ended.
     pub fn run(&self) -> Option<&Run> {
         match self {
-            Screen::Title { run } | Screen::Upgrades { run } => run.as_ref(),
+            Screen::Title { run } | Screen::Upgrades { run } | Screen::Relics { run } => run.as_ref(),
             Screen::Battle { settled: Some(settled), .. } => match settled.as_ref() {
                 Settled::Camp(run) => Some(run),
                 Settled::Over { .. } => None,
@@ -91,7 +95,7 @@ impl Screen {
 
     fn run_mut(&mut self) -> Option<&mut Run> {
         match self {
-            Screen::Title { run } | Screen::Upgrades { run } => run.as_mut(),
+            Screen::Title { run } | Screen::Upgrades { run } | Screen::Relics { run } => run.as_mut(),
             Screen::Battle { settled: Some(settled), .. } => match settled.as_mut() {
                 Settled::Camp(run) => Some(run),
                 Settled::Over { .. } => None,
@@ -103,7 +107,7 @@ impl Screen {
 
     fn take_run(&mut self) -> Option<Run> {
         match std::mem::replace(self, Screen::Title { run: None }) {
-            Screen::Title { run } | Screen::Upgrades { run } => run,
+            Screen::Title { run } | Screen::Upgrades { run } | Screen::Relics { run } => run,
             Screen::Battle { settled: Some(settled), .. } => match *settled {
                 Settled::Camp(run) => Some(run),
                 Settled::Over { .. } => None,
@@ -432,11 +436,40 @@ fn show_over(game: &mut Game, summary: RunSummary, run: &Run, debug: bool, done:
     done.save_run = true;
 }
 
+/// The event of a relic that became unlocked: `feat` is the text of the feat, or None for a
+/// purchase.
+fn unlock_event(done: &mut Done, id: RelicId, feat: Option<&str>, crowns_before: u64, crowns: u64) {
+    let def = id.def();
+    done.push(
+        EventKind::RelicUnlocked,
+        json!({
+            "id": def.key, "name": def.name, "text": def.text, "feat": feat,
+            "crowns_before": crowns_before, "crowns": crowns,
+        }),
+    );
+    done.save_meta = true;
+}
+
 /// Applies a battle to the saved data when it gets its result: the run goes to the camp before
 /// its next floor, or the run ends. The screen does not change until `continue`.
+///
+/// The feats of the battle come first, thus the camp that follows can offer their relics.
 fn settle(game: &mut Game, done: &mut Done) {
     let Game { meta, screen, tuning, .. } = game;
     let Screen::Battle { run, battle, settled: settled @ None } = screen else { return };
+    if let Some(facts) = battle.facts(run) {
+        let feats = meta.feats.len();
+        let earned = meta.earn(&facts);
+        // A feat with no relic to unlock gives no event. The core saves it too.
+        done.save_meta |= meta.feats.len() != feats;
+        for id in earned {
+            let feat = match id.def().unlock {
+                Unlock::Feat(feat) => Some(feat.text()),
+                Unlock::Start | Unlock::Crowns(_) => None,
+            };
+            unlock_event(done, id, feat, meta.crowns, meta.crowns);
+        }
+    }
     let mut after = run.clone();
     let Some(next) = battle.settle(&mut after, meta, tuning) else { return };
     *settled = Some(Box::new(match next {
@@ -608,10 +641,31 @@ fn apply(game: &mut Game, command: Command, args: &Args, debug: bool) -> Result<
             game.screen = Screen::Upgrades { run: game.screen.take_run() };
             screen_event(d, &game.screen);
         }
+        Command::OpenRelics => {
+            if !matches!(game.screen, Screen::Title { .. } | Screen::Over { .. }) {
+                return wrong_screen(command, &game.screen);
+            }
+            game.screen = Screen::Relics { run: game.screen.take_run() };
+            screen_event(d, &game.screen);
+        }
         Command::Back => {
-            let Screen::Upgrades { run } = &mut game.screen else { return wrong_screen(command, &game.screen) };
+            let (Screen::Upgrades { run } | Screen::Relics { run }) = &mut game.screen else {
+                return wrong_screen(command, &game.screen);
+            };
             game.screen = Screen::Title { run: run.take() };
             screen_event(d, &game.screen);
+        }
+        Command::BuyRelic => {
+            let slot = uint(args, "slot", 1 << 20)? as usize;
+            if !matches!(game.screen, Screen::Relics { .. }) {
+                return wrong_screen(command, &game.screen);
+            }
+            let Some(&id) = content::board_order().get(slot) else {
+                return fail(Code::BadIndex, format!("The relic board has no relic in slot {slot}"));
+            };
+            let before = game.meta.crowns;
+            game.meta.buy_relic(id)?;
+            unlock_event(d, id, None, before, game.meta.crowns);
         }
         Command::BuyUpgrade => {
             let key = string(args, "upgrade")?;
@@ -741,8 +795,9 @@ fn apply(game: &mut Game, command: Command, args: &Args, debug: bool) -> Result<
 
 // ---- Debug commands ----
 
-/// A debug change of the saved data or of the tuning. After a change of the meta, of the run, or
-/// of the enemy armies of the tuning, a battle with no result starts again.
+/// A debug change of the saved data or of the tuning. After a change of the crowns, of the
+/// upgrades, of the run, or of the enemy armies of the tuning, a battle with no result starts
+/// again.
 fn debug_command(game: &mut Game, command: Command, args: &Args, d: &mut Done) -> Result<(), Fail> {
     let mut what = command.name().trim_start_matches("debug_set_").trim_start_matches("debug_");
     let mut restart = true;
@@ -758,6 +813,12 @@ fn debug_command(game: &mut Game, command: Command, args: &Args, d: &mut Done) -
             let level = int(args, "level")?;
             game.meta.set_level(id, level.max(0) as u64);
             d.save_meta = true;
+        }
+        Command::DebugSetUnlock => {
+            let id = relic(args, "relic")?;
+            game.meta.set_relic(id, boolean(args, "unlocked")?);
+            d.save_meta = true;
+            restart = false;
         }
         Command::DebugBarRelic => {
             let id = relic(args, "relic")?;
@@ -990,6 +1051,7 @@ mod tests {
             Screen::Title { run: None },
             Screen::Title { run: Some(run.clone()) },
             Screen::Upgrades { run: None },
+            Screen::Relics { run: None },
             Screen::Battle { run: run.clone(), battle, settled: None },
             Screen::Camp { run, reward: None },
             Screen::Over { summary: RunSummary { won: false, cleared: 0, bonus: 0, crowns: 0, new_best: false } },

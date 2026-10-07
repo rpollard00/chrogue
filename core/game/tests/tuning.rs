@@ -536,7 +536,7 @@ fn debug_state_has_the_run_the_meta_and_the_tuning() {
     assert_eq!(reply["view"]["screen"], json!("title"));
     let state = &reply["data"]["debug"];
     assert_eq!(state["run"], Value::Null);
-    assert_eq!(state["meta"], json!({ "crowns": 0, "upgrades": {} }));
+    assert_eq!(state["meta"], json!({ "crowns": 0, "upgrades": {}, "relics": [], "feats": [] }));
     assert_eq!((state["floors"].as_array().unwrap().len(), state["kinds"].as_array().unwrap().len()), (8, 5));
 
     send(&mut session, json!({ "cmd": "debug_set_crowns", "crowns": 4 }));
@@ -554,7 +554,7 @@ fn debug_state_has_the_run_the_meta_and_the_tuning() {
         json!({ "seed": 123_456_789, "floor": 4, "gold": 12, "relics": ["bounty"], "relic_slots": 4,
                 "traits": traits.iter().map(|id| id.key()).collect::<Vec<_>>() })
     );
-    assert_eq!(state["meta"], json!({ "crowns": 4, "upgrades": { "pawn": 2 } }));
+    assert_eq!(state["meta"], json!({ "crowns": 4, "upgrades": { "pawn": 2 }, "relics": [], "feats": [] }));
     assert_eq!((&state["seed"], &state["barred"]), (&json!(123_456_789), &json!(["interest"])));
     assert_eq!(debug_state(&mut session), *state);
 

@@ -89,6 +89,10 @@ fn scripted_session() -> Seen {
     s.send(json!({ "cmd": "debug_set_crowns", "crowns": 50 }));
     s.send(json!({ "cmd": "buy_upgrade", "upgrade": "scout" }));
     s.send(json!({ "cmd": "back" }));
+    s.send(json!({ "cmd": "open_relics" }));
+    s.send(json!({ "cmd": "buy_relic", "slot": 8 }));
+    s.send(json!({ "cmd": "debug_set_unlock", "relic": "gallop", "unlocked": true }));
+    s.send(json!({ "cmd": "back" }));
     s.send(json!({ "cmd": "new_run" }));
     s.send(json!({ "cmd": "view", "run": true }));
     for relic in ["bounty", "interest", "secondWind", "conscription"] {
@@ -158,7 +162,7 @@ fn scripted_session() -> Seen {
 
     // A lost run, a won run, and the end screen.
     s.send(json!({ "cmd": "give_up" }));
-    s.send(json!({ "cmd": "open_upgrades" }));
+    s.send(json!({ "cmd": "open_relics" }));
     s.send(json!({ "cmd": "back" }));
     s.send(json!({ "cmd": "new_run" }));
     s.send(json!({ "cmd": "debug_set_floor", "floor": 8 }));
@@ -214,6 +218,15 @@ fn the_camp_example_is_real() {
     let text = reply["events"][1].to_string();
     assert!(doc.contains(r#""type":"capture","color":"b","id":30001,"kind":"r","square":8,"gold":7.5"#), "{text}");
     assert_eq!(reply["view"]["result"]["total"], json!(18));
+    // The player lost no piece in the battle: the feat of Blessing.
+    let unlocked = &reply["events"][4];
+    let text = r#"{"type":"relic_unlocked","id":"blessing","name":"Blessing","feat":"Win a battle and lose no piece.","crowns_before":0,"crowns":0,…}"#;
+    assert!(doc.contains(text), "{unlocked}");
+    let fields = ["type", "id", "name", "feat", "crowns_before", "crowns"].map(|name| unlocked[name].to_string());
+    assert_eq!(
+        fields,
+        [r#""relic_unlocked""#, r#""blessing""#, r#""Blessing""#, r#""Win a battle and lose no piece.""#, "0", "0"]
+    );
     s.send(json!({ "cmd": "continue" }));
     s.send(json!({ "cmd": "debug_set_draft", "offers": [{ "kind": "gold", "amount": 14 }, { "kind": "piece", "type": "n" }] }));
     let reply = s.send(json!({ "cmd": "take_reward", "index": 1 }));

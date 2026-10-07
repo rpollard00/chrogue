@@ -87,6 +87,7 @@ fn valid(g: &mut Gen, view: &Value) -> Value {
         "title" => match g.below(4) {
             0 if view["can_continue"] == json!(true) => json!({ "cmd": "continue_run" }),
             1 => json!({ "cmd": "open_upgrades" }),
+            2 => json!({ "cmd": "open_relics" }),
             _ => json!({ "cmd": "new_run" }),
         },
         "upgrades" => {
@@ -97,6 +98,11 @@ fn valid(g: &mut Gen, view: &Value) -> Value {
             } else {
                 json!({ "cmd": "back" })
             }
+        }
+        "relics" => {
+            // Many slots are empty, unlocked, or not affordable.
+            let slots = view["slots"].as_array().unwrap().len();
+            if g.chance(0.6) { json!({ "cmd": "buy_relic", "slot": g.below(slots) }) } else { json!({ "cmd": "back" }) }
         }
         "battle" => match view["phase"].as_str().unwrap() {
             "player" if g.chance(0.05) => json!({ "cmd": "move", "from": g.below(64), "to": g.below(64) }),
@@ -141,7 +147,7 @@ fn valid(g: &mut Gen, view: &Value) -> Value {
                 _ => json!({ "cmd": "start_battle" }),
             }
         }
-        _ => json!({ "cmd": *g.pick(&["new_run", "open_upgrades", "to_title"]) }),
+        _ => json!({ "cmd": *g.pick(&["new_run", "open_upgrades", "open_relics", "to_title"]) }),
     }
 }
 
@@ -177,6 +183,8 @@ fn any_command(g: &mut Gen) -> Value {
         "weight",
         "min_floor",
         "slots",
+        "slot",
+        "unlocked",
     ];
     for _ in 0..g.below(4) {
         let name = *g.pick(&names);
@@ -197,7 +205,7 @@ fn any_command(g: &mut Gen) -> Value {
                 "traits" => json!([*g.pick(&["sidestep", "bounty", "forcedMarch", "nope"])]),
                 "upgrade" => json!(*g.pick(&UPGRADE_IDS)),
                 "relic" => json!(*g.pick(&["bounty", "secondWind", "kingKnight", "earlyPromo", "y"])),
-                "on" | "barred" | "run" | "reset" => json!(g.chance(0.5)),
+                "on" | "barred" | "run" | "reset" | "unlocked" => json!(g.chance(0.5)),
                 _ => json!(g.below(10)),
             },
         };
@@ -322,6 +330,9 @@ const RELIC_IDS: [&str; 27] = [
     "gambit",
 ];
 
+/// The keys of the feats, and a key that no feat has.
+const FEAT_KEYS: [&str; 7] = ["knightMate", "rookMate", "cleanWin", "twoPromotions", "costlyWin", "winRun", "z"];
+
 /// A huge or odd number for a count of saved data.
 fn big(g: &mut Gen) -> Value {
     g.pick(&[
@@ -384,6 +395,8 @@ fn meta_doc(g: &mut Gen) -> String {
     let text = json!({ "format": "chrogue.meta", "version": 1, "data": {
         "crowns": big(g), "best": big(g), "runs": big(g),
         "upgrades": UPGRADE_IDS.iter().map(|&id| (id.to_string(), big(g))).collect::<serde_json::Map<_, _>>(),
+        "relics": (0..g.below(6)).map(|_| if g.chance(0.9) { json!(*g.pick(&RELIC_IDS)) } else { big(g) }).collect::<Vec<_>>(),
+        "feats": (0..g.below(4)).map(|_| if g.chance(0.9) { json!(*g.pick(&FEAT_KEYS)) } else { big(g) }).collect::<Vec<_>>(),
     } })
     .to_string();
     // Sometimes a file that a crash cut.

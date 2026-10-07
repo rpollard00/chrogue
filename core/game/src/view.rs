@@ -5,8 +5,8 @@ use serde_json::{Value, json};
 use crate::battle::{Battle, BattlePhase, boons_at, is_capture};
 use crate::chess::{self, Boon, Color, Kind, Move};
 use crate::content::{
-    self, ARMY_MAX, FLOORS, RECRUIT_KINDS, RECRUITS, RELIC_PRICE, RELIC_SLOTS, RELICS, RELICS_MAX, REROLL_COST,
-    RelicId, TRAITS_MAX, UPGRADE_NAME_MAX, UPGRADE_SLOTS, UPGRADES, UpgradeId, WIN_CROWNS,
+    self, ARMY_MAX, FLOORS, RECRUIT_KINDS, RECRUITS, RELIC_BOARD_SLOTS, RELIC_PRICE, RELIC_SLOTS, RELICS, RELICS_MAX,
+    REROLL_COST, RelicId, TRAITS_MAX, UPGRADE_NAME_MAX, UPGRADE_SLOTS, UPGRADES, Unlock, UpgradeId, WIN_CROWNS,
 };
 use crate::protocol::{Code, Command, EventKind, PROTOCOL_VERSION, gold_number};
 use crate::run::{Meta, Offer, Phase, Run, RunSummary, SEED_MAX};
@@ -273,6 +273,36 @@ fn upgrades_view(meta: &Meta) -> Value {
     json!({ "screen": "upgrades", "meta": meta_view(meta), "slots": slots })
 }
 
+/// The relic board. A locked slot has only its crown cost or the text of its feat: the view has
+/// no id, no name, and no text of a relic that the player did not unlock.
+fn relics_view(meta: &Meta) -> Value {
+    let mut unlocked = 0;
+    let mut slots: Vec<Value> = content::board_order()
+        .into_iter()
+        .map(|id| {
+            let def = id.def();
+            if meta.has_relic(id) {
+                unlocked += 1;
+                return json!({
+                    "unlocked": true, "id": def.key, "name": def.name, "text": def.text,
+                    "cost": null, "feat": null, "affordable": false,
+                });
+            }
+            let (cost, feat) = match def.unlock {
+                Unlock::Crowns(cost) => (Some(cost), None),
+                Unlock::Feat(feat) => (None, Some(feat.text())),
+                Unlock::Start => (None, None),
+            };
+            json!({
+                "unlocked": false, "id": null, "name": null, "text": null,
+                "cost": cost, "feat": feat, "affordable": cost.is_some_and(|cost| cost <= meta.crowns),
+            })
+        })
+        .collect();
+    slots.resize(RELIC_BOARD_SLOTS.max(slots.len()), Value::Null);
+    json!({ "screen": "relics", "meta": meta_view(meta), "unlocked": unlocked, "total": RELICS.len(), "slots": slots })
+}
+
 fn over_view(summary: &RunSummary, meta: &Meta) -> Value {
     let mut rows = vec![json!({ "row": "floors", "crowns": summary.cleared })];
     if summary.won {
@@ -303,6 +333,7 @@ pub fn view(screen: &Screen, meta: &Meta) -> Value {
             "can_continue": run.is_some(),
         }),
         Screen::Upgrades { .. } => upgrades_view(meta),
+        Screen::Relics { .. } => relics_view(meta),
         Screen::Battle { run, battle, .. } => battle_view(run, battle, meta),
         Screen::Camp { run, reward } => camp_view(run, reward, meta),
         Screen::Over { summary } => over_view(summary, meta),
@@ -363,7 +394,12 @@ pub fn debug_data(screen: &Screen, meta: &Meta, tuning: &Tuning) -> Value {
         "seed": tuning.seed,
         "relic_slots": tuning.relic_slots,
         "run": run,
-        "meta": { "crowns": meta.crowns, "upgrades": upgrades },
+        "meta": {
+            "crowns": meta.crowns,
+            "upgrades": upgrades,
+            "relics": meta.relics.iter().map(|id| id.key()).collect::<Vec<_>>(),
+            "feats": meta.feats.iter().map(|feat| feat.name()).collect::<Vec<_>>(),
+        },
         "barred": keys(&tuning.barred),
         "floors": floors,
         "kinds": kinds,
@@ -384,12 +420,19 @@ pub fn hello(debug: bool) -> Value {
     let relics: Vec<Value> = RelicId::all()
         .map(|id| {
             let def = id.def();
+            let (unlock, cost) = match def.unlock {
+                Unlock::Start => ("start", None),
+                Unlock::Crowns(cost) => ("crowns", Some(cost)),
+                Unlock::Feat(_) => ("feat", None),
+            };
             json!({
                 "id": def.key,
                 "name": def.name,
                 "text": def.text,
                 "foe_text": def.foe_text,
                 "trait": id.is_trait(),
+                "unlock": unlock,
+                "cost": cost,
             })
         })
         .collect();
@@ -449,6 +492,7 @@ pub fn hello(debug: bool) -> Value {
             "upgrade_name_max": UPGRADE_NAME_MAX,
             "traits_max": content::traits_max(),
             "relic_count": RELICS.len(),
+            "relic_board_slots": RELIC_BOARD_SLOTS,
         },
     })
 }
