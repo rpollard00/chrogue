@@ -1,6 +1,7 @@
 //! The content of the game as data: relics, upgrades, floors, prices, and constants.
 //!
 //! - Relic: add one entry to `RELICS`. If the entry has a `foe_text`, a boss can have it as a trait.
+//!   Its `unlock` tells how the player gets it: at the start, with crowns, or with a feat.
 //! - Relic effect at a new point of a battle: add a kind to `Effect`, and apply it in `battle.rs`.
 //! - Movement rule: add a kind to `RuleEdit` if no kind gives it. The AI reads the rules data.
 //!   The battle view reads the auras of a relic from the same data (`RelicId::auras`).
@@ -11,6 +12,7 @@ use crate::chess::{
     ALFIL, Atom, Aura, CAMEL, DABBABA, DIAG, FORWARD, FORWARD_DIAG, Hook, KING, KNIGHT, Kind, Mode, ORTHO, Offset,
     Shield, SideRules,
 };
+use crate::feat::Feat;
 
 /// An edit of `SideRules::standard()` that a relic gives to its side. The engine builds its
 /// tables and the AI its piece values from the result, thus the AI sees each relic.
@@ -81,6 +83,17 @@ pub enum Effect {
     LossGold,
 }
 
+/// How the player gets a relic for the offers of a run.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Unlock {
+    /// A new save has the relic.
+    Start,
+    /// The player buys the relic for this number of crowns.
+    Crowns(u64),
+    /// The player gets the relic when the feat is done.
+    Feat(Feat),
+}
+
 pub struct RelicDef {
     /// The id in the saved data and in the protocol.
     pub key: &'static str,
@@ -90,6 +103,7 @@ pub struct RelicDef {
     pub foe_text: Option<&'static str>,
     pub rules: &'static [RuleEdit],
     pub effect: Option<Effect>,
+    pub unlock: Unlock,
 }
 
 const fn rule(
@@ -98,12 +112,13 @@ const fn rule(
     text: &'static str,
     foe: &'static str,
     rules: &'static [RuleEdit],
+    unlock: Unlock,
 ) -> RelicDef {
-    RelicDef { key, name, text, foe_text: Some(foe), rules, effect: None }
+    RelicDef { key, name, text, foe_text: Some(foe), rules, effect: None, unlock }
 }
 
-const fn hook(key: &'static str, name: &'static str, text: &'static str, effect: Effect) -> RelicDef {
-    RelicDef { key, name, text, foe_text: None, rules: &[], effect: Some(effect) }
+const fn hook(key: &'static str, name: &'static str, text: &'static str, effect: Effect, unlock: Unlock) -> RelicDef {
+    RelicDef { key, name, text, foe_text: None, rules: &[], effect: Some(effect), unlock }
 }
 
 pub static RELICS: [RelicDef; 27] = [
@@ -113,6 +128,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your pawns can always move two squares forward.",
         "Enemy pawns can always move two squares forward.",
         &[RuleEdit::ForcedMarch],
+        Unlock::Start,
     ),
     rule(
         "backpedal",
@@ -120,6 +136,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your pawns can move one square backward to an empty square.",
         "Enemy pawns can move one square backward to an empty square.",
         &[RuleEdit::Backpedal],
+        Unlock::Crowns(3),
     ),
     rule(
         "earlyPromo",
@@ -127,6 +144,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your pawns promote one rank earlier.",
         "Enemy pawns promote one rank earlier.",
         &[RuleEdit::EarlyPromo],
+        Unlock::Crowns(3),
     ),
     rule(
         "kingKnight",
@@ -134,6 +152,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your king can also move as a knight.",
         "The enemy king can also move as a knight.",
         &[RuleEdit::Leap { kind: Kind::King, offsets: &KNIGHT, mode: Mode::MoveOrCapture }],
+        Unlock::Feat(Feat::WinRun),
     ),
     rule(
         "longLeap",
@@ -141,6 +160,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your knights can also jump three squares in one direction and one square to the side.",
         "Enemy knights can also jump three squares in one direction and one square to the side.",
         &[RuleEdit::Leap { kind: Kind::Knight, offsets: &CAMEL, mode: Mode::MoveOrCapture }],
+        Unlock::Feat(Feat::KnightMate),
     ),
     rule(
         "sidestep",
@@ -148,25 +168,35 @@ pub static RELICS: [RelicDef; 27] = [
         "Your bishops can move one square up, down, left, or right to an empty square.",
         "Enemy bishops can move one square up, down, left, or right to an empty square.",
         &[RuleEdit::Leap { kind: Kind::Bishop, offsets: &ORTHO, mode: Mode::MoveOnly }],
+        Unlock::Crowns(3),
     ),
-    hook("bounty", "Bounty", "You get 50% more gold for each capture.", Effect::CaptureGold { factor: 1.5 }),
+    hook(
+        "bounty",
+        "Bounty",
+        "You get 50% more gold for each capture.",
+        Effect::CaptureGold { factor: 1.5 },
+        Unlock::Start,
+    ),
     hook(
         "secondWind",
         "Second Wind",
         "The first piece that you lose in each battle returns after the battle.",
         Effect::RescueFirst,
+        Unlock::Crowns(5),
     ),
     hook(
         "conscription",
         "Conscription",
         "You start each battle with one more pawn. The pawn leaves after the battle.",
         Effect::ExtraPawn,
+        Unlock::Crowns(4),
     ),
     hook(
         "interest",
         "Interest",
         "After each battle that you win, you get 1 gold for each 5 gold that you have. The maximum is 6 gold.",
         Effect::VictoryGold { per: 5, max: 6 },
+        Unlock::Start,
     ),
     rule(
         "vault",
@@ -174,6 +204,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your rooks can jump two squares up, down, left, or right to an empty square. A piece between does not stop the jump.",
         "Enemy rooks can jump two squares up, down, left, or right to an empty square. A piece between does not stop the jump.",
         &[RuleEdit::Leap { kind: Kind::Rook, offsets: &DABBABA, mode: Mode::MoveOnly }],
+        Unlock::Crowns(3),
     ),
     rule(
         "crossfire",
@@ -181,6 +212,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your rooks can capture a piece that is one square away diagonally.",
         "Enemy rooks can capture a piece that is one square away diagonally.",
         &[RuleEdit::Leap { kind: Kind::Rook, offsets: &DIAG, mode: Mode::CaptureOnly }],
+        Unlock::Start,
     ),
     rule(
         "closeQuarters",
@@ -188,6 +220,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your knights can capture a piece that is one square up, down, left, or right.",
         "Enemy knights can capture a piece that is one square up, down, left, or right.",
         &[RuleEdit::Leap { kind: Kind::Knight, offsets: &ORTHO, mode: Mode::CaptureOnly }],
+        Unlock::Start,
     ),
     rule(
         "pilgrimLeap",
@@ -195,6 +228,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your bishops can jump two squares diagonally. A piece between does not stop the jump.",
         "Enemy bishops can jump two squares diagonally. A piece between does not stop the jump.",
         &[RuleEdit::Leap { kind: Kind::Bishop, offsets: &ALFIL, mode: Mode::MoveOrCapture }],
+        Unlock::Crowns(3),
     ),
     rule(
         "queenFlight",
@@ -202,6 +236,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your queens can jump as a knight to an empty square.",
         "Enemy queens can jump as a knight to an empty square.",
         &[RuleEdit::Leap { kind: Kind::Queen, offsets: &KNIGHT, mode: Mode::MoveOnly }],
+        Unlock::Crowns(3),
     ),
     rule(
         "gallop",
@@ -209,6 +244,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your knights can make a second jump in the same direction if the first square is empty.",
         "Enemy knights can make a second jump in the same direction if the first square is empty.",
         &[RuleEdit::Slide { kind: Kind::Knight, offsets: &KNIGHT, mode: Mode::MoveOrCapture, steps: 2 }],
+        Unlock::Crowns(8),
     ),
     rule(
         "crusade",
@@ -216,6 +252,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your bishops can also move straight forward, as a rook does.",
         "Enemy bishops can also move straight forward, as a rook does.",
         &[RuleEdit::Slide { kind: Kind::Bishop, offsets: &FORWARD, mode: Mode::MoveOrCapture, steps: Atom::MAX_STEPS }],
+        Unlock::Start,
     ),
     rule(
         "royalMarch",
@@ -223,6 +260,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your king can move two squares in a straight line if the first square is empty.",
         "The enemy king can move two squares in a straight line if the first square is empty.",
         &[RuleEdit::Slide { kind: Kind::King, offsets: &KING, mode: Mode::MoveOrCapture, steps: 2 }],
+        Unlock::Start,
     ),
     rule(
         "huntress",
@@ -230,24 +268,28 @@ pub static RELICS: [RelicDef; 27] = [
         "Your queens can capture as a knight.",
         "Enemy queens can capture as a knight.",
         &[RuleEdit::Leap { kind: Kind::Queen, offsets: &KNIGHT, mode: Mode::CaptureOnly }],
+        Unlock::Start,
     ),
     hook(
         "apprenticeship",
         "Apprenticeship",
         "After each battle that you win, you get a pawn if one of your pawns promoted in the battle and is still on the board.",
         Effect::PromotionRecruit,
+        Unlock::Feat(Feat::TwoPromotions),
     ),
     hook(
         "coup",
         "Coup de Grace",
         "When you win a battle by checkmate, you get the gold value of each enemy piece that is still on the board.",
         Effect::CheckmateGold,
+        Unlock::Crowns(4),
     ),
     hook(
         "gambit",
         "Gambit",
         "When the enemy captures one of your pieces, you get half of its shop price in gold after the battle.",
         Effect::LossGold,
+        Unlock::Feat(Feat::CostlyWin),
     ),
     rule(
         "shieldWall",
@@ -255,6 +297,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your pawns can capture a piece that is one square straight forward.",
         "Enemy pawns can capture a piece that is one square straight forward.",
         &[RuleEdit::Leap { kind: Kind::Pawn, offsets: &FORWARD, mode: Mode::CaptureOnly }],
+        Unlock::Crowns(6),
     ),
     rule(
         "echelon",
@@ -262,6 +305,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your pawns can move one square diagonally forward to an empty square.",
         "Enemy pawns can move one square diagonally forward to an empty square.",
         &[RuleEdit::Leap { kind: Kind::Pawn, offsets: &FORWARD_DIAG, mode: Mode::MoveOnly }],
+        Unlock::Crowns(5),
     ),
     rule(
         "enfilade",
@@ -269,6 +313,7 @@ pub static RELICS: [RelicDef; 27] = [
         "Your rooks can go two or more empty squares in a straight line and then one square to the side. They can capture a piece there.",
         "Enemy rooks can go two or more empty squares in a straight line and then one square to the side. They can capture a piece there.",
         &[RuleEdit::Hook { kind: Kind::Rook, offsets: &ORTHO, mode: Mode::MoveOrCapture, min_leg: 2 }],
+        Unlock::Feat(Feat::RookMate),
     ),
     rule(
         "divineRight",
@@ -282,6 +327,7 @@ pub static RELICS: [RelicDef; 27] = [
             near: Kind::King,
             range: 1,
         }],
+        Unlock::Crowns(6),
     ),
     rule(
         "blessing",
@@ -295,6 +341,7 @@ pub static RELICS: [RelicDef; 27] = [
             RuleEdit::Shield { protector: Kind::Bishop, protected: Kind::Rook, range: 1 },
             RuleEdit::Shield { protector: Kind::Bishop, protected: Kind::Queen, range: 1 },
         ],
+        Unlock::Feat(Feat::CleanWin),
     ),
 ];
 
@@ -343,6 +390,25 @@ pub fn rules_for(ids: &[RelicId]) -> SideRules {
         rules = id.def().rules.iter().fold(rules, |rules, edit| edit.apply(rules));
     }
     rules
+}
+
+/// The relics screen has a set slot for each relic. These are the limits of that screen.
+pub const RELIC_BOARD_SLOTS: usize = 36;
+pub const RELIC_NAME_MAX: usize = 16;
+pub const RELIC_TEXT_MAX: usize = 130;
+pub const FEAT_TEXT_MAX: usize = 64;
+
+/// The relic of each slot of the relic board: the starters in table order, then the crown
+/// relics from the lowest cost (table order inside one cost), then the feat relics in the order
+/// of `Feat`.
+pub fn board_order() -> Vec<RelicId> {
+    let mut order: Vec<RelicId> = RelicId::all().collect();
+    order.sort_by_key(|id| match id.def().unlock {
+        Unlock::Start => (0, 0, None),
+        Unlock::Crowns(cost) => (1, cost, None),
+        Unlock::Feat(feat) => (2, 0, Some(feat)),
+    });
+    order
 }
 
 // ---- Upgrades ----

@@ -1,6 +1,7 @@
 //! The roguelite layer of Chrogue and its JSON command protocol.
 //!
 //! - `content`: relics, upgrades, floors, and prices as data.
+//! - `feat`: the feats, the achievements that unlock a relic.
 //! - `run`: the data of a run and of the permanent progress, and the life of a run.
 //! - `random`: the dice, and the streams of random numbers of a run.
 //! - `tuning`: the debug settings of a session: the enemy armies and the AI levels.
@@ -16,6 +17,7 @@
 pub mod battle;
 pub mod chess;
 pub mod content;
+pub mod feat;
 pub mod formation;
 pub mod protocol;
 pub mod random;

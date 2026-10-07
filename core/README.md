@@ -443,6 +443,7 @@ Run the commands from the `core/` directory, unless the command shows a differen
 ### Structure
 
 - `game/src/content.rs`: The relics, upgrades, floors, enemy kinds, prices, and constants as data.
+- `game/src/feat.rs`: The feats: the achievements that unlock a relic.
 - `game/src/run.rs`: `Meta`, `Run`, `Unit`, `Enemy`, `Offer`, the enemy of each floor, rewards, the shop, and upgrades.
 - `game/src/random.rs`: The dice, and the streams of random numbers of a run.
 - `game/src/tuning.rs`: The tuning: the debug settings of a session. It has the fixed seed of new runs, the barred relics, the budget, the traits, and the AI level of each floor, and the cap, the weight, and the first floor of each kind in an enemy army. Its defaults come from the content.
@@ -471,7 +472,7 @@ The effects have these points of a battle:
 - A capture by the enemy: `RescueFirst`.
 - The end: `VictoryGold`, `CheckmateGold`, `LossGold`, and `PromotionRecruit`. These effects run in the order of the relics of the run.
 
-To add a relic, add one entry to `RELICS` in `game/src/content.rs`. A new kind of effect needs a kind in `Effect` and code in `battle.rs`.
+To add a relic, add one entry to `RELICS` in `game/src/content.rs`. A new kind of effect needs a kind in `Effect` and code in `battle.rs`. The `unlock` of the entry tells how the player gets the relic: `Unlock::Start` (a new save has it), `Unlock::Crowns` (the player buys it for this number of crowns), or `Unlock::Feat` (a feat of `game/src/feat.rs` gives it). The relics screen has `RELIC_BOARD_SLOTS` (36) set slots, and `board_order` gives the relic of each slot.
 
 ### Details of the behavior of the game layer
 

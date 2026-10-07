@@ -4,7 +4,11 @@ use std::collections::HashSet;
 
 use chrogue_game::battle::{Battle, BattleResult, BattleReward, Bonus, MoveReport, Next};
 use chrogue_game::chess::{self, Color, Kind, Outcome, SideRules, Square};
-use chrogue_game::content::{FLOORS, RelicId, UPGRADE_NAME_MAX, UPGRADE_SLOTS, UPGRADES, UpgradeId, gold_value};
+use chrogue_game::content::{
+    FEAT_TEXT_MAX, FLOORS, RELIC_BOARD_SLOTS, RELIC_NAME_MAX, RELIC_TEXT_MAX, RELICS, RelicId, UPGRADE_NAME_MAX,
+    UPGRADE_SLOTS, UPGRADES, Unlock, UpgradeId, board_order, gold_value,
+};
+use chrogue_game::feat::Feat;
 use chrogue_game::run::{
     CONSCRIPT_ID, Enemy, EnemyPiece, EnemyPieces, Meta, Offer, Phase, Run, RunSummary, SEED_MAX, generate_enemy,
     relic_pool, roll_draft, roll_shop, trait_pool,
@@ -157,6 +161,49 @@ fn each_upgrade_has_a_slot_on_the_upgrades_screen_and_its_name_fits_the_slot() {
     for def in &UPGRADES {
         assert!(def.name.chars().count() <= UPGRADE_NAME_MAX, "{}", def.name);
     }
+}
+
+#[test]
+fn each_relic_has_an_unlock_rule_and_fits_its_slot_on_the_relics_screen() {
+    assert!(RELICS.len() <= RELIC_BOARD_SLOTS);
+    for def in &RELICS {
+        assert!(def.name.chars().count() <= RELIC_NAME_MAX, "{}", def.name);
+        assert!(def.text.chars().count() <= RELIC_TEXT_MAX, "{}", def.name);
+    }
+    let count = |is: fn(Unlock) -> bool| RELICS.iter().filter(|def| is(def.unlock)).count();
+    assert_eq!(count(|unlock| unlock == Unlock::Start), 8);
+    assert_eq!(count(|unlock| matches!(unlock, Unlock::Crowns(_))), 13);
+    assert_eq!(count(|unlock| matches!(unlock, Unlock::Feat(_))), 6);
+    assert!(RELICS.iter().all(|def| def.unlock != Unlock::Crowns(0)));
+    for &feat in Feat::ALL {
+        assert!(feat.text().chars().count() <= FEAT_TEXT_MAX, "{}", feat.name());
+        let relics = RELICS.iter().filter(|def| def.unlock == Unlock::Feat(feat)).count();
+        assert!(relics <= 1, "{}", feat.name());
+    }
+}
+
+#[test]
+fn the_relic_board_has_the_starters_then_the_crown_relics_by_cost_then_the_feat_relics() {
+    let keys: Vec<&str> = board_order().into_iter().map(RelicId::key).collect();
+    let starters =
+        ["forcedMarch", "bounty", "interest", "crossfire", "closeQuarters", "crusade", "royalMarch", "huntress"];
+    let crowns = [
+        "backpedal",
+        "earlyPromo",
+        "sidestep",
+        "vault",
+        "pilgrimLeap",
+        "queenFlight",
+        "conscription",
+        "coup",
+        "secondWind",
+        "echelon",
+        "shieldWall",
+        "divineRight",
+        "gallop",
+    ];
+    let feats = ["longLeap", "enfilade", "blessing", "apprenticeship", "gambit", "kingKnight"];
+    assert_eq!(keys, [&starters[..], &crowns[..], &feats[..]].concat());
 }
 
 #[test]

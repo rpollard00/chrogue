@@ -27,6 +27,7 @@ macro_rules! names {
         }
     };
 }
+pub(crate) use names;
 
 /// The version of the protocol. It changes when a change can break a client.
 pub const PROTOCOL_VERSION: u32 = 1;
