@@ -21,6 +21,7 @@ Read `DESIGN.md` before you change the interface. Its first rule applies to each
 - Chrogue is a game, not a web page. The game has two set layouts: one for a wide screen, and one for a phone.
 - A layout does not change with its content or with the state of the game. No area moves, wraps, shows, hides, or changes its size. The board has the same size in each battle.
 - Each area has a size for the largest content that the game can give it. An area with no content stays as an empty slot.
+- Inside a panel, the controls can fill the space of the panel. The panel keeps its position and its size, and it has a small number of set arrangements for its controls.
 - Only an element above the layout (a relic card, a list, a tooltip, a dialog) can have a size that comes from its content.
 - A layout becomes larger or smaller only as one unit: the stage unit of the client (`gfx.u`). Do not add breakpoints, wraps, or code that measures elements.
 

@@ -12,6 +12,7 @@ Chrogue is a game, not a web page. Its interface has a set layout, as the interf
 - A layout does not change with its content or with the state of the game. Each area has a set position and a set size. The number of relics, the number of captured pieces, the length of a name, a reward, and the turn do not move or resize an area. The board has the same size in each battle.
 - Each area has a size for the largest content that the game can give it. Design the area for that content first.
 - When the content of an area changes, the content changes in its place. An area with no content stays as an empty slot. Do not hide the area, and do not let other areas take its space.
+- Inside a panel, the controls can fill the space of the panel. The panel keeps its position and its size. The panel has a small number of set arrangements for its controls, and the number of controls selects the arrangement. For example, the row of a menu holds three keys, or two keys that fill the row. This is for controls such as keys. A slot of a board or of a shelf keeps its place and its size.
 - Only an element above the layout can have a size that comes from its content: the card of a relic, the list of a stash, a tooltip, a dialog, a banner. Such an element does not move the layout below it.
 - A layout becomes larger or smaller only as one unit. Each size is in stage units, and the size of one unit comes from the size of the window (`gfx.u` in the client). Do not add a breakpoint, a wrap, or a size from a container to make content fit.
 - Do not measure elements with code to set a layout.
@@ -20,7 +21,7 @@ The client has only the wide layout at this time. See "Responsive and accessibil
 
 Before you add or change an interface element, answer two questions. Where is its set area in each of the two layouts? What is the largest content of that area?
 
-Decision source: the user gave this rule on 1 October 2026. Status: established.
+Decision source: the user gave this rule on 1 October 2026. On 7 October 2026, the user added that the controls of a panel can fill its space. Status: established.
 
 ## Character
 
@@ -45,7 +46,7 @@ Decision source: the user selected mockup C, "Platform with objects", on 1 Octob
 | Well | A recessed slot that holds a count or a group of pieces | Established |
 | Shelf | A recessed area that holds a row of cards | Established |
 | Lamp | The turn status. It is lit when the player can move. | Established |
-| Menu | A raised bar of keys on a screen between runs. The primary key has the full width. Below it is a set row of three keys. | Established. The row of three keys: provisional |
+| Menu | A raised bar of keys on a screen between runs. The primary key has the full width. Below it is a row of three keys, or of two keys that fill the row. | Established. The row of keys: provisional |
 | Medal board | A shelf of 16 set slots, 4 by 4. Each slot is a well that holds the medal of one upgrade, its name, its levels, and the cost of its next level. | Established |
 | Panel | A raised surface that shows the one upgrade that the player selects on the medal board: its text, its levels, and the key that buys it. The relics screen has the same panel for the slot that the player selects on the relic board. | Established. On the relics screen: provisional |
 | Relic board | A shelf of 36 set slots, 6 by 6. Each slot is a well that holds the medal of one relic and one caption row. | Provisional |
@@ -77,7 +78,7 @@ Rules:
 - On the relic board, a relic keeps its slot in each visit, also after the unlock. A slot with no relic stays as an empty well. The selected slot has an amber ring.
 - The relic board hides a locked relic. Each locked relic has the same gray medal with a lock. The caption row of its slot shows the cost in crowns (amber when the player has the crowns), or a ribbon for a relic of an achievement. The slot of an unlocked relic has the medal of the relic and an empty caption row. A slot shows no name.
 - The panel of a locked relic has the name "Unknown relic". Its text is the condition of the achievement, or a line that tells the player to buy the relic. The panel of an unlocked relic has the name and the effect. The panel has space for a text of six lines.
-- The row of three keys of a menu has set places. On the title with no saved run, the third place has no key: it stays as an empty well.
+- The row of keys of a menu has two set arrangements. Three keys have three places. On the title with no saved run, the row has two keys, and they fill the row.
 - A relic that an achievement unlocks in a battle gives a notice above the layout. The notice has the name of the relic and the condition of the achievement.
 - The display typeface is for names, headings, the wordmark, the primary key, the boss badge, and the purse, as in mockup C. Body text uses Fira Sans.
 
@@ -94,7 +95,7 @@ Rules:
 - The game has no rules screen. The player finds the rules in a run. The result of a battle gives its cause.
 - The relics screen is the one list of relics in the game. It hides a locked relic: the player sees only its cost in crowns, or the condition of its achievement. The name and the effect show after the unlock.
 
-Status: established. The relic slots, the selection of a medal, and the Discard key are provisional: the user decided them on 3 October 2026. The badge and the zone are provisional: on 5 October 2026, the user selected the quiet badge, its column on the left side of the square, its diameter, and the zone in the place of lines to the source piece. The barred ring is provisional: the user asked for it on 5 October 2026. The user accepted the rendered screens of the TypeScript game on 1 October 2026. For the upgrades screen, the user selected mockup C, "a board of medals and one panel", and accepted the rendered screen on 1 October 2026. The relics screen, the relic board, and the row of three keys are provisional: on 6 October 2026, the user decided that a screen from the main menu shows the relics and hides a locked relic. The client draws the same screens. Reference surfaces: the screens of the client.
+Status: established. The relic slots, the selection of a medal, and the Discard key are provisional: the user decided them on 3 October 2026. The badge and the zone are provisional: on 5 October 2026, the user selected the quiet badge, its column on the left side of the square, its diameter, and the zone in the place of lines to the source piece. The barred ring is provisional: the user asked for it on 5 October 2026. The user accepted the rendered screens of the TypeScript game on 1 October 2026. For the upgrades screen, the user selected mockup C, "a board of medals and one panel", and accepted the rendered screen on 1 October 2026. The relics screen, the relic board, and the row of keys are provisional: on 6 October 2026, the user decided that a screen from the main menu shows the relics and hides a locked relic. The client draws the same screens. Reference surfaces: the screens of the client.
 
 ## The debug menu
 

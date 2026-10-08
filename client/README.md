@@ -171,7 +171,7 @@ The run fails if a game stops with an error, if the core refused a command that 
 - `test/denied.lua`: the barred ring, at 1440 by 900. A selected rook attacks two pieces with a shield: the barred rings, the badges that pulse, and the lit medal. Escape, a click on a barred square, and the same for an enemy rook with Scout.
 - `test/debug.lua`: the debug menu. The chip and `F2`, two new runs with one seed, the stepper of the relic slots, Owned and Offered, a third trait and an 11th relic that the core refuses, a budget stepper, an upgrade stepper, and the background, the post pass, and the mode of the Effects tab.
 - `test/relics.lua`: the relic slots and the discard of a relic in the camp. A relic card with "Relics full", the selection of a medal, Cancel and OK of the question, and the purchase of the card after the discard.
-- `test/unlocks.lua`: the relics screen and the relic unlocks, at 1440 by 900. The row of three keys of the title and of the end of a run. A locked slot of a relic that crowns buy and of a relic of a feat, a purchase with the key and with `Enter`, and each relic unlocked with the longest text in the panel. A battle that does two feats gives two notices. The keys Unlock all relics and Lock all relics of the debug menu.
+- `test/unlocks.lua`: the relics screen and the relic unlocks, at 1440 by 900. The row of keys of the title and of the end of a run. A locked slot of a relic that crowns buy and of a relic of a feat, a purchase with the key and with `Enter`, and each relic unlocked with the longest text in the panel. A battle that does two feats gives two notices. The keys Unlock all relics and Lock all relics of the debug menu.
 - `test/saves.lua`: the notices of `save_failed` (a save folder that cannot take a file) and of `save_problem`.
 - `test/icons.lua`: the SVG path reader of `icons.lua`.
 - `test/saved-a.lua`, `test/saved-b.lua`: with `--embed`, a game starts a run and quits, and a second game on the same save folder continues the run.
@@ -213,7 +213,7 @@ The stage is 80 by 45 units. The stage becomes larger or smaller as one unit. At
 Each area has the size of its largest content (`DESIGN.md`, "The first rule: a set layout"). `layout.lua` names each of these areas:
 
 - The wells of the title and the purses have the width of their largest value.
-- The menu of the title and of the end of a run has a row of three set places for keys. The title with no saved run has no key in the third place: it stays as an empty well.
+- The menu of the title and of the end of a run has a row of keys with two set arrangements: three keys, or two keys that fill the row. The title with no saved run has two keys.
 - The well of the next enemy in the camp has space for 16 pieces. The fan of traits has a set place before it.
 - The start key of the camp stays in place when the text below it goes.
 - The reward shelf has 3 set card slots, and the shop has 4. A card keeps its slot when the player buys a different card, and a bought card leaves an empty slot. After a new connection, the cards fill the slots from the left. When a shelf has no card, its heading line tells it.
